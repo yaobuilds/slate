@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0F0F12">
+  <title>Dashboard · TV</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="page-dashboard">
+  <div id="stage" class="stage">
+    <header class="nav">
+      <a class="nav-link" href="index.html" data-focus>Home</a>
+      <a class="nav-link is-current" href="dashboard.html" aria-current="page" data-focus>Dashboard</a>
+      <p class="guest-flag" id="guest-flag" hidden>Guest</p>
+    </header>
+
+    <section class="panel panel-today" id="panel-today" data-focus tabindex="0" aria-labelledby="today-label">
+      <h2 class="kicker" id="today-label">Today</h2>
+      <ul class="rows" id="today-list"></ul>
+    </section>
+
+    <section class="panel panel-deadlines" id="panel-deadlines" data-focus tabindex="0" aria-labelledby="deadlines-label">
+      <h2 class="kicker" id="deadlines-label">Deadlines</h2>
+      <ul class="rows" id="deadlines-list"></ul>
+    </section>
+
+    <section class="panel panel-money" id="panel-money" data-focus tabindex="0" aria-labelledby="money-label">
+      <h2 class="kicker" id="money-label">Money</h2>
+      <p class="money-note" id="money-note"></p>
+    </section>
+  </div>
+  <script src="main.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>

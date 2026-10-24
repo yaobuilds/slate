@@ -34,22 +34,39 @@ body {
   transform: translate(-50%, -50%);
   transform-origin: center center;
   display: grid;
+  gap: 28px 36px;
+  padding: 36px 64px 52px;
+  background: var(--bg);
+}
+
+.page-home .stage {
   grid-template-columns: 1fr 560px;
   grid-template-rows: 88px 1fr 248px;
   grid-template-areas:
     "nav nav"
     "hero weather"
     "apps apps";
-  gap: 28px 36px;
-  padding: 36px 64px 52px;
-  background: var(--bg);
+}
+
+.page-dashboard .stage {
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 88px 1fr;
+  grid-template-areas:
+    "nav nav nav"
+    "today deadlines money";
+}
+
+.page-dashboard.is-guest .stage {
+  grid-template-areas:
+    "nav nav nav"
+    "today today today";
 }
 
 .nav {
   grid-area: nav;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 28px;
 }
 
 .nav-link {
@@ -161,4 +178,90 @@ body {
   border-radius: 32px;
   background: var(--panel);
   box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.guest-flag {
+  margin: 0 0 0 auto;
+  font-size: 32px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+}
+
+.panel {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  padding: 36px 40px 40px;
+  border-radius: 32px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+
+.panel:focus-visible {
+  outline: 3px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.panel-today { grid-area: today; }
+.panel-deadlines { grid-area: deadlines; }
+.panel-money { grid-area: money; }
+
+.page-dashboard.is-guest .panel-deadlines,
+.page-dashboard.is-guest .panel-money {
+  display: none;
+}
+
+.panel .kicker {
+  font-size: 28px;
+}
+
+.rows {
+  list-style: none;
+  margin: 32px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  column-gap: 28px;
+  align-items: baseline;
+}
+
+.row-meta,
+.row-title,
+.money-note,
+.empty {
+  margin: 0;
+}
+
+.row-meta {
+  font-size: 34px;
+  font-weight: 600;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.row-title {
+  font-size: 42px;
+  font-weight: 560;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+}
+
+.money-note {
+  margin-top: 36px;
+  font-size: 52px;
+  font-weight: 540;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+}
+
+.empty {
+  font-size: 36px;
+  color: var(--muted);
 }

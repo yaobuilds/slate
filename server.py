@@ -10,21 +10,43 @@ ROOT = Path(__file__).resolve().parent
 PORT = 8000
 LOCAL = ROOT / "data.local.json"
 PUBLIC = ROOT / "data.json"
+PLACEHOLDER = {
+    "updated": "2026-10-24T09:00:00-04:00",
+    "today": [
+        {"time": "9:00", "title": "Morning notes"},
+        {"time": "12:30", "title": "Lunch"},
+        {"time": "6:00", "title": "Evening walk"},
+    ],
+    "deadlines": [
+        {"title": "Draft the outline", "due": "Friday"},
+        {"title": "Return the books", "due": "Oct 30"},
+    ],
+    "money": {"note": "No bills due this week"},
+}
+
+
+def write_public(text: str) -> None:
+    if not text.endswith("\n"):
+        text += "\n"
+    if PUBLIC.exists() and PUBLIC.read_text(encoding="utf-8") == text:
+        return
+    PUBLIC.write_text(text, encoding="utf-8")
 
 
 def publish_data() -> None:
-    """Copy data.local.json onto data.json when the local file is valid JSON."""
-    if not LOCAL.exists():
+    """Copy data.local.json onto data.json. Otherwise publish placeholder text."""
+    if LOCAL.exists():
+        try:
+            text = LOCAL.read_text(encoding="utf-8")
+            json.loads(text)
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"data.local.json was not published: {exc}", file=sys.stderr)
+            if not PUBLIC.exists():
+                write_public(json.dumps(PLACEHOLDER, indent=2))
+            return
+        write_public(text)
         return
-    try:
-        text = LOCAL.read_text(encoding="utf-8")
-        json.loads(text)
-    except (OSError, json.JSONDecodeError) as exc:
-        print(f"data.local.json was not published: {exc}", file=sys.stderr)
-        return
-    if text and not text.endswith("\n"):
-        text += "\n"
-    PUBLIC.write_text(text, encoding="utf-8")
+    write_public(json.dumps(PLACEHOLDER, indent=2))
 
 
 class Handler(SimpleHTTPRequestHandler):

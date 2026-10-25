@@ -220,16 +220,15 @@ body {
   list-style: none;
   margin: 32px 0 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 28px;
-}
-
-.row {
   display: grid;
   grid-template-columns: max-content 1fr;
   column-gap: 28px;
+  row-gap: 28px;
   align-items: baseline;
+}
+
+.row {
+  display: contents;
 }
 
 .row-meta,
@@ -262,6 +261,7 @@ body {
 }
 
 .empty {
+  grid-column: 1 / -1;
   font-size: 36px;
   color: var(--muted);
 }

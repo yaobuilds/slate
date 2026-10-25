@@ -1,0 +1,58 @@
+/* Slate design tokens v1.0 (Oct 24, 2026). Source of truth: docs/design/SPEC.md section 2.
+   Sizes are written as px-at-1920x1080 and scaled with --px, so the layout stays
+   proportional on any screen (1280x720, 1920x1080, 3840x2160).
+   Font URLs point to assets/fonts/; fix them if you copy this file elsewhere. */
+
+@font-face { font-family: "Inter"; src: url("assets/fonts/inter-450.ttf") format("truetype"); font-weight: 450; font-display: block; }
+@font-face { font-family: "Inter"; src: url("assets/fonts/inter-600.ttf") format("truetype"); font-weight: 600; font-display: block; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains-mono-500.ttf") format("truetype"); font-weight: 500; font-display: block; }
+
+:root {
+  /* ---- scale: 1 design px at 1920x1080 ---- */
+  --px: min(calc(100vw / 1920), calc(100vh / 1080));
+
+  /* ---- color (one base, one accent) ---- */
+  --sl-ink:      #10141A;  /* page background, "Slate ink" */
+  --sl-panel:    #161B22;  /* boxes, tiles */
+  --sl-panel-2:  #1C222B;  /* focused tile / pressed */
+  --sl-line:     #29313C;  /* borders, dividers (decorative) */
+  --sl-text:     #E6E1D7;  /* "Linen": main text. 14.17:1 on ink, 13.28:1 on panel */
+  --sl-text-2:   #ABA69D;  /* "Stone": secondary text. 7.63:1 on ink, 7.14:1 on panel */
+  --sl-dim:      #7A828C;  /* signature + key-hint caps only. 4.75:1 on ink. Never for information */
+  --sl-ice:      #A9C2DA;  /* "Ice steel": the single accent. focus ring, progress fill, current-hour tick. 10.04:1 on ink */
+  --sl-on-ice:   #10141A;  /* text on an Ice fill. 10.04:1 */
+  --sl-scrim:    rgba(16, 20, 26, 0.80); /* voice overlay backdrop (LATER) */
+
+  /* ---- type ---- */
+  --sl-font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --sl-mono: "JetBrains Mono", ui-monospace, monospace;
+  --fs-clock:     224;  /* Home clock digits */
+  --fs-clock-ap:  64;   /* AM / PM after the clock */
+  --fs-temp:      136;  /* Home current temperature */
+  --fs-title:     48;   /* Home date, Dashboard page title, header clock */
+  --fs-head:      40;   /* box headers, money status */
+  --fs-lg:        32;   /* row titles, tile names, button labels */
+  --fs-body:      28;   /* times, hourly, meta */
+  --fs-small:     24;   /* minimum: stale line, key hints, signature */
+
+  /* ---- layout (1920x1080 design px) ---- */
+  --safe-x: 96;   /* 5% of 1920, overscan-safe */
+  --safe-y: 54;   /* 5% of 1080 */
+  --col: 100;     /* 12 columns */
+  --gutter: 48;
+  --radius: 24;
+  --radius-pill: 999;
+  --ring: 6;          /* focus ring width */
+  --ring-offset: 6;   /* gap between element and ring */
+  --target-min: 88;   /* smallest focusable element height */
+
+  /* ---- motion ---- */
+  --t-focus: 120ms;   /* focus ring in/out; the only animation on the TV */
+  --drift-max: 2;     /* burn-in drift, design px */
+  --drift-x: 0;
+  --drift-y: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root { --t-focus: 0ms; }
+}

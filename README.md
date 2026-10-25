@@ -12,7 +12,7 @@ Open http://127.0.0.1:8000. The terminal also prints an address for other device
 
 - Home is the clock, the New York weather, and the app tiles. The first tile is Dashboard. Arrow keys move between the tiles. Enter opens Dashboard. The other tiles do not open anything yet.
 - The other tiles come from `apps.json`, at most five. Names and icons come from `apps-catalog.json`. To change a tile, use an id from the catalog. An entry can also set its own name, icon, or url.
-- Dashboard is http://127.0.0.1:8000/dashboard.html. Press G to hide Deadlines and Money. Press G again to show them. Home goes back.
+- Dashboard is http://127.0.0.1:8000/dashboard.html. It opens in guest mode, with Deadlines and Money empty. Press G to show them. Press G again to clear them. After 30 minutes with no key press, they clear again. From midnight to 6 AM the screen dims to about 60% brightness. Esc or Backspace goes Home.
 
 Keep private data in `data.local.json`. That file is gitignored. When it exists, the server copies it to `data.json`. When it is missing, the server writes a placeholder. `data.json` is generated and gitignored. Do not commit it.
 

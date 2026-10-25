@@ -2,6 +2,25 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
+  <script>
+    (function () {
+      try {
+        var parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York",
+          hourCycle: "h23",
+          hour: "2-digit"
+        }).formatToParts(new Date());
+        var hour = 0;
+        for (var i = 0; i < parts.length; i += 1) {
+          if (parts[i].type === "hour") hour = Number(parts[i].value);
+        }
+        if (hour === 24) hour = 0;
+        if (hour < 6) document.documentElement.classList.add("night");
+      } catch (err) {
+        /* The clock script applies the same window once it loads. */
+      }
+    })();
+  </script>
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#0F0F12">
   <title>Home · TV</title>

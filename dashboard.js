@@ -1,4 +1,5 @@
 const REFRESH_MS = 60 * 1000;
+const GUEST_IDLE_MS = 30 * 60 * 1000;
 
 const guestFlag = document.getElementById("guest-flag");
 const todayList = document.getElementById("today-list");
@@ -9,6 +10,16 @@ const moneyPanel = document.getElementById("panel-money");
 
 let data = null;
 let dataRaw = "";
+let guestIdleTimer = 0;
+
+function armGuestIdle() {
+  clearTimeout(guestIdleTimer);
+  guestIdleTimer = setTimeout(returnToGuest, GUEST_IDLE_MS);
+}
+
+function returnToGuest() {
+  if (!guestOn()) setGuest(true);
+}
 
 function guestOn() {
   return document.body.classList.contains("guest");
@@ -102,6 +113,9 @@ async function loadData() {
 
 loadData();
 setInterval(loadData, REFRESH_MS);
+
+document.addEventListener("keydown", armGuestIdle, true);
+armGuestIdle();
 
 document.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;

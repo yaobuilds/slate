@@ -39,13 +39,22 @@ function part(parts, type) {
   return found ? found.value : "";
 }
 
-function renderClock() {
-  const now = new Date();
+function renderClock(now) {
   const parts = timeFormat.formatToParts(now);
   hmEl.textContent = `${part(parts, "hour")}:${part(parts, "minute")}`;
   secEl.textContent = `:${part(parts, "second")}`;
   ampmEl.textContent = part(parts, "dayPeriod");
   dateEl.textContent = dateFormat.format(now);
+}
+
+function applyNight(now) {
+  document.documentElement.classList.toggle("night", wallClock(now).hour < 6);
+}
+
+function tickTime() {
+  const now = new Date();
+  applyNight(now);
+  if (hmEl && secEl && ampmEl && dateEl) renderClock(now);
 }
 
 let driftIndex = 0;
@@ -291,10 +300,8 @@ document.addEventListener("mousemove", () => {
   document.body.classList.add("has-mouse");
 }, { once: true });
 
-if (hmEl && secEl && ampmEl && dateEl) {
-  renderClock();
-  setInterval(renderClock, 1000);
-}
+tickTime();
+setInterval(tickTime, 1000);
 
 if (stage) {
   fitStage();

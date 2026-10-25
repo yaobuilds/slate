@@ -32,6 +32,17 @@ body {
   overscroll-behavior: none;
 }
 
+/* Midnight to 6 AM New York time. A 40% black layer leaves about 60% brightness. */
+html.night body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background: rgb(0, 0, 0);
+  opacity: 0.4;
+  pointer-events: none;
+  z-index: 5;
+}
+
 .stage {
   position: absolute;
   left: 50%;

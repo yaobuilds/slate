@@ -10,7 +10,7 @@ python3 server.py
 
 Open http://localhost:8000
 
-- Home is the clock.
+- Home is the clock and the New York weather.
 - Dashboard is http://localhost:8000/dashboard.html. Press G to hide Deadlines and Money. Press G again to show them. Home goes back.
 
 Keep private data in `data.local.json`. That file is gitignored. When it exists, the server copies it to `data.json`. When it is missing, the server writes a placeholder. `data.json` is generated and gitignored. Do not commit it.

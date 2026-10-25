@@ -23,11 +23,12 @@
       <p class="date" id="date">New York, NY</p>
     </section>
 
-    <aside class="weather" id="weather" aria-label="Weather for New York, NY">
-      <p class="kicker">Weather</p>
-      <p class="place">New York, NY</p>
-      <p class="temp" id="weather-temp"></p>
-      <ol class="hours" id="weather-hours"></ol>
+    <aside class="weather" id="wx" aria-label="Weather in New York, NY" style="visibility: hidden">
+      <p class="wx-place">New York, NY</p>
+      <div class="wx-now"><span id="wx-icon"></span><p class="wx-temp" id="wx-temp"></p></div>
+      <p class="wx-cond" id="wx-cond"></p>
+      <div class="wx-hours" id="wx-hours"></div>
+      <p class="wx-stale" id="wx-stale"></p>
     </aside>
 
     <section class="apps" id="apps" aria-label="Apps">

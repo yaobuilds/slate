@@ -40,7 +40,7 @@ body {
 }
 
 .page-home .stage {
-  grid-template-columns: 1fr 560px;
+  grid-template-columns: minmax(0, 1fr) 840px;
   grid-template-rows: 88px 1fr 248px;
   grid-template-areas:
     "nav nav"
@@ -95,7 +95,7 @@ body {
   grid-area: hero;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-start;
   min-width: 0;
 }
 
@@ -134,15 +134,20 @@ body {
   color: var(--accent);
 }
 
+/* Design px inside the 1920 stage. The stage is scaled as a whole, so these are not multiplied by --px. */
 .weather {
   grid-area: weather;
+  visibility: hidden;
+  justify-self: end;
+  align-self: start;
+  width: 840px;
   display: flex;
   flex-direction: column;
-  min-height: 0;
-  padding: 36px 40px;
-  border-radius: 32px;
-  background: var(--panel);
-  box-shadow: inset 0 0 0 1px var(--line);
+  align-items: flex-end;
+  min-width: 0;
+  font-family: var(--sl-font);
+  font-weight: 450;
+  color: var(--sl-text);
 }
 
 .kicker {
@@ -154,16 +159,153 @@ body {
   color: var(--accent);
 }
 
-.place {
-  margin: 14px 0 0;
-  font-size: 42px;
-  font-weight: 560;
-  letter-spacing: -0.02em;
+.weather .i,
+.dwx .i {
+  display: block;
+  width: 1em;
+  height: 1em;
+  flex: none;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.temp,
-.hours {
+.wx-place {
   margin: 0;
+  font-family: var(--sl-mono);
+  font-weight: 500;
+  font-size: 28px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-text-2);
+}
+
+.wx-now {
+  display: flex;
+  align-items: center;
+  gap: 28px;
+  margin-top: 10px;
+}
+
+.wx-now .i {
+  font-size: 112px;
+  color: var(--sl-text-2);
+  stroke-width: 1.5;
+}
+
+.wx-temp {
+  margin: 0;
+  font-size: 136px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-cond {
+  margin: 4px 0 0;
+  font-size: 40px;
+  color: var(--sl-text-2);
+}
+
+.wx-temp:empty,
+.wx-cond:empty,
+#wx-icon:empty {
+  display: none;
+}
+
+.wx-hours {
+  display: flex;
+  justify-content: flex-end;
+  width: 100%;
+  margin-top: 30px;
+  padding-top: 26px;
+  border-top: 2px solid var(--sl-line);
+}
+
+.wx-hours:empty {
+  display: none;
+}
+
+.wx-h {
+  width: 140px;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+.wx-h .t {
+  font-size: 28px;
+  color: var(--sl-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-h .i {
+  font-size: 56px;
+  stroke-width: 1.5;
+}
+
+.wx-h .v {
+  font-size: 36px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.wx-stale {
+  display: none;
+  align-items: center;
+  gap: 12px;
+  margin: 18px 0 0;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--sl-text-2);
+}
+
+.wx-stale .i {
+  font-size: 30px;
+}
+
+.weather.is-stale .wx-stale {
+  display: flex;
+}
+
+.weather.is-stale .wx-temp,
+.weather.is-stale .wx-h .v,
+.weather.is-stale .wx-h .i {
+  color: var(--sl-text-2);
+}
+
+.nav-end {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 32px;
+  min-width: 0;
+}
+
+.dwx {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+  font-family: var(--sl-font);
+  font-size: 32px;
+  font-weight: 450;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-text-2);
+}
+
+.dwx:empty {
+  display: none;
+}
+
+.dwx .i {
+  font-size: 40px;
+  stroke-width: 1.5;
 }
 
 .apps {
@@ -181,7 +323,7 @@ body {
 }
 
 .guest-flag {
-  margin: 0 0 0 auto;
+  margin: 0;
   font-size: 32px;
   font-weight: 600;
   letter-spacing: 0.04em;

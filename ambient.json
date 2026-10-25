@@ -1,0 +1,104 @@
+{
+  "enabled": true,
+  "preset": "aurora",
+  "presets": {
+    "aurora": {
+      "name": "Aurora (default)",
+      "palette": "aurora",
+      "mode": "drift",
+      "enabled": true
+    },
+    "ember": {
+      "name": "Ember",
+      "palette": "ember",
+      "mode": "drift",
+      "enabled": true
+    },
+    "lagoon": {
+      "name": "Lagoon",
+      "palette": "lagoon",
+      "mode": "drift",
+      "enabled": true
+    },
+    "bloom": {
+      "name": "Bloom",
+      "palette": "bloom",
+      "mode": "drift",
+      "enabled": true
+    },
+    "aurora-still": {
+      "name": "Aurora, still",
+      "palette": "aurora",
+      "mode": "static",
+      "enabled": true
+    },
+    "ember-still": {
+      "name": "Ember, still",
+      "palette": "ember",
+      "mode": "static",
+      "enabled": true
+    },
+    "lagoon-still": {
+      "name": "Lagoon, still",
+      "palette": "lagoon",
+      "mode": "static",
+      "enabled": true
+    },
+    "bloom-still": {
+      "name": "Bloom, still",
+      "palette": "bloom",
+      "mode": "static",
+      "enabled": true
+    },
+    "off": {
+      "name": "Off",
+      "enabled": false
+    }
+  },
+  "palette": "aurora",
+  "intensity": 0.8,
+  "speed": 1,
+  "mode": "drift",
+  "arrival": true,
+  "night": {
+    "from": "00:00",
+    "to": "06:00",
+    "intensity": 0.35,
+    "speed": 0.5
+  },
+  "lights": [],
+  "palettes": {
+    "aurora": {
+      "name": "Aurora",
+      "colors": [
+        "#19D3B5",
+        "#9472FF",
+        "#FF6F91"
+      ]
+    },
+    "ember": {
+      "name": "Ember",
+      "colors": [
+        "#FFA51F",
+        "#F0453A",
+        "#D8337A"
+      ]
+    },
+    "lagoon": {
+      "name": "Lagoon",
+      "colors": [
+        "#1FC8F0",
+        "#3A6BFF",
+        "#2ED585"
+      ]
+    },
+    "bloom": {
+      "name": "Bloom",
+      "colors": [
+        "#D946EF",
+        "#FF7A30",
+        "#FFC93C"
+      ]
+    }
+  }
+}

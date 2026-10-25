@@ -18,7 +18,9 @@ function armGuestIdle() {
 }
 
 function returnToGuest() {
-  if (!guestOn()) setGuest(true);
+  if (guestOn()) return;
+  setGuest(true);
+  if (window.ambient && typeof window.ambient.arrive === "function") window.ambient.arrive();
 }
 
 function guestOn() {

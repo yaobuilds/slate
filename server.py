@@ -63,6 +63,9 @@ ALLOWED_FILES = {
     "/data.json",
     "/apps.json",
     "/apps-catalog.json",
+    "/ambient.js",
+    "/ambient.css",
+    "/ambient.json",
 }
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")

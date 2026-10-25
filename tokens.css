@@ -47,10 +47,29 @@
   --target-min: 88;   /* smallest focusable element height */
 
   /* ---- motion ---- */
-  --t-focus: 120ms;   /* focus ring in/out; the only animation on the TV */
+  --t-focus: 120ms;   /* focus ring in/out; the only UI animation (the ambient light is background, SPEC 16) */
   --drift-max: 2;     /* burn-in drift, design px */
   --drift-x: 0;
   --drift-y: 0;
+
+  /* ---- ambient light (SPEC 16, optional step 4b). Decorative only, never information ---- */
+  --amb-glass:   rgba(24, 29, 37, 0.75);  /* tile/box glass; over plain ink it equals --sl-panel exactly */
+  --amb-glass-2: rgba(32, 39, 49, 0.75);  /* focused tile glass; over ink it equals --sl-panel-2 */
+  --amb-glass-box: rgba(23, 28, 35, 0.90); /* Dashboard boxes: denser glass, they hold 28px Stone rows; over ink it equals --sl-panel */
+  --amb-rim-w: 2;        /* lit rim width, design px */
+  --amb-rim-r: 520;      /* lit rim reach, design px */
+  --amb-face-r: 520;     /* face lift reach, design px */
+  --amb-shield: rgba(16, 20, 26, 0.92); /* ink pool under text blocks: light never sits behind text at full strength */
+  --amb-shield-soft: 56px;              /* its soft edge (painted once; the layer is static) */
+  --amb-intensity: 0.8;  /* default; 1 = the contrast-verified maximum */
+  --amb-night: 0.35;     /* ambient intensity from midnight to 6 AM */
+  --amb-arrival: 2500ms; /* arrival sweep, once per load */
+  --amb-loop-1: 67s; --amb-loop-2: 79s; --amb-loop-3: 89s;  /* drift loops */
+  /* palettes (source of truth: ambient.json) */
+  --amb-aurora-1: #19D3B5; --amb-aurora-2: #7C5CFF; --amb-aurora-3: #FF6F91;
+  --amb-ember-1:  #FFA51F; --amb-ember-2:  #F0453A; --amb-ember-3:  #D8337A;
+  --amb-lagoon-1: #1FC8F0; --amb-lagoon-2: #3A6BFF; --amb-lagoon-3: #2ED585;
+  --amb-bloom-1:  #D946EF; --amb-bloom-2:  #FF7A30; --amb-bloom-3:  #FFC93C;
 }
 
 @media (prefers-reduced-motion: reduce) {

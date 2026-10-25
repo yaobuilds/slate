@@ -26,6 +26,7 @@
   <title>Dashboard · TV</title>
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="ambient.css">
 </head>
 <body class="page-dashboard guest">
   <div id="stage" class="stage">
@@ -38,22 +39,23 @@
       </div>
     </header>
 
-    <section class="panel panel-today" id="panel-today" aria-labelledby="today-label">
+    <section class="panel box panel-today" id="panel-today" aria-labelledby="today-label">
       <h2 class="kicker" id="today-label">Today</h2>
       <ul class="rows" id="today-list"></ul>
     </section>
 
-    <section class="panel panel-deadlines" id="panel-deadlines" aria-labelledby="deadlines-label" hidden>
+    <section class="panel box panel-deadlines" id="panel-deadlines" aria-labelledby="deadlines-label" hidden>
       <h2 class="kicker" id="deadlines-label">Deadlines</h2>
       <ul class="rows" id="deadlines-list"></ul>
     </section>
 
-    <section class="panel panel-money" id="panel-money" aria-labelledby="money-label" hidden>
+    <section class="panel box panel-money" id="panel-money" aria-labelledby="money-label" hidden>
       <h2 class="kicker" id="money-label">Money</h2>
       <p class="money-note" id="money-note"></p>
     </section>
   </div>
   <script src="main.js"></script>
   <script src="dashboard.js"></script>
+  <script src="ambient.js"></script>
 </body>
 </html>

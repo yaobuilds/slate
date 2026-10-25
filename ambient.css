@@ -1,0 +1,43 @@
+/* Slate ambient light: ambient.css (SPEC 16). Optional layer, build step 4b.
+   Decorative background light only. Nothing here carries information.
+   Performance rules: no filter, no blur, no backdrop-filter, no blend modes.
+   The lights move with transform and fade with opacity only. Glass rims update about 5 times a second. */
+
+/* ---------- the light layer: sits under the stage, never takes input ---------- */
+.amb { position: fixed; inset: 0; overflow: hidden; pointer-events: none; z-index: 0; opacity: 0; transition: opacity var(--amb-fade, 0ms) linear; }
+.amb-frame { position: absolute; left: 50%; top: 50%; width: 1920px; height: 1080px; margin: -540px 0 0 -960px; transform: scale(var(--amb-k, 1)); }
+.amb-src, .amb-arr { position: absolute; left: 0; top: 0; width: 0; height: 0; will-change: transform, opacity; }
+.amb-glow { position: absolute; left: 0; top: 0; border-radius: 50%; }
+.amb-shields { position: absolute; inset: 0; }
+.amb-shield { position: absolute; border-radius: 64px; background: var(--amb-shield); box-shadow: 0 0 var(--amb-shield-soft) var(--amb-shield-soft) var(--amb-shield);  /* spread = blur, so the pool has no visible edge */ }
+.amb-band { position: absolute; left: -400px; right: -400px; bottom: -400px; background: linear-gradient(to bottom, transparent 0, var(--amb-shield) 140px); }
+.stage { z-index: 1; }
+.voice { z-index: 2; }
+
+/* ---------- glass: panels turn slightly translucent only while the layer is on.
+   The glass colors are chosen so that over plain ink they equal --sl-panel / --sl-panel-2 exactly,
+   so with the lights off nothing changes. ---------- */
+.amb-on .tile, .amb-on .box { background: var(--amb-glass); position: relative; z-index: 0; }
+.amb-on .box { background: var(--amb-glass-box); }
+.amb-on.show-focus .tile:focus, .amb-on.show-focus .tile.is-focus { background: var(--amb-glass-2); }
+
+/* face lift: a faint tint of the nearest light, under the content */
+.amb-on .tile::before, .amb-on .box::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; z-index: -1; pointer-events: none;
+  background: radial-gradient(calc(var(--amb-face-r) * 1px) circle at var(--amb-lx, 50%) var(--amb-ly, 50%), var(--amb-lf, transparent), transparent 100%);
+  opacity: var(--amb-lit, 0); transition: opacity 400ms linear;
+}
+/* lit rim: a thin colored edge where the light passes (2px ring, masked) */
+.amb-on .tile::after, .amb-on .box::after {
+  content: ""; position: absolute; border-radius: inherit; pointer-events: none;
+  inset: -2px; padding: calc(var(--amb-rim-w) * 1px);
+  background: radial-gradient(calc(var(--amb-rim-r) * 1px) circle at var(--amb-lx, 50%) var(--amb-ly, 50%), var(--amb-lc, transparent), transparent 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor; mask-composite: exclude;
+  opacity: var(--amb-lit, 0); transition: opacity 400ms linear;
+}
+/* boxes clip their content (overflow: hidden), so their rim sits just inside the 2px border */
+.amb-on .box::after { inset: 0; border-radius: inherit; }
+/* The app stage is an opaque sheet. Clear it only while the lights are on. */
+body.amb-on .stage { background: transparent; }
+.amb-on .box::before { opacity: calc(var(--amb-lit, 0) * 0.5); }   /* big text panels: half the face lift */

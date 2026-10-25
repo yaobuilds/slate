@@ -1,15 +1,17 @@
 const TZ = "America/New_York";
-const BURN_MS = 3 * 60 * 1000;
-const BURN_OFFSETS = [
-  [1, 0],
-  [2, 1],
-  [1, 2],
-  [0, 1],
-  [2, 0],
+const DRIFT_MS = 3 * 60 * 1000;
+const DRIFT = [
+  [0, 0],
   [1, 1],
+  [2, 0],
+  [1, -1],
+  [0, -2],
+  [-1, -1],
+  [-2, 0],
+  [-1, 1],
   [0, 2],
-  [2, 2],
 ];
+const FOCUS_IDLE_MS = 15 * 1000;
 
 const stage = document.getElementById("stage");
 const hmEl = document.getElementById("clock-hm");
@@ -46,56 +48,21 @@ function renderClock() {
   dateEl.textContent = dateFormat.format(now);
 }
 
+let driftIndex = 0;
+
+function shiftTerm(px) {
+  if (px === 0) return "-50%";
+  const text = Number(Math.abs(px).toFixed(4)).toString();
+  return px > 0 ? `calc(-50% + ${text}px)` : `calc(-50% - ${text}px)`;
+}
+
 function fitStage() {
   const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
-  const step = Math.floor(Date.now() / BURN_MS) % BURN_OFFSETS.length;
-  const [x, y] = BURN_OFFSETS[step];
+  const [x, y] = DRIFT[driftIndex];
+  document.documentElement.style.setProperty("--drift-x", String(x));
+  document.documentElement.style.setProperty("--drift-y", String(y));
   stage.style.transform =
-    `translate(calc(-50% + ${x}px), calc(-50% + ${y}px)) scale(${scale})`;
-}
-
-function focusables() {
-  return [...document.querySelectorAll("[data-focus]")].filter((el) => {
-    if (el.hidden) return false;
-    const style = getComputedStyle(el);
-    return style.display !== "none" && style.visibility !== "hidden";
-  });
-}
-
-function center(el) {
-  const box = el.getBoundingClientRect();
-  return { x: box.left + box.width / 2, y: box.top + box.height / 2 };
-}
-
-function moveFocus(direction) {
-  const items = focusables();
-  if (!items.length) return;
-  const current = items.includes(document.activeElement) ? document.activeElement : null;
-  if (!current) {
-    items[0].focus();
-    return;
-  }
-  const from = center(current);
-  let best = null;
-  let bestScore = Infinity;
-  for (const el of items) {
-    if (el === current) continue;
-    const to = center(el);
-    const dx = to.x - from.x;
-    const dy = to.y - from.y;
-    if (direction === "left" && dx >= -4) continue;
-    if (direction === "right" && dx <= 4) continue;
-    if (direction === "up" && dy >= -4) continue;
-    if (direction === "down" && dy <= 4) continue;
-    const primary = direction === "left" || direction === "right" ? Math.abs(dx) : Math.abs(dy);
-    const secondary = direction === "left" || direction === "right" ? Math.abs(dy) : Math.abs(dx);
-    const score = primary + secondary * 2;
-    if (score < bestScore) {
-      bestScore = score;
-      best = el;
-    }
-  }
-  if (best) best.focus();
+    `translate(${shiftTerm(x * scale)}, ${shiftTerm(y * scale)}) scale(${scale})`;
 }
 
 function tileText(value) {
@@ -244,44 +211,85 @@ async function loadTiles() {
   await paintTileIcons(built);
 }
 
+const BACK_KEYS = new Set(["Escape", "Backspace", "BrowserBack", "GoBack"]);
+const BACK_CODES = new Set([461, 10009]);
+const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"]);
+let idleTimer = 0;
+
+function onDashboard() {
+  return document.body.classList.contains("page-dashboard");
+}
+
+function showFocus(on) {
+  document.body.classList.toggle("show-focus", on);
+}
+
+function bumpIdle() {
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(() => showFocus(false), FOCUS_IDLE_MS);
+}
+
 document.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA") return;
+  if (MODIFIER_KEYS.has(event.key)) return;
 
-  const tiles = homeTiles();
-  if (tiles.length) {
-    const key = event.key;
-    if (key === "ArrowUp" || key === "ArrowDown") {
-      event.preventDefault();
-      return;
+  const key = event.key;
+  const dash = onDashboard();
+
+  if (key === "g" || key === "G") {
+    if (dash) {
+      showFocus(true);
+      bumpIdle();
     }
-    if (key === "ArrowLeft" || key === "ArrowRight") {
-      event.preventDefault();
-      let index = tiles.indexOf(document.activeElement);
-      if (index < 0) index = 0;
-      else if (key === "ArrowRight") index = Math.min(index + 1, tiles.length - 1);
-      else index = Math.max(index - 1, 0);
-      tiles[index].focus({ preventScroll: true });
-      return;
-    }
-    if (key === "Enter" && document.activeElement && document.activeElement.classList.contains("tile")) {
-      event.preventDefault();
-      openTile(document.activeElement);
-      return;
-    }
+    return;
   }
 
-  const direction = {
-    ArrowLeft: "left",
-    ArrowRight: "right",
-    ArrowUp: "up",
-    ArrowDown: "down",
-  }[event.key];
-  if (!direction) return;
+  if (BACK_KEYS.has(key) || BACK_CODES.has(event.keyCode)) {
+    event.preventDefault();
+    if (dash) location.href = "index.html";
+    return;
+  }
+
+  const arrow = key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
+  const select = key === "Enter";
+  if (!arrow && !select) {
+    showFocus(true);
+    bumpIdle();
+    return;
+  }
+
   event.preventDefault();
-  moveFocus(direction);
+  const wasHidden = !document.body.classList.contains("show-focus");
+  showFocus(true);
+  bumpIdle();
+  if (wasHidden) return;
+
+  if (dash) {
+    if (select) location.href = "index.html";
+    return;
+  }
+
+  const tiles = homeTiles();
+  if (key === "ArrowUp" || key === "ArrowDown") return;
+  if (select) {
+    const active = document.activeElement;
+    if (active && active.classList.contains("tile")) openTile(active);
+    else if (active && typeof active.click === "function") active.click();
+    return;
+  }
+  if (!tiles.length) return;
+  let index = tiles.indexOf(document.activeElement);
+  if (index < 0) index = 0;
+  else if (key === "ArrowRight") index = Math.min(index + 1, tiles.length - 1);
+  else index = Math.max(index - 1, 0);
+  tiles[index].focus({ preventScroll: true });
 });
+
+document.addEventListener("mousemove", () => {
+  document.body.classList.add("has-mouse");
+}, { once: true });
 
 if (hmEl && secEl && ampmEl && dateEl) {
   renderClock();
@@ -290,8 +298,16 @@ if (hmEl && secEl && ampmEl && dateEl) {
 
 if (stage) {
   fitStage();
-  setInterval(fitStage, BURN_MS);
+  setInterval(() => {
+    driftIndex = (driftIndex + 1) % DRIFT.length;
+    fitStage();
+  }, DRIFT_MS);
   window.addEventListener("resize", fitStage);
+}
+
+if (onDashboard()) {
+  const homeLink = document.querySelector("a.nav-link[href='index.html']");
+  if (homeLink) homeLink.focus({ preventScroll: true });
 }
 
 const WEATHER_URL =
@@ -378,7 +394,7 @@ function hourLabel(date) {
 }
 
 function wmo(code, isDay) {
-  if (typeof code !== "number" || !Number.isFinite(code)) return ["", ""];
+  if (typeof code !== "number" || !Number.isFinite(code)) return ["cloudoff", "Unknown"];
   const day = isDay === 1 || isDay === true;
   if (code === 0) return [day ? "sun" : "moon", "Clear"];
   if (code === 1) return [day ? "sun" : "moon", "Mostly clear"];
@@ -390,7 +406,7 @@ function wmo(code, isDay) {
   if (code >= 80 && code <= 82) return ["rain", "Showers"];
   if ((code >= 71 && code <= 77) || code === 85 || code === 86) return ["snow", "Snow"];
   if (code >= 95 && code <= 99) return ["storm", "Storms"];
-  return ["cloud", ""];
+  return ["cloudoff", "Unknown"];
 }
 
 function finiteNumber(value) {
@@ -464,7 +480,7 @@ function readWeatherCache() {
     const saved = JSON.parse(sessionStorage.getItem(WEATHER_CACHE_KEY) || "null");
     if (!saved || !weatherOk(saved.wx) || !finiteNumber(saved.goodAt)) return;
     const age = Date.now() - saved.goodAt;
-    if (age < -60 * 1000 || age > WEATHER_DROP_MS) return;
+    if (age < -60 * 1000 || age >= WEATHER_DROP_MS) return;
     wx = saved.wx;
     wxGoodAt = saved.goodAt;
   } catch (err) {
@@ -574,8 +590,8 @@ async function renderWeather() {
   if (!wxBox && !dwx) return;
   const gen = ++wxRenderGen;
   const age = weatherAge(Date.now());
-  const dropped = age > WEATHER_DROP_MS;
-  const stale = !dropped && age > WEATHER_STALE_MS;
+  const dropped = age >= WEATHER_DROP_MS;
+  const stale = !dropped && age >= WEATHER_STALE_MS;
   const current = !dropped && wx ? wx.current : null;
   const temp = current ? degrees(current.temperature_2m) : "";
   const mapped = current && temp ? wmo(current.weather_code, current.is_day) : ["", ""];
@@ -604,7 +620,9 @@ async function renderWeather() {
   if (gen !== wxRenderGen) return;
 
   if (wxBox) {
-    if (!temp) {
+    const unavailable = !temp;
+    wxBox.classList.toggle("is-unavailable", unavailable);
+    if (unavailable) {
       applyIcon(wxIcon, "", "");
       setText(wxTemp, "");
       setText(wxCond, "");
@@ -647,11 +665,15 @@ async function loadWeather() {
 if (wxBox || dwx) {
   readWeatherCache();
   if (wx) renderWeather();
+}
+if (wxBox) {
   loadWeather();
   setInterval(() => {
     if (Date.now() - wxTriedAt >= WEATHER_EVERY_MS) loadWeather();
     else renderWeather();
   }, WEATHER_TICK_MS);
+} else if (dwx) {
+  setInterval(renderWeather, WEATHER_TICK_MS);
 }
 
 loadTiles();

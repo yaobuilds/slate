@@ -1,38 +1,34 @@
 const REFRESH_MS = 60 * 1000;
-const GUEST_KEY = "tv-guest";
 
 const guestFlag = document.getElementById("guest-flag");
 const todayList = document.getElementById("today-list");
 const deadlinesList = document.getElementById("deadlines-list");
 const moneyNote = document.getElementById("money-note");
-const todayPanel = document.getElementById("panel-today");
+const deadlinesPanel = document.getElementById("panel-deadlines");
+const moneyPanel = document.getElementById("panel-money");
 
-let hasData = false;
+let data = null;
+let dataRaw = "";
 
-function readGuest() {
-  try {
-    return sessionStorage.getItem(GUEST_KEY) === "1";
-  } catch (err) {
-    return false;
-  }
+function guestOn() {
+  return document.body.classList.contains("guest");
 }
 
-function writeGuest(on) {
-  try {
-    sessionStorage.setItem(GUEST_KEY, on ? "1" : "0");
-  } catch (err) {
-    /* Keep the mode for this page view when storage is blocked. */
+function clearPrivate() {
+  if (deadlinesList) deadlinesList.replaceChildren();
+  if (moneyNote) {
+    moneyNote.textContent = "";
+    moneyNote.classList.remove("empty");
   }
 }
 
 function setGuest(on) {
-  document.body.classList.toggle("is-guest", on);
-  guestFlag.hidden = !on;
-  writeGuest(on);
-  const active = document.activeElement;
-  if (on && active && active.classList.contains("panel") && !active.offsetParent) {
-    todayPanel.focus();
-  }
+  document.body.classList.toggle("guest", on);
+  if (deadlinesPanel) deadlinesPanel.hidden = on;
+  if (moneyPanel) moneyPanel.hidden = on;
+  if (guestFlag) guestFlag.hidden = !on;
+  if (on) clearPrivate();
+  else if (data) renderPrivate(data);
 }
 
 function asList(value) {
@@ -75,36 +71,35 @@ function fillList(list, items, emptyMessage, metaKey, titleKey) {
   list.replaceChildren(...(rows.length ? rows : [emptyItem(emptyMessage)]));
 }
 
-function render(data) {
-  const today = asList(data.today);
-  const deadlines = asList(data.deadlines);
-  const money = data.money && typeof data.money === "object" ? data.money : {};
-  fillList(todayList, today, "Nothing on today", "time", "title");
-  fillList(deadlinesList, deadlines, "No deadlines", "due", "title");
-  const note = text(money.note);
-  moneyNote.textContent = note || "Nothing noted";
-  moneyNote.classList.toggle("empty", !note);
+function renderToday(payload) {
+  fillList(todayList, asList(payload.today), "Nothing today", "time", "title");
 }
 
-function showError() {
-  todayList.replaceChildren(emptyItem("Could not load the dashboard"));
-  deadlinesList.replaceChildren();
-  moneyNote.textContent = "";
+function renderPrivate(payload) {
+  const deadlines = asList(payload.deadlines);
+  const money = payload.money && typeof payload.money === "object" ? payload.money : {};
+  fillList(deadlinesList, deadlines, "No deadlines coming up", "due", "title");
+  const note = text(money.note);
+  moneyNote.textContent = note || "No money update yet";
+  moneyNote.classList.toggle("empty", !note);
 }
 
 async function loadData() {
   try {
     const response = await fetch("data.json", { cache: "no-store" });
     if (!response.ok) throw new Error(String(response.status));
-    const data = await response.json();
-    render(data);
-    hasData = true;
+    const raw = await response.text();
+    if (raw === dataRaw) return;
+    const next = JSON.parse(raw);
+    dataRaw = raw;
+    data = next;
+    renderToday(data);
+    if (!guestOn()) renderPrivate(data);
   } catch (err) {
-    if (!hasData) showError();
+    /* Keep the last good boxes. A miss must not blank the screen. */
   }
 }
 
-setGuest(readGuest());
 loadData();
 setInterval(loadData, REFRESH_MS);
 
@@ -114,5 +109,5 @@ document.addEventListener("keydown", (event) => {
   const tag = document.activeElement && document.activeElement.tagName;
   if (tag === "INPUT" || tag === "TEXTAREA") return;
   event.preventDefault();
-  setGuest(!document.body.classList.contains("is-guest"));
+  setGuest(!guestOn());
 });

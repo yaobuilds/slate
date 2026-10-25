@@ -8,28 +8,28 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
 </head>
-<body class="page-dashboard">
+<body class="page-dashboard guest">
   <div id="stage" class="stage">
     <header class="nav">
       <a class="nav-link" href="index.html" data-focus>Home</a>
-      <a class="nav-link is-current" href="dashboard.html" aria-current="page" data-focus>Dashboard</a>
+      <a class="nav-link is-current" href="dashboard.html" aria-current="page" tabindex="-1">Dashboard</a>
       <div class="nav-end">
         <p class="dwx" id="dwx"></p>
-        <p class="guest-flag" id="guest-flag" hidden>Guest</p>
+        <p class="guest-flag" id="guest-flag">Guest mode</p>
       </div>
     </header>
 
-    <section class="panel panel-today" id="panel-today" data-focus tabindex="0" aria-labelledby="today-label">
+    <section class="panel panel-today" id="panel-today" aria-labelledby="today-label">
       <h2 class="kicker" id="today-label">Today</h2>
       <ul class="rows" id="today-list"></ul>
     </section>
 
-    <section class="panel panel-deadlines" id="panel-deadlines" data-focus tabindex="0" aria-labelledby="deadlines-label">
+    <section class="panel panel-deadlines" id="panel-deadlines" aria-labelledby="deadlines-label" hidden>
       <h2 class="kicker" id="deadlines-label">Deadlines</h2>
       <ul class="rows" id="deadlines-list"></ul>
     </section>
 
-    <section class="panel panel-money" id="panel-money" data-focus tabindex="0" aria-labelledby="money-label">
+    <section class="panel panel-money" id="panel-money" aria-labelledby="money-label" hidden>
       <h2 class="kicker" id="money-label">Money</h2>
       <p class="money-note" id="money-note"></p>
     </section>

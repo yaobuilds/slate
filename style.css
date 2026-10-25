@@ -17,12 +17,19 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  overflow: clip;
   background: var(--bg);
   color: var(--text);
   color-scheme: dark;
   font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
   user-select: none;
   -webkit-user-select: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  overscroll-behavior: none;
 }
 
 .stage {
@@ -33,6 +40,7 @@ body {
   height: 1080px;
   transform: translate(-50%, -50%);
   transform-origin: center center;
+  transition: none;
   display: grid;
   gap: 28px 36px;
   padding: 36px 64px 52px;
@@ -57,7 +65,7 @@ body {
     "today deadlines money";
 }
 
-.page-dashboard.is-guest .stage {
+.page-dashboard.guest .stage {
   grid-template-areas:
     "nav nav nav"
     "today today today";
@@ -86,10 +94,16 @@ body {
   color: var(--accent);
 }
 
+.nav-link:focus,
 .nav-link:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
+  outline: 6px solid transparent;
+  outline-offset: 6px;
   border-radius: 8px;
+}
+
+body.show-focus .nav-link:focus,
+body.show-focus .nav-link:focus-visible {
+  outline-color: var(--sl-ice);
 }
 
 .hero {
@@ -280,6 +294,12 @@ body {
   color: var(--sl-text-2);
 }
 
+.weather.is-unavailable .wx-place,
+.weather.is-unavailable .wx-now,
+.weather.is-unavailable .wx-hours {
+  display: none;
+}
+
 .nav-end {
   margin-left: auto;
   display: flex;
@@ -341,6 +361,10 @@ body {
 }
 
 .tile:focus {
+  outline-color: transparent;
+}
+
+body.show-focus .tile:focus {
   outline-color: var(--sl-ice);
   background: var(--sl-panel-2);
   transform: translateY(-8px);
@@ -352,7 +376,7 @@ body {
   stroke-width: 1.5;
 }
 
-.tile:focus .i {
+body.show-focus .tile:focus .i {
   color: var(--sl-ice);
 }
 
@@ -446,18 +470,38 @@ body {
   box-shadow: inset 0 0 0 1px var(--line);
 }
 
+.panel:focus,
 .panel:focus-visible {
-  outline: 3px solid var(--accent);
-  outline-offset: 4px;
+  outline: 6px solid transparent;
+  outline-offset: 6px;
+}
+
+body.show-focus .panel:focus,
+body.show-focus .panel:focus-visible {
+  outline-color: var(--sl-ice);
 }
 
 .panel-today { grid-area: today; }
 .panel-deadlines { grid-area: deadlines; }
 .panel-money { grid-area: money; }
 
-.page-dashboard.is-guest .panel-deadlines,
-.page-dashboard.is-guest .panel-money {
+.page-dashboard.guest .panel-deadlines,
+.page-dashboard.guest .panel-money {
   display: none;
+}
+
+body:not(.has-mouse),
+body:not(.has-mouse) * {
+  cursor: none;
+}
+
+body.has-mouse,
+body.has-mouse * {
+  cursor: auto;
+}
+
+body.has-mouse .tile {
+  cursor: pointer;
 }
 
 .panel .kicker {

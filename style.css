@@ -1,10 +1,9 @@
 :root {
-  --bg: #0F0F12;
-  --text: #E0D3BB;
-  --accent: #5FA39A;
-  --panel: #17171C;
-  --muted: rgba(224, 211, 187, 0.42);
-  --line: rgba(224, 211, 187, 0.08);
+  --bg: var(--sl-ink);
+  --text: var(--sl-text);
+  --panel: var(--sl-panel);
+  --muted: var(--sl-text-2);
+  --line: var(--sl-line);
 }
 
 * {
@@ -32,7 +31,8 @@ body {
   overscroll-behavior: none;
 }
 
-/* Midnight to 6 AM New York time. A 40% black layer leaves about 60% brightness. */
+/* Midnight to 6 AM New York time. This 40% veil is the only dim on the text.
+   The ambient night level dims the lights behind the page, not the type. */
 html.night body::after {
   content: "";
   position: fixed;
@@ -41,6 +41,17 @@ html.night body::after {
   opacity: 0.4;
   pointer-events: none;
   z-index: 5;
+}
+
+html.night .stage,
+html.night .clock,
+html.night .date,
+html.night .nav,
+html.night .panel,
+html.night .tile,
+html.night .weather {
+  opacity: 1;
+  filter: none;
 }
 
 .stage {
@@ -94,7 +105,7 @@ html.night body::after {
   align-items: center;
   min-height: 72px;
   padding: 0 8px;
-  color: var(--text);
+  color: var(--sl-text-2);
   font-size: 32px;
   font-weight: 560;
   letter-spacing: 0.01em;
@@ -102,7 +113,7 @@ html.night body::after {
 }
 
 .nav-link.is-current {
-  color: var(--accent);
+  color: var(--sl-text);
 }
 
 .nav-link:focus,
@@ -140,7 +151,7 @@ body.show-focus .nav-link:focus-visible {
   font-size: 56px;
   font-weight: 500;
   letter-spacing: 0;
-  color: var(--muted);
+  color: var(--sl-text-2);
   margin-left: 4px;
 }
 
@@ -149,7 +160,7 @@ body.show-focus .nav-link:focus-visible {
   font-size: 64px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--accent);
+  color: var(--sl-text-2);
 }
 
 .date {
@@ -157,7 +168,7 @@ body.show-focus .nav-link:focus-visible {
   font-size: 48px;
   font-weight: 540;
   letter-spacing: 0.005em;
-  color: var(--accent);
+  color: var(--sl-text);
 }
 
 /* Design px inside the 1920 stage. The stage is scaled as a whole, so these are not multiplied by --px. */
@@ -178,11 +189,10 @@ body.show-focus .nav-link:focus-visible {
 
 .kicker {
   margin: 0;
-  font-size: 22px;
   font-weight: 650;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--accent);
+  color: var(--sl-text-2);
 }
 
 .weather .i,
@@ -283,11 +293,14 @@ body.show-focus .nav-link:focus-visible {
 
 .wx-stale {
   display: none;
+  align-self: flex-end;
   align-items: center;
+  justify-content: flex-end;
   gap: 12px;
   margin: 18px 0 0;
   font-size: 24px;
   line-height: 1.2;
+  text-align: right;
   color: var(--sl-text-2);
 }
 
@@ -468,7 +481,7 @@ body.show-focus .tile:focus .i {
   font-size: 32px;
   font-weight: 600;
   letter-spacing: 0.04em;
-  color: var(--accent);
+  color: var(--sl-text-2);
 }
 
 .panel {
@@ -544,7 +557,7 @@ body.has-mouse .tile {
 .row-meta {
   font-size: 34px;
   font-weight: 600;
-  color: var(--accent);
+  color: var(--sl-text-2);
   font-variant-numeric: tabular-nums;
 }
 

@@ -156,7 +156,7 @@ function homeTiles() {
 
 function openTile(tile) {
   const url = tile && tile.dataset.url;
-  if (url) location.href = url;
+  if (url === "dashboard.html") location.href = url;
 }
 
 function renderTileList(apps) {

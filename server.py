@@ -2,6 +2,7 @@
 """Serve the TV dashboard and publish data.local.json as data.json."""
 
 import argparse
+import hashlib
 import hmac
 import json
 import os
@@ -35,11 +36,12 @@ PLACEHOLDER = {
     "money": {"note": "No bills due this week"},
 }
 
-PUBLISH_LOCK = threading.Lock()
+PUBLISH_LOCK = threading.RLock()
 STATE_LOCK = threading.Lock()
 SESSIONS = set()
 FAILS = {}
 EXPECTED_PIN = ""
+FULL_PAYLOAD = None
 
 
 def write_public(text: str) -> None:
@@ -50,24 +52,54 @@ def write_public(text: str) -> None:
     PUBLIC.write_text(text, encoding="utf-8")
 
 
+def guest_schedule(payload: dict) -> dict:
+    """What Home and guest mode may see. Event titles are Busy, never the real words."""
+    today = []
+    for item in payload.get("today") or []:
+        if not isinstance(item, dict):
+            continue
+        when = item.get("time") if isinstance(item.get("time"), str) else ""
+        title = item.get("title") if isinstance(item.get("title"), str) else ""
+        if not when.strip() and not title.strip():
+            continue
+        today.append({"time": when, "title": "Busy"})
+    updated = payload.get("updated") if isinstance(payload.get("updated"), str) else ""
+    return {"updated": updated, "today": today, "deadlines": [], "money": {}}
+
+
 def publish_data() -> None:
-    """Copy data.local.json onto data.json. Otherwise publish placeholder text."""
+    """Keep the full schedule in memory. The file on disk is the guest copy."""
+    global FULL_PAYLOAD
     with PUBLISH_LOCK:
+        payload = None
         if LOCAL.exists():
             try:
-                text = LOCAL.read_text(encoding="utf-8")
-                json.loads(text)
+                loaded = json.loads(LOCAL.read_text(encoding="utf-8"))
+                if not isinstance(loaded, dict):
+                    raise json.JSONDecodeError("not an object", "", 0)
+                payload = loaded
             except (OSError, json.JSONDecodeError):
                 print(
                     "data.local.json was not published: the file could not be read as JSON",
                     file=sys.stderr,
                 )
-                if not PUBLIC.exists():
-                    write_public(json.dumps(PLACEHOLDER, indent=2))
+                if FULL_PAYLOAD is None and not PUBLIC.exists():
+                    FULL_PAYLOAD = PLACEHOLDER
+                    write_public(json.dumps(guest_schedule(PLACEHOLDER), indent=2))
                 return
-            write_public(text)
-            return
-        write_public(json.dumps(PLACEHOLDER, indent=2))
+        else:
+            payload = PLACEHOLDER
+        FULL_PAYLOAD = payload
+        write_public(json.dumps(guest_schedule(payload), indent=2))
+
+
+def pin_matches(offered) -> bool:
+    """Constant-time check. The length of a wrong PIN does not skip the compare."""
+    raw = offered if isinstance(offered, str) else ""
+    left = hashlib.sha256(raw.encode("utf-8")).digest()
+    right = hashlib.sha256(EXPECTED_PIN.encode("utf-8")).digest()
+    same = hmac.compare_digest(left, right)
+    return bool(PIN_RE.fullmatch(raw)) and same
 
 
 ALLOWED_FILES = {
@@ -224,21 +256,25 @@ class Handler(SimpleHTTPRequestHandler):
             return True
         return session_ok(self.cookie("slate"))
 
-    def guard(self, path):
-        """Return True when this request may continue. A private file on Wi-Fi needs the PIN."""
-        if path == "/data.json" and not self.pin_ok():
+    def serve_schedule(self):
+        """Guest view is Busy. The real titles need the PIN on Wi-Fi and Show all."""
+        if not self.pin_ok():
             self.send_json(401, {"error": "pin"})
-            return False
-        if path == "/data.json":
+            return
+        with PUBLISH_LOCK:
             publish_data()
-        return True
+            payload = FULL_PAYLOAD if isinstance(FULL_PAYLOAD, dict) else PLACEHOLDER
+            full = self.headers.get("X-Slate-Full", "") == "1"
+            body = payload if full else guest_schedule(payload)
+        self.send_json(200, body)
 
     def do_GET(self):
         path = public_path(self.path)
         if path is None or not path_allowed(path):
             self.reject()
             return
-        if not self.guard(path):
+        if path == "/data.json":
+            self.serve_schedule()
             return
         super().do_GET()
 
@@ -247,7 +283,8 @@ class Handler(SimpleHTTPRequestHandler):
         if path is None or not path_allowed(path):
             self.reject()
             return
-        if not self.guard(path):
+        if path == "/data.json":
+            self.serve_schedule()
             return
         super().do_HEAD()
 
@@ -283,12 +320,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         obj = self.read_object()
         offered = obj.get("pin") if obj is not None and set(obj) == {"pin"} else ""
-        if (
-            not isinstance(offered, str)
-            or not PIN_RE.fullmatch(offered)
-            or len(offered) != len(EXPECTED_PIN)
-            or not hmac.compare_digest(offered, EXPECTED_PIN)
-        ):
+        if not pin_matches(offered):
             note_fail(ip)
             self.send_json(401, {"error": "pin"})
             return
@@ -386,6 +418,8 @@ def main() -> None:
     else:
         print("This Mac only. For a phone on the same Wi-Fi, run: python3 server.py --lan")
     print("Do not forward port 8000.")
+    print("The PIN over http is a convenience lock, not security.")
+    print("Leave this Mac awake. If it sleeps, the page stops.")
 
     threads = []
     for server in servers:

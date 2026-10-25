@@ -15,6 +15,7 @@ const moneyPanel = document.getElementById("panel-money");
 let data = null;
 let dataRaw = "";
 let guestIdleTimer = 0;
+let loadGen = 0;
 
 function armGuestIdle() {
   clearTimeout(guestIdleTimer);
@@ -46,14 +47,26 @@ function syncGuestToggle() {
   guestToggle.setAttribute("aria-pressed", on ? "false" : "true");
 }
 
+function scrubToday() {
+  if (!todayList) return;
+  todayList.querySelectorAll(".row-title").forEach((el) => {
+    if (el.textContent) el.textContent = "Busy";
+  });
+}
+
 function setGuest(on) {
   document.body.classList.toggle("guest", on);
   if (deadlinesPanel) deadlinesPanel.hidden = on;
   if (moneyPanel) moneyPanel.hidden = on;
   if (guestFlag) guestFlag.hidden = !on;
   syncGuestToggle();
-  if (on) clearPrivate();
-  else if (data) renderPrivate(data);
+  if (on) {
+    clearPrivate();
+    scrubToday();
+    data = null;
+    dataRaw = "";
+  }
+  loadData();
 }
 
 function showPin(message) {
@@ -68,6 +81,7 @@ function hidePin() {
   if (!pinForm) return;
   pinForm.hidden = true;
   if (pinError) pinError.textContent = "";
+  if (pinInput) pinInput.blur();
 }
 
 function asList(value) {
@@ -110,8 +124,19 @@ function fillList(list, items, emptyMessage, metaKey, titleKey) {
   list.replaceChildren(...(rows.length ? rows : [emptyItem(emptyMessage)]));
 }
 
+function shownTitle(item) {
+  const title = text(item.title);
+  if (!guestOn()) return title;
+  if (!text(item.time) && !title) return "";
+  return "Busy";
+}
+
 function renderToday(payload) {
-  fillList(todayList, asList(payload.today), "Nothing today", "time", "title");
+  const items = asList(payload.today).map((item) => ({
+    time: text(item.time),
+    title: shownTitle(item),
+  }));
+  fillList(todayList, items, "Nothing today", "time", "title");
 }
 
 function renderPrivate(payload) {
@@ -124,21 +149,33 @@ function renderPrivate(payload) {
 }
 
 async function loadData() {
+  const gen = ++loadGen;
+  const full = !guestOn();
   try {
-    const response = await fetch("data.json", { cache: "no-store" });
+    const response = await fetch("data.json", {
+      cache: "no-store",
+      headers: full ? { "X-Slate-Full": "1" } : {},
+    });
+    if (gen !== loadGen || full !== !guestOn()) return;
     if (response.status === 401) {
+      data = null;
+      dataRaw = "";
+      clearPrivate();
+      if (todayList) todayList.replaceChildren();
       showPin("");
       return;
     }
     if (!response.ok) throw new Error(String(response.status));
     hidePin();
     const raw = await response.text();
+    if (gen !== loadGen || full !== !guestOn()) return;
     if (raw === dataRaw) return;
     const next = JSON.parse(raw);
+    if (full && guestOn()) return;
     dataRaw = raw;
-    data = next;
-    renderToday(data);
-    if (!guestOn()) renderPrivate(data);
+    data = full ? next : null;
+    renderToday(next);
+    if (!guestOn()) renderPrivate(next);
   } catch (err) {
     /* Keep the last good boxes. A miss must not blank the screen. */
   }

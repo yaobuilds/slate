@@ -65,13 +65,22 @@ function shiftTerm(px) {
   return px > 0 ? `calc(-50% + ${text}px)` : `calc(-50% - ${text}px)`;
 }
 
+const TV_LAYOUT = window.matchMedia("(min-width: 1280px) and (min-height: 720px) and (min-aspect-ratio: 16/9)");
+
 function fitStage() {
-  const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
   const [x, y] = DRIFT[driftIndex];
   document.documentElement.style.setProperty("--drift-x", String(x));
   document.documentElement.style.setProperty("--drift-y", String(y));
-  stage.style.transform =
-    `translate(${shiftTerm(x * scale)}, ${shiftTerm(y * scale)}) scale(${scale})`;
+  if (TV_LAYOUT.matches) {
+    const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
+    document.documentElement.dataset.layout = "tv";
+    stage.style.transform =
+      `translate(${shiftTerm(x * scale)}, ${shiftTerm(y * scale)}) scale(${scale})`;
+    return;
+  }
+  const phone = window.matchMedia("(max-width: 759px), (max-height: 500px) and (orientation: landscape)").matches;
+  document.documentElement.dataset.layout = phone ? "phone" : "laptop";
+  stage.style.transform = "none";
 }
 
 function tileText(value) {
@@ -263,6 +272,14 @@ document.addEventListener("keydown", (event) => {
 
   const arrow = key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
   const select = key === "Enter";
+  if (select && dash) {
+    const active = document.activeElement;
+    if (active && active.id === "guest-toggle") {
+      showFocus(true);
+      bumpIdle();
+      return;
+    }
+  }
   if (!arrow && !select) {
     showFocus(true);
     bumpIdle();
@@ -310,6 +327,7 @@ if (stage) {
     fitStage();
   }, DRIFT_MS);
   window.addEventListener("resize", fitStage);
+  if (TV_LAYOUT.addEventListener) TV_LAYOUT.addEventListener("change", fitStage);
 }
 
 if (onDashboard()) {
@@ -445,15 +463,24 @@ function setText(el, text) {
   if (el && el.textContent !== text) el.textContent = text;
 }
 
+function localSvg(text) {
+  /* Icons are chosen from ICON_FILES and loaded from assets/icons only. */
+  if (typeof text !== "string" || !text.includes("<svg") || text.length > 20000) return "";
+  const lower = text.toLowerCase();
+  if (lower.includes("<script") || lower.includes("foreignobject") || lower.includes("javascript:") || /on[a-z]+\s*=/.test(lower)) {
+    return "";
+  }
+  return text.replace("<svg ", '<svg class="i" focusable="false" aria-hidden="true" ');
+}
+
 async function ensureIcon(name) {
   if (!ICON_FILES.has(name)) return "";
   if (iconSvg.has(name)) return iconSvg.get(name);
   try {
     const response = await fetch(`assets/icons/${name}.svg`);
     if (!response.ok) throw new Error(String(response.status));
-    const text = await response.text();
-    if (!text.includes("<svg")) throw new Error("bad icon");
-    const svg = text.replace("<svg ", '<svg class="i" focusable="false" aria-hidden="true" ');
+    const svg = localSvg(await response.text());
+    if (!svg) throw new Error("bad icon");
     iconSvg.set(name, svg);
     return svg;
   } catch (err) {

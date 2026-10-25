@@ -1,4 +1,5 @@
 data.local.json
 data.json
+pin.local
 __pycache__/
 .DS_Store

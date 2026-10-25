@@ -568,3 +568,636 @@ body.has-mouse .tile {
   font-size: 36px;
   color: var(--muted);
 }
+
+/* Phone and Mac window. The 16:9 TV frame (1280×720 and up) stays as it is. */
+.hint-touch {
+  display: none;
+}
+
+.guest-toggle {
+  display: none;
+  appearance: none;
+  -webkit-appearance: none;
+  margin: 0;
+  border: 2px solid var(--sl-line);
+  border-radius: 999px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font: 600 18px/1 var(--sl-font);
+  min-height: 48px;
+  padding: 0 18px;
+  touch-action: manipulation;
+}
+
+.tile,
+.nav-link,
+.pin-form button {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.pin-form {
+  position: fixed;
+  z-index: 8;
+  left: 50%;
+  top: max(24px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px - env(safe-area-inset-left) - env(safe-area-inset-right)));
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 0;
+  padding: 24px 22px 22px;
+  border: 2px solid var(--sl-line);
+  border-radius: 20px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.45);
+}
+
+.pin-form[hidden] {
+  display: none;
+}
+
+.pin-title {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.pin-label {
+  font-size: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sl-text-2);
+}
+
+.pin-form input {
+  width: 100%;
+  min-height: 56px;
+  margin: 0;
+  padding: 8px 14px;
+  border: 2px solid var(--sl-line);
+  border-radius: 12px;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font: 600 28px/1 var(--sl-font);
+  letter-spacing: 0.2em;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.pin-form input:focus {
+  outline: 3px solid var(--sl-ice);
+  outline-offset: 2px;
+}
+
+.pin-form button {
+  min-height: 52px;
+  border: 2px solid var(--sl-ice);
+  border-radius: 12px;
+  background: var(--sl-panel-2);
+  color: var(--sl-text);
+  font: 600 20px/1 var(--sl-font);
+}
+
+.pin-error {
+  min-height: 1.2em;
+  margin: 0;
+  font-size: 18px;
+  color: var(--sl-text-2);
+}
+
+@media not all and (min-width: 1280px) and (min-height: 720px) and (min-aspect-ratio: 16/9) {
+  html,
+  body {
+    position: static;
+    width: 100%;
+    height: auto;
+    min-height: 100%;
+    min-height: 100dvh;
+    overflow-x: hidden;
+    overflow-y: auto;
+    background: var(--sl-ink);
+    color: var(--sl-text);
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    inset: auto;
+  }
+
+  .stage {
+    position: relative;
+    left: auto;
+    top: auto;
+    z-index: 1;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+    align-content: start;
+    gap: 12px;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    background: var(--sl-ink);
+  }
+
+  .page-home .stage,
+  .page-dashboard .stage,
+  .page-dashboard.guest .stage {
+    grid-template-columns: none;
+    grid-template-rows: none;
+    grid-template-areas: none;
+  }
+
+  .nav {
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+
+  .nav-link {
+    min-height: 48px;
+    font-size: 22px;
+  }
+
+  .nav-end {
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+
+  .guest-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .hero {
+    min-width: 0;
+  }
+
+  .clock {
+    flex-wrap: wrap;
+    font-size: clamp(56px, 16vw, 88px);
+    line-height: 0.9;
+  }
+
+  .clock-sec {
+    font-size: clamp(20px, 4vw, 28px);
+  }
+
+  .clock-ampm {
+    margin-left: 12px;
+    font-size: clamp(22px, 5vw, 32px);
+  }
+
+  .date {
+    margin-top: 8px;
+    font-size: clamp(20px, 4vw, 28px);
+  }
+
+  .weather {
+    width: 100%;
+    max-width: 100%;
+    align-items: stretch;
+  }
+
+  .wx-place {
+    font-size: 16px;
+  }
+
+  .wx-now {
+    gap: 12px;
+    margin-top: 4px;
+  }
+
+  .wx-now .i {
+    font-size: 40px;
+  }
+
+  .wx-temp {
+    font-size: clamp(48px, 14vw, 72px);
+  }
+
+  .wx-cond {
+    font-size: 22px;
+  }
+
+  .wx-hours {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 0;
+    margin-top: 6px;
+    padding-top: 6px;
+  }
+
+  .wx-h {
+    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 2px;
+  }
+
+  .wx-h .t {
+    font-size: 14px;
+  }
+
+  .wx-h .i {
+    font-size: 22px;
+  }
+
+  .wx-h .v {
+    font-size: 16px;
+  }
+
+  .wx-stale {
+    font-size: 16px;
+    justify-content: flex-start;
+  }
+
+  .tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    min-height: 0;
+    margin-bottom: 0;
+  }
+
+  .tile {
+    height: auto;
+    min-height: 76px;
+    padding: 12px 12px 10px;
+    border-radius: 18px;
+  }
+
+  .tile .i {
+    font-size: 32px;
+  }
+
+  .tile .nm {
+    font-size: 18px;
+  }
+
+  .tile-empty {
+    grid-column: 1 / -1;
+    height: auto;
+    min-height: 96px;
+    padding: 16px;
+  }
+
+  .foot {
+    height: auto;
+    min-height: 28px;
+  }
+
+  .hints,
+  .hint {
+    flex-wrap: wrap;
+  }
+
+  .hint-keys {
+    display: none;
+  }
+
+  .hint-touch {
+    display: flex;
+    font-size: 18px;
+  }
+
+  .dwx {
+    font-size: 18px;
+  }
+
+  .guest-flag {
+    font-size: 18px;
+  }
+
+  .panel {
+    overflow: visible;
+    padding: 18px 16px 16px;
+    border-radius: 20px;
+    background: var(--sl-panel);
+  }
+
+  .panel .kicker {
+    font-size: 18px;
+  }
+
+  .rows {
+    margin-top: 14px;
+    row-gap: 12px;
+    column-gap: 12px;
+  }
+
+  .row-meta {
+    font-size: 18px;
+  }
+
+  .row-title,
+  .empty {
+    font-size: 20px;
+    overflow-wrap: anywhere;
+  }
+
+  .money-note {
+    margin-top: 14px;
+    font-size: 26px;
+  }
+
+  @media (min-width: 760px) and (min-height: 520px) {
+    .page-home .stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.9fr);
+      grid-template-rows: auto auto auto auto;
+      grid-template-areas:
+        "nav nav"
+        "hero weather"
+        "apps apps"
+        "foot foot";
+      align-content: start;
+      gap: 20px 28px;
+      padding:
+        max(28px, env(safe-area-inset-top))
+        max(32px, env(safe-area-inset-right))
+        max(24px, env(safe-area-inset-bottom))
+        max(32px, env(safe-area-inset-left));
+    }
+
+    .hero,
+    .weather,
+    .tiles,
+    .clock {
+      min-width: 0;
+      max-width: 100%;
+    }
+
+    .page-dashboard .stage,
+    .page-dashboard.guest .stage {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: auto;
+      grid-template-areas:
+        "nav"
+        "today"
+        "deadlines"
+        "money";
+      align-content: start;
+    }
+
+    .page-dashboard.guest .stage {
+      grid-template-areas:
+        "nav"
+        "today";
+    }
+
+    .page-dashboard:not(.guest) .stage {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      grid-template-rows: auto auto;
+      grid-template-areas:
+        "nav nav nav"
+        "today deadlines money";
+    }
+
+    .nav {
+      grid-area: nav;
+    }
+
+    .hero {
+      grid-area: hero;
+    }
+
+    .weather {
+      grid-area: weather;
+      align-items: flex-end;
+    }
+
+    .tiles {
+      grid-area: apps;
+      grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+      gap: 16px;
+    }
+
+    .foot {
+      grid-area: foot;
+    }
+
+    .panel-today { grid-area: today; }
+    .panel-deadlines { grid-area: deadlines; }
+    .panel-money { grid-area: money; }
+
+    .hint-keys {
+      display: flex;
+    }
+
+    .hint-touch {
+      display: none;
+    }
+
+    .clock {
+      font-size: clamp(84px, 9vw, 148px);
+    }
+
+    .clock-sec {
+      font-size: clamp(24px, 2.4vw, 40px);
+    }
+
+    .clock-ampm {
+      font-size: clamp(28px, 3vw, 48px);
+    }
+
+    .date {
+      font-size: clamp(24px, 2.6vw, 36px);
+    }
+
+    .wx-place {
+      font-size: 18px;
+    }
+
+    .wx-temp {
+      font-size: clamp(64px, 7vw, 104px);
+    }
+
+    .wx-cond {
+      font-size: 24px;
+      text-align: right;
+    }
+
+    .wx-hours {
+      flex-wrap: nowrap;
+      justify-content: flex-end;
+    }
+
+    .wx-h {
+      width: auto;
+      flex: 1 1 0;
+      min-width: 0;
+    }
+
+    .wx-now .i {
+      font-size: 64px;
+    }
+
+    .wx-h .i {
+      font-size: 36px;
+    }
+
+    .tile {
+      min-height: 128px;
+    }
+
+    .tile .i {
+      font-size: 44px;
+    }
+
+    .tile .nm {
+      font-size: 20px;
+    }
+
+    .nav-link {
+      font-size: 26px;
+    }
+
+    .row-title {
+      font-size: 24px;
+    }
+
+    .money-note {
+      font-size: 32px;
+    }
+  }
+
+  @media (max-height: 500px) and (orientation: landscape) {
+    .page-home .stage {
+      display: grid;
+      grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+      grid-template-rows: auto auto auto auto;
+      grid-template-areas:
+        "nav nav"
+        "hero weather"
+        "apps apps"
+        "foot foot";
+      align-content: start;
+      gap: 8px 16px;
+      padding:
+        max(8px, env(safe-area-inset-top))
+        max(12px, env(safe-area-inset-right))
+        max(8px, env(safe-area-inset-bottom))
+        max(12px, env(safe-area-inset-left));
+      min-height: 100dvh;
+    }
+
+    .page-dashboard .stage,
+    .page-dashboard.guest .stage,
+    .page-dashboard:not(.guest) .stage {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas:
+        "nav"
+        "today"
+        "deadlines"
+        "money";
+    }
+
+    .nav { grid-area: nav; }
+    .hero { grid-area: hero; }
+    .weather { grid-area: weather; align-items: flex-end; }
+    .tiles { grid-area: apps; }
+    .foot { grid-area: foot; }
+
+    .nav-link {
+      min-height: 44px;
+      font-size: 18px;
+    }
+
+    .clock {
+      font-size: clamp(40px, 8vh, 56px);
+    }
+
+    .clock-sec,
+    .clock-ampm {
+      font-size: 18px;
+    }
+
+    .date {
+      margin-top: 2px;
+      font-size: 16px;
+    }
+
+    .wx-now .i {
+      font-size: 32px;
+    }
+
+    .wx-temp {
+      font-size: 36px;
+    }
+
+    .wx-cond,
+    .wx-place {
+      font-size: 14px;
+    }
+
+    .wx-hours {
+      flex-wrap: nowrap;
+      margin-top: 6px;
+      padding-top: 6px;
+      gap: 0;
+    }
+
+    .wx-h {
+      width: auto;
+      flex: 1;
+    }
+
+    .wx-h .t,
+    .wx-h .v {
+      font-size: 15px;
+    }
+
+    .wx-h .i {
+      font-size: 22px;
+    }
+
+    .tiles {
+      grid-template-columns: repeat(6, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .tile {
+      min-height: 72px;
+      height: 76px;
+      flex-direction: column;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 4px;
+      padding: 8px 10px;
+    }
+
+    .tile .i {
+      font-size: 22px;
+    }
+
+    .tile .nm {
+      font-size: 15px;
+      -webkit-line-clamp: 2;
+    }
+
+    .wx-place {
+      letter-spacing: 0.04em;
+    }
+
+    .guest-toggle {
+      min-height: 44px;
+      font-size: 16px;
+    }
+
+    .hint-touch {
+      font-size: 16px;
+    }
+  }
+}

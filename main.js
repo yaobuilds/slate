@@ -98,8 +98,180 @@ function moveFocus(direction) {
   if (best) best.focus();
 }
 
+function tileText(value) {
+  return typeof value === "string" ? value : "";
+}
+
+function tileIcon(name) {
+  return TILE_ICONS.has(name) ? name : "grid";
+}
+
+function tileUrl(url) {
+  if (typeof url !== "string") return "";
+  const value = url.trim();
+  if (!value || value.length > 500) return "";
+  if (/[\u0000-\u001f\\]/.test(value) || value.startsWith("//") || value.includes("..")) return "";
+  if (/^[a-z0-9][a-z0-9._/-]*$/i.test(value)) return value;
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
+  } catch (err) {
+    return "";
+  }
+  return "";
+}
+
+function chosenText(override, fallback) {
+  if (typeof override === "string" && override.trim()) return override;
+  return tileText(fallback);
+}
+
+function resolveApps(entries, catalog) {
+  const byId = new Map();
+  if (Array.isArray(catalog)) {
+    for (const item of catalog) {
+      if (!item || typeof item !== "object" || typeof item.id !== "string" || !item.id) continue;
+      if (!byId.has(item.id)) byId.set(item.id, item);
+    }
+  }
+  const apps = [];
+  if (!Array.isArray(entries)) return apps;
+  for (const entry of entries) {
+    if (apps.length >= MAX_APP_TILES) break;
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    let name = "";
+    let icon = "grid";
+    let url = "";
+    if (typeof entry.id === "string" && entry.id) {
+      const base = byId.get(entry.id);
+      if (!base) continue;
+      name = chosenText(entry.name, base.name);
+      icon = typeof entry.icon === "string" && entry.icon ? entry.icon : tileText(base.icon);
+      url = typeof entry.url === "string" ? entry.url : tileText(base.url);
+    } else if (typeof entry.name === "string") {
+      name = entry.name;
+      icon = typeof entry.icon === "string" && entry.icon ? entry.icon : "grid";
+      url = typeof entry.url === "string" ? entry.url : "";
+    } else {
+      continue;
+    }
+    name = name.replace(/\s+/g, " ").trim();
+    if (!name) continue;
+    apps.push({ name, icon: tileIcon(icon), url: tileUrl(url) });
+  }
+  return apps;
+}
+
+function homeTiles() {
+  if (!document.body.classList.contains("page-home")) return [];
+  const nav = document.getElementById("tiles");
+  if (!nav) return [];
+  return [...nav.querySelectorAll(".tile")];
+}
+
+function openTile(tile) {
+  const url = tile && tile.dataset.url;
+  if (url) location.href = url;
+}
+
+function renderTileList(apps) {
+  const nav = document.getElementById("tiles");
+  if (!nav) return [];
+  const list = [{ name: "Dashboard", icon: "grid", url: "dashboard.html" }, ...apps];
+  const built = [];
+  nav.replaceChildren();
+  for (const app of list) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "tile focusable";
+    if (app.url) button.dataset.url = app.url;
+    if (!built.length) button.autofocus = true;
+    const iconHolder = document.createElement("span");
+    iconHolder.className = "tile-icon";
+    const name = document.createElement("span");
+    name.className = "nm";
+    name.textContent = app.name;
+    button.append(iconHolder, name);
+    button.addEventListener("click", () => openTile(button));
+    nav.append(button);
+    built.push({ button, iconHolder, icon: app.icon });
+  }
+  if (!apps.length) {
+    const empty = document.createElement("div");
+    empty.className = "tile-empty";
+    const title = document.createElement("b");
+    title.textContent = "No other apps yet";
+    const detail = document.createElement("span");
+    detail.textContent = "Add them in apps.json";
+    empty.append(title, detail);
+    nav.append(empty);
+  }
+  const first = built[0] && built[0].button;
+  if (first) first.focus({ preventScroll: true });
+  return built;
+}
+
+async function paintTileIcons(built) {
+  for (const tile of built) {
+    const svg = await ensureIcon(tile.icon);
+    if (!tile.iconHolder.isConnected) return;
+    applyIcon(tile.iconHolder, tile.icon, svg);
+  }
+}
+
+async function readJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
+  if (!response.ok) throw new Error(String(response.status));
+  return response.json();
+}
+
+async function loadTiles() {
+  const nav = document.getElementById("tiles");
+  if (!nav) return;
+  let entries = [];
+  let catalog = [];
+  try {
+    entries = await readJson("apps.json");
+  } catch (err) {
+    entries = [];
+  }
+  try {
+    catalog = await readJson("apps-catalog.json");
+  } catch (err) {
+    catalog = [];
+  }
+  const built = renderTileList(resolveApps(entries, catalog));
+  await paintTileIcons(built);
+}
+
 document.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+  const tiles = homeTiles();
+  if (tiles.length) {
+    const key = event.key;
+    if (key === "ArrowUp" || key === "ArrowDown") {
+      event.preventDefault();
+      return;
+    }
+    if (key === "ArrowLeft" || key === "ArrowRight") {
+      event.preventDefault();
+      let index = tiles.indexOf(document.activeElement);
+      if (index < 0) index = 0;
+      else if (key === "ArrowRight") index = Math.min(index + 1, tiles.length - 1);
+      else index = Math.max(index - 1, 0);
+      tiles[index].focus({ preventScroll: true });
+      return;
+    }
+    if (key === "Enter" && document.activeElement && document.activeElement.classList.contains("tile")) {
+      event.preventDefault();
+      openTile(document.activeElement);
+      return;
+    }
+  }
+
   const direction = {
     ArrowLeft: "left",
     ArrowRight: "right",
@@ -107,8 +279,6 @@ document.addEventListener("keydown", (event) => {
     ArrowDown: "down",
   }[event.key];
   if (!direction) return;
-  const tag = document.activeElement && document.activeElement.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA") return;
   event.preventDefault();
   moveFocus(direction);
 });
@@ -133,9 +303,14 @@ const WEATHER_EVERY_MS = 10 * 60 * 1000;
 const WEATHER_STALE_MS = 20 * 60 * 1000;
 const WEATHER_DROP_MS = 3 * 60 * 60 * 1000;
 const WEATHER_CACHE_KEY = "tv-weather";
-const WEATHER_ICONS = new Set([
+const ICON_FILES = new Set([
   "sun", "moon", "cloud", "cloudsun", "cloudmoon", "rain", "snow", "fog", "storm", "cloudoff",
+  "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker",
 ]);
+const TILE_ICONS = new Set([
+  "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker",
+]);
+const MAX_APP_TILES = 5;
 
 const iconSvg = new Map();
 const wxBox = document.getElementById("wx");
@@ -248,7 +423,7 @@ function setText(el, text) {
 }
 
 async function ensureIcon(name) {
-  if (!WEATHER_ICONS.has(name)) return "";
+  if (!ICON_FILES.has(name)) return "";
   if (iconSvg.has(name)) return iconSvg.get(name);
   try {
     const response = await fetch(`assets/icons/${name}.svg`);
@@ -478,3 +653,5 @@ if (wxBox || dwx) {
     else renderWeather();
   }, WEATHER_TICK_MS);
 }
+
+loadTiles();

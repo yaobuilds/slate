@@ -8,10 +8,11 @@ A 1920×1080 living-room screen. Plain HTML, CSS, and JavaScript. No build step 
 python3 server.py
 ```
 
-Open http://localhost:8000
+Open http://127.0.0.1:8000. The terminal also prints an address for other devices on this Wi-Fi. Do not forward port 8000 on the router.
 
-- Home is the clock and the New York weather.
-- Dashboard is http://localhost:8000/dashboard.html. Press G to hide Deadlines and Money. Press G again to show them. Home goes back.
+- Home is the clock, the New York weather, and the app tiles. The first tile is Dashboard. Arrow keys move between the tiles. Enter opens Dashboard. The other tiles do not open anything yet.
+- The other tiles come from `apps.json`, at most five. Names and icons come from `apps-catalog.json`. To change a tile, use an id from the catalog. An entry can also set its own name, icon, or url.
+- Dashboard is http://127.0.0.1:8000/dashboard.html. Press G to hide Deadlines and Money. Press G again to show them. Home goes back.
 
 Keep private data in `data.local.json`. That file is gitignored. When it exists, the server copies it to `data.json`. When it is missing, the server writes a placeholder. `data.json` is generated and gitignored. Do not commit it.
 

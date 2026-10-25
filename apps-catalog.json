@@ -1,0 +1,122 @@
+[
+ {
+  "id": "netflix",
+  "name": "Netflix",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "hulu",
+  "name": "Hulu",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "hbo",
+  "name": "HBO",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "youtube",
+  "name": "YouTube",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "youtube-music",
+  "name": "YouTube Music",
+  "icon": "music",
+  "url": ""
+ },
+ {
+  "id": "disney-plus",
+  "name": "Disney+",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "prime-video",
+  "name": "Prime Video",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "apple-tv",
+  "name": "Apple TV",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "peacock",
+  "name": "Peacock",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "paramount-plus",
+  "name": "Paramount+",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "tubi",
+  "name": "Tubi",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "pluto-tv",
+  "name": "Pluto TV",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "spotify",
+  "name": "Spotify",
+  "icon": "music",
+  "url": ""
+ },
+ {
+  "id": "apple-music",
+  "name": "Apple Music",
+  "icon": "music",
+  "url": ""
+ },
+ {
+  "id": "crunchyroll",
+  "name": "Crunchyroll",
+  "icon": "film",
+  "url": ""
+ },
+ {
+  "id": "twitch",
+  "name": "Twitch",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "plex",
+  "name": "Plex",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "youtube-tv",
+  "name": "YouTube TV",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "sling-tv",
+  "name": "Sling TV",
+  "icon": "tv",
+  "url": ""
+ },
+ {
+  "id": "starz",
+  "name": "Starz",
+  "icon": "film",
+  "url": ""
+ }
+]

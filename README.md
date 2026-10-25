@@ -13,7 +13,7 @@ Open http://localhost:8000
 - Home is the clock.
 - Dashboard is http://localhost:8000/dashboard.html. Press G to hide Deadlines and Money. Press G again to show them. Home goes back.
 
-Keep private data in `data.local.json` (gitignored). When that file exists, the server copies it to `data.json`. Otherwise it writes a placeholder.
+Keep private data in `data.local.json`. That file is gitignored. When it exists, the server copies it to `data.json`. When it is missing, the server writes a placeholder. `data.json` is generated and gitignored. Do not commit it.
 
 ```json
 {

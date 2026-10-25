@@ -22,6 +22,9 @@ LOCAL = ROOT / "data.local.json"
 PUBLIC = ROOT / "data.json"
 PIN_PATH = ROOT / "pin.local"
 PIN_RE = re.compile(r"^[0-9]{4,8}$")
+FAIL_LIMIT = 5
+LOCKOUT_S = 60
+COOKIE_MAX_AGE = 7 * 24 * 60 * 60
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
     "today": [
@@ -136,8 +139,20 @@ def public_path(raw):
     return "/" + "/".join(parts) if parts else "/"
 
 
-def path_allowed(path):
+def path_blocked(path):
+    """Never serve code, local files, git, or the private schedule file."""
+    lowered = path.lower()
     if path in BLOCKED_FILES:
+        return True
+    if lowered.endswith(".py") or lowered.endswith(".local"):
+        return True
+    if lowered == "/.git" or lowered.startswith("/.git/") or "/.git/" in lowered:
+        return True
+    return False
+
+
+def path_allowed(path):
+    if path_blocked(path):
         return False
     if path in ALLOWED_FILES:
         return True
@@ -159,6 +174,7 @@ def load_pin(lan: bool) -> str:
         if not PIN_RE.fullmatch(pin):
             print("pin.local must contain 4 to 8 digits and nothing else.", file=sys.stderr)
             sys.exit(1)
+        protect_pin_file()
         if lan:
             print("The phone needs the PIN saved in pin.local.")
         return pin
@@ -166,28 +182,43 @@ def load_pin(lan: bool) -> str:
         return ""
     pin = f"{secrets.randbelow(900000) + 100000}"
     PIN_PATH.write_text(pin + "\n", encoding="utf-8")
-    os.chmod(PIN_PATH, 0o600)
+    protect_pin_file()
     print(f"Phone PIN: {pin}")
     print("Saved in pin.local on this Mac. That file is not served and not committed.")
     return pin
 
 
+def protect_pin_file() -> None:
+    try:
+        os.chmod(PIN_PATH, 0o600)
+    except OSError:
+        pass
+
+
 def too_many(ip: str) -> bool:
     now = time.monotonic()
     with STATE_LOCK:
-        count, start = FAILS.get(ip, (0, now))
-        if now - start > 60:
-            return False
-        return count >= 8
+        count, locked_until = FAILS.get(ip, (0, 0.0))
+        if locked_until and now < locked_until:
+            return True
+        if locked_until and now >= locked_until:
+            FAILS.pop(ip, None)
+        return False
 
 
 def note_fail(ip: str) -> None:
     now = time.monotonic()
     with STATE_LOCK:
-        count, start = FAILS.get(ip, (0, now))
-        if now - start > 60:
-            count, start = 0, now
-        FAILS[ip] = (count + 1, start)
+        count, locked_until = FAILS.get(ip, (0, 0.0))
+        if locked_until and now < locked_until:
+            return
+        if locked_until and now >= locked_until:
+            count = 0
+        count += 1
+        if count >= FAIL_LIMIT:
+            FAILS[ip] = (count, now + LOCKOUT_S)
+        else:
+            FAILS[ip] = (count, 0.0)
 
 
 def note_ok(ip: str) -> None:
@@ -207,6 +238,17 @@ def session_ok(token: str) -> bool:
         return False
     with STATE_LOCK:
         return token in SESSIONS
+
+
+def forget_session(token: str) -> None:
+    if not token:
+        return
+    with STATE_LOCK:
+        SESSIONS.discard(token)
+
+
+def cookie_header(token: str, max_age: int) -> str:
+    return f"slate={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}"
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -309,9 +351,20 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         return obj
 
+    def sign_out(self):
+        forget_session(self.cookie("slate"))
+        self.send_json(200, {"ok": True}, (("Set-Cookie", cookie_header("", 0)),))
+
     def do_POST(self):
         path = public_path(self.path)
-        if path != "/unlock" or not getattr(self.server, "require_pin", False):
+        if not getattr(self.server, "require_pin", False):
+            self.reject()
+            return
+        if path == "/lock":
+            self.close_connection = True
+            self.sign_out()
+            return
+        if path != "/unlock":
             self.reject()
             return
         ip = self.client_address[0]
@@ -327,8 +380,7 @@ class Handler(SimpleHTTPRequestHandler):
         note_ok(ip)
         token = secrets.token_urlsafe(32)
         remember_session(token)
-        cookie = f"slate={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age=2592000"
-        self.send_json(200, {"ok": True}, (("Set-Cookie", cookie),))
+        self.send_json(200, {"ok": True}, (("Set-Cookie", cookie_header(token, COOKIE_MAX_AGE)),))
 
     def do_PUT(self):
         self.reject()

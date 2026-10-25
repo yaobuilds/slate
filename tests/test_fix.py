@@ -2,8 +2,10 @@
 """Fix-pass checks. The PIN cases use the same gate as python3 server.py --lan."""
 
 import base64
+import http.client
 import json
 import os
+import re
 import socket
 import struct
 import subprocess
@@ -12,6 +14,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest import mock
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -260,6 +263,15 @@ class FixTests(unittest.TestCase):
         except urllib.error.HTTPError as exc:
             return exc.code, exc.read().decode()
 
+    def _raw(self, method, path, body=None, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            resp = conn.getresponse()
+            return resp.status, resp.read().decode(), {k.lower(): v for k, v in resp.getheaders()}
+        finally:
+            conn.close()
+
     def test_lan_pin_gate_sends_busy_until_show_all(self):
         status, body = self._body("/data.json")
         self.assertEqual(status, 401)
@@ -329,23 +341,172 @@ class FixTests(unittest.TestCase):
         self.assertNotIn("data.json", (ROOT / "main.js").read_text(encoding="utf-8"))
 
     def test_pin_attempt_limit(self):
-        for _ in range(8):
-            status, _body = self._body(
+        clock = {"now": 1000.0}
+
+        def fake_mono():
+            return clock["now"]
+
+        with mock.patch("server.time.monotonic", fake_mono):
+            for _ in range(4):
+                status, _body = self._body(
+                    "/unlock",
+                    {"Content-Type": "application/json"},
+                    "POST",
+                    json.dumps({"pin": WRONG}).encode(),
+                )
+                self.assertEqual(status, 401)
+            status, body = self._body(
                 "/unlock",
                 {"Content-Type": "application/json"},
                 "POST",
-                json.dumps({"pin": WRONG}).encode(),
+                json.dumps({"pin": PIN}).encode(),
             )
-            self.assertEqual(status, 401)
-        status, body = self._body(
-            "/unlock",
-            {"Content-Type": "application/json"},
+            self.assertEqual(status, 200, body)
+            self.assertNotIn(TITLE, body)
+
+            server.FAILS.clear()
+            server.SESSIONS.clear()
+            self.opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+
+            for _ in range(5):
+                status, _body = self._body(
+                    "/unlock",
+                    {"Content-Type": "application/json"},
+                    "POST",
+                    json.dumps({"pin": WRONG}).encode(),
+                )
+                self.assertEqual(status, 401)
+            status, body = self._body(
+                "/unlock",
+                {"Content-Type": "application/json"},
+                "POST",
+                json.dumps({"pin": PIN}).encode(),
+            )
+            self.assertEqual(status, 429, body)
+            self.assertNotIn(TITLE, body)
+            self.assertNotIn(PIN, body)
+
+            clock["now"] += 59
+            status, body = self._body(
+                "/unlock",
+                {"Content-Type": "application/json"},
+                "POST",
+                json.dumps({"pin": PIN}).encode(),
+            )
+            self.assertEqual(status, 429, body)
+
+            clock["now"] += 2
+            status, body = self._body(
+                "/unlock",
+                {"Content-Type": "application/json"},
+                "POST",
+                json.dumps({"pin": PIN}).encode(),
+            )
+            self.assertEqual(status, 200, body)
+            self.assertNotIn(PIN, body)
+
+    def test_session_cookie_max_age_and_sign_out(self):
+        status, body, headers = self._raw(
             "POST",
+            "/unlock",
             json.dumps({"pin": PIN}).encode(),
+            {"Content-Type": "application/json"},
         )
-        self.assertEqual(status, 429, body)
+        self.assertEqual(status, 200, body)
+        cookie = headers.get("set-cookie", "")
+        self.assertIn("HttpOnly", cookie)
+        self.assertIn("SameSite=Lax", cookie)
+        match = re.search(r"Max-Age=(\d+)", cookie)
+        self.assertIsNotNone(match, cookie)
+        age = int(match.group(1))
+        self.assertLessEqual(age, 7 * 24 * 60 * 60, cookie)
+        self.assertEqual(age, server.COOKIE_MAX_AGE)
+        self.assertEqual(server.COOKIE_MAX_AGE, 604800)
+        token = cookie.split(";", 1)[0].split("=", 1)[1]
+        self.assertTrue(server.session_ok(token))
+
+        status, body, _headers = self._raw("GET", "/data.json", headers={"Cookie": f"slate={token}"})
+        self.assertEqual(status, 200, body)
+        self.assertIn("Busy", body)
         self.assertNotIn(TITLE, body)
-        self.assertNotIn(PIN, body)
+
+        status, body, lock_headers = self._raw("POST", "/lock", headers={"Cookie": f"slate={token}"})
+        self.assertEqual(status, 200, body)
+        self.assertIn("Max-Age=0", lock_headers.get("set-cookie", ""))
+        self.assertFalse(server.session_ok(token))
+
+        status, body, _headers = self._raw("GET", "/data.json", headers={"Cookie": f"slate={token}"})
+        self.assertEqual(status, 401, body)
+        self.assertNotIn(TITLE, body)
+        self.assertNotIn(DEADLINE, body)
+        self.assertNotIn(MONEY, body)
+
+        status, body, _headers = self._raw(
+            "GET",
+            "/data.json",
+            headers={"Cookie": f"slate={token}", "X-Slate-Full": "1"},
+        )
+        self.assertEqual(status, 401, body)
+        self.assertNotIn(TITLE, body)
+
+    def test_file_allowlist_blocks_private_paths(self):
+        blocked = [
+            "/server.py",
+            "/pin.local",
+            "/data.local.json",
+            "/.git/config",
+            "/.git/HEAD",
+            "/AGENTS.md",
+            "/STATUS.md",
+            "/TASKS.md",
+            "/tests/test_fix.py",
+            "/docs/design/SPEC.md",
+            "/../pin.local",
+            "/%2e%2e/pin.local",
+            "/assets/icons/../../pin.local",
+            "/foo.py",
+            "/secret.local",
+            "/lock",
+            "/unlock",
+        ]
+        for path in blocked:
+            status, body, _headers = self._raw("GET", path)
+            self.assertEqual(status, 404, path)
+            self.assertNotIn(TITLE, body)
+            self.assertNotIn(PIN, body)
+            self.assertNotIn("EXPECTED_PIN", body)
+            self.assertNotIn("Phone PIN", body)
+
+        status, body, _headers = self._raw("GET", "/data.json")
+        self.assertEqual(status, 401)
+        self.assertNotIn(TITLE, body)
+        self.assertNotIn(DEADLINE, body)
+        self.assertNotIn(MONEY, body)
+
+        status, body, _headers = self._raw("GET", "/index.html")
+        self.assertEqual(status, 200, body[:80])
+        self.assertNotIn(TITLE, body)
+
+    def test_pin_local_mode_600(self):
+        pin_path = Path(self.tmp.name) / "pin.local"
+        pin_path.write_text("246813\n", encoding="utf-8")
+        os.chmod(pin_path, 0o644)
+        old = server.PIN_PATH
+        old_env = os.environ.pop("SLATE_PIN", None)
+        try:
+            server.PIN_PATH = pin_path
+            loaded = server.load_pin(True)
+            self.assertEqual(loaded, "246813")
+            self.assertEqual(pin_path.stat().st_mode & 0o777, 0o600)
+            pin_path.unlink()
+            created = server.load_pin(True)
+            self.assertRegex(created, r"^[0-9]{4,8}$")
+            self.assertTrue(pin_path.exists())
+            self.assertEqual(pin_path.stat().st_mode & 0o777, 0o600)
+        finally:
+            server.PIN_PATH = old
+            if old_env is not None:
+                os.environ["SLATE_PIN"] = old_env
 
     def test_shipped_js_has_no_prototype_controls(self):
         for name in ("ambient.js", "main.js", "dashboard.js"):
@@ -627,6 +788,27 @@ def run_browser(base):
         again = cdp.eval("document.getElementById('today-list').innerHTML")
         if TITLE in again or DEADLINE in again:
             raise AssertionError("titles stayed in the DOM after returning to guest")
+
+        locked = cdp.eval(f"""(async () => {{
+          const lock = await fetch('lock', {{ method: 'POST', cache: 'no-store' }});
+          const full = await fetch('data.json', {{ cache: 'no-store', headers: {{ 'X-Slate-Full': '1' }} }});
+          const text = await full.text();
+          return {{
+            lockStatus: lock.status,
+            fullStatus: full.status,
+            hasTitle: text.includes({json.dumps(TITLE)}),
+            hasDeadline: text.includes({json.dumps(DEADLINE)})
+          }};
+        }})()""")
+        evidence["sign_out"] = locked
+        if locked["lockStatus"] != 200 or locked["fullStatus"] != 401:
+            raise AssertionError(f"sign-out did not close the session: {locked}")
+        if locked["hasTitle"] or locked["hasDeadline"]:
+            raise AssertionError(f"sign-out still returned private text: {locked}")
+        cdp.eval("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'G', bubbles: true }))")
+        wait_until(cdp, "document.getElementById('pin-form') && !document.getElementById('pin-form').hidden")
+        if TITLE in cdp.eval("document.body.innerText"):
+            raise AssertionError("title stayed on screen after lock")
 
         for label, width, height, mobile in (
             ("mac", 1440, 900, False),

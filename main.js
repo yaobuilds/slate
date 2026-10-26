@@ -882,15 +882,11 @@ async function bootWeatherAndTiles() {
   if (wxBox || dwx) {
     readWeatherCache();
     if (wx) renderWeather();
-  }
-  if (wxBox) {
     loadWeather();
     setInterval(() => {
       if (Date.now() - wxTriedAt >= WEATHER_EVERY_MS) loadWeather();
       else renderWeather();
     }, WEATHER_TICK_MS);
-  } else if (dwx) {
-    setInterval(renderWeather, WEATHER_TICK_MS);
   }
   loadTiles();
 }

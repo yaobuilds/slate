@@ -205,6 +205,98 @@ html.page-settings body {
   outline-offset: 3px;
 }
 
+.settings-subtitle {
+  margin: 0 0 12px;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.settings-lan-panel {
+  margin-top: 8px;
+}
+
+.settings-lan-copy {
+  margin: 0 0 8px;
+  font-size: 18px;
+  line-height: 1.45;
+  color: var(--sl-text-2);
+}
+
+.settings-lan-copy code {
+  font-size: 0.95em;
+  color: var(--sl-text);
+}
+
+.settings-order-block {
+  margin-bottom: 28px;
+}
+
+.settings-order-block h2 {
+  margin: 0 0 12px;
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--sl-text-2);
+}
+
+.settings-order-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-order-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 8px 12px;
+  border: 2px solid var(--sl-line);
+  border-radius: 16px;
+  background: var(--sl-panel-2);
+}
+
+.settings-order-row .nm {
+  flex: 1;
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.settings-order-row .order-btns {
+  display: flex;
+  gap: 8px;
+}
+
+.settings-order-row button {
+  min-width: 48px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 2px solid var(--sl-line);
+  border-radius: 10px;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font: 600 16px/1 var(--sl-font);
+  cursor: pointer;
+}
+
+.settings-order-row button:focus-visible {
+  outline: 3px solid var(--sl-ice);
+  outline-offset: 2px;
+}
+
+.settings-order-row button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.settings-order-empty {
+  margin: 0;
+  font-size: 18px;
+  color: var(--sl-text-2);
+}
+
 .settings-pin-form {
   position: fixed;
   z-index: 20;

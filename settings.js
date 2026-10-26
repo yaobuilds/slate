@@ -56,9 +56,15 @@ async function saveWithPin(body) {
   return result;
 }
 
+let pinSaveHandler = null;
+
 function wireSettingsPinForm(onSuccess) {
   const form = pinForm();
   if (!form) return;
+  pinSaveHandler = onSuccess;
+  showSettingsPin("Enter the PIN from this Mac to save on Wi-Fi.");
+  if (form.dataset.wired === "1") return;
+  form.dataset.wired = "1";
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = document.getElementById("settings-pin-input");
@@ -80,6 +86,48 @@ function wireSettingsPinForm(onSuccess) {
     }
     if (input) input.value = "";
     form.hidden = true;
-    if (typeof onSuccess === "function") onSuccess();
+    if (typeof pinSaveHandler === "function") pinSaveHandler();
   });
 }
+
+let signOutBusy = false;
+
+async function signOutOnLan() {
+  if (signOutBusy) return;
+  const msgEl = document.getElementById("sign-out-msg");
+  const btn = document.getElementById("settings-sign-out");
+  signOutBusy = true;
+  if (btn) btn.disabled = true;
+  try {
+    const response = await fetch("/lock", {
+      method: "POST",
+      credentials: "same-origin",
+      cache: "no-store",
+    });
+    if (response.ok) {
+      if (msgEl) {
+        msgEl.textContent =
+          "Signed out. Show all on Dashboard will ask for the PIN again on Wi-Fi.";
+      }
+      return;
+    }
+    if (msgEl) {
+      msgEl.textContent = response.status === 404
+        ? "Sign out only works when the server runs with --lan (iPad or phone on Wi-Fi)."
+        : "Could not sign out.";
+    }
+  } catch (err) {
+    if (msgEl) msgEl.textContent = "Could not reach the server.";
+  } finally {
+    signOutBusy = false;
+    if (btn) btn.disabled = false;
+  }
+}
+
+function wireSettingsSignOut() {
+  const btn = document.getElementById("settings-sign-out");
+  if (!btn) return;
+  btn.addEventListener("click", signOutOnLan);
+}
+
+wireSettingsSignOut();

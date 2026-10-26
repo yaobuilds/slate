@@ -20,6 +20,8 @@ python3 server.py --lan
 
 The terminal prints the Wi-Fi address, for example `http://the-host:8000`.
 
+On Wi-Fi, use **Settings → Sign out on Wi-Fi** to clear the unlock cookie so Dashboard **Show all** asks for the PIN again.
+
 Leave this Mac awake while you use Slate. If it sleeps, the page stops.
 
 ## What you get (v1: tablet and Mac)

@@ -494,27 +494,64 @@ class FixTests(unittest.TestCase):
         thread = threading.Thread(target=open_server.serve_forever, daemon=True)
         thread.start()
         base = f"http://127.0.0.1:{open_server.server_address[1]}"
+        old_settings = server.SETTINGS_LOCAL
+        old_apps = server.APPS_PUBLIC
         try:
-            server.CATALOG_IDS = server.load_catalog_ids()
-            server.AMBIENT_PRESETS = server.load_ambient_preset_keys()
-            status, body = self._body("/settings.json")
-            self.assertEqual(status, 200, body)
-            data = json.loads(body)
-            self.assertIn("homeApps", data)
-            self.assertIn("ambientPreset", data)
-            req = urllib.request.Request(
-                base + "/settings.json",
-                data=json.dumps({"homeApps": ["netflix", "disney-plus"]}).encode(),
-                method="POST",
-                headers={"Content-Type": "application/json"},
-            )
-            with urllib.request.urlopen(req, timeout=5) as resp:
-                self.assertEqual(resp.status, 200)
-                saved = json.loads(resp.read().decode())
-            self.assertEqual(saved["homeApps"], ["netflix", "disney-plus"])
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                server.SETTINGS_LOCAL = root / "settings.local.json"
+                server.APPS_PUBLIC = root / "apps.json"
+                server.CATALOG_IDS = server.load_catalog_ids()
+                server.AMBIENT_PRESETS = server.load_ambient_preset_keys()
+                with urllib.request.urlopen(base + "/settings.json", timeout=5) as resp:
+                    self.assertEqual(resp.status, 200)
+                    data = json.loads(resp.read().decode())
+                self.assertIn("homeApps", data)
+                self.assertIn("ambientPreset", data)
+                req = urllib.request.Request(
+                    base + "/settings.json",
+                    data=json.dumps({"homeApps": ["netflix", "disney-plus"]}).encode(),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    self.assertEqual(resp.status, 200)
+                    saved = json.loads(resp.read().decode())
+                self.assertEqual(saved["homeApps"], ["netflix", "disney-plus"])
+                written = json.loads(server.APPS_PUBLIC.read_text(encoding="utf-8"))
+                self.assertEqual([item["id"] for item in written], ["netflix", "disney-plus"])
+                self.assertTrue(server.SETTINGS_LOCAL.exists())
+                self.assertFalse((ROOT / "settings.local.json") == server.SETTINGS_LOCAL)
         finally:
+            server.SETTINGS_LOCAL = old_settings
+            server.APPS_PUBLIC = old_apps
             open_server.shutdown()
             open_server.server_close()
+
+    def test_home_apps_order_published(self):
+        server.CATALOG_IDS = server.load_catalog_ids()
+        order = ["hulu", "netflix", "youtube"]
+        normalized = server.normalize_home_apps(order)
+        self.assertEqual(normalized, order)
+        self.assertEqual(server.normalize_home_apps([]), [])
+        self.assertEqual(server.normalize_home_apps(None), list(server.DEFAULT_HOME_APPS))
+        saved_ids = set(server.CATALOG_IDS)
+        try:
+            server.CATALOG_IDS = set()
+            self.assertEqual(server.normalize_home_apps(["netflix"]), list(server.DEFAULT_HOME_APPS))
+        finally:
+            server.CATALOG_IDS = saved_ids
+        with tempfile.TemporaryDirectory() as tmp:
+            apps_path = Path(tmp) / "apps.json"
+            old_apps = server.APPS_PUBLIC
+            try:
+                server.APPS_PUBLIC = apps_path
+                server.publish_apps(normalized)
+                entries = json.loads(apps_path.read_text(encoding="utf-8"))
+                ids = [entry["id"] for entry in entries]
+                self.assertEqual(ids, order)
+            finally:
+                server.APPS_PUBLIC = old_apps
 
     def test_pin_local_mode_600(self):
         pin_path = Path(self.tmp.name) / "pin.local"
@@ -558,6 +595,10 @@ class FixTests(unittest.TestCase):
         self.assertIn("forecast_hours=7", main)
         self.assertIn("WEATHER_STALE_MS = 20 * 60 * 1000", main)
         self.assertIn("WEATHER_DROP_MS = 3 * 60 * 60 * 1000", main)
+        self.assertIn("if (wxBox || dwx)", main)
+        self.assertNotIn("else if (dwx)", main)
+        boot = main.split("async function bootWeatherAndTiles", 1)[1].split("bootWeatherAndTiles();", 1)[0]
+        self.assertIn("loadWeather();", boot)
         self.assertNotIn("scene", (ROOT / "index.html").read_text(encoding="utf-8").lower())
         self.assertIn('style="visibility: hidden"', (ROOT / "index.html").read_text(encoding="utf-8"))
 

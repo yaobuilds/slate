@@ -20,6 +20,15 @@
       <a class="settings-hub-link" href="settings-theme.html" style="margin-top:16px">Theme<span aria-hidden="true">→</span></a>
       <a class="settings-hub-link" href="settings-location.html" style="margin-top:16px">Location<span aria-hidden="true">→</span></a>
     </nav>
+    <section class="settings-panel settings-lan-panel">
+      <h2 class="settings-subtitle">Wi-Fi session</h2>
+      <p class="settings-lan-copy">When Slate runs with <code>--lan</code>, unlocking Show all on Dashboard sets a cookie on this iPad or phone. Sign out clears it so the schedule asks for the PIN again.</p>
+      <div class="settings-actions">
+        <button type="button" id="settings-sign-out">Sign out on Wi-Fi</button>
+      </div>
+      <p class="settings-msg" id="sign-out-msg" role="status"></p>
+    </section>
   </div>
+  <script src="settings.js"></script>
 </body>
 </html>

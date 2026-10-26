@@ -155,7 +155,7 @@ def protect_local_file(path: Path) -> None:
 
 
 def normalize_home_apps(values) -> list:
-    if not isinstance(values, list):
+    if not isinstance(values, list) or not CATALOG_IDS:
         return list(DEFAULT_HOME_APPS)
     out = []
     seen = set()
@@ -168,7 +168,7 @@ def normalize_home_apps(values) -> list:
         out.append(item)
         if len(out) >= MAX_HOME_APPS:
             break
-    return out if out else list(DEFAULT_HOME_APPS)
+    return out
 
 
 def normalize_ambient_preset(value) -> str:
@@ -334,6 +334,8 @@ ALLOWED_FILES = {
     "/data.json",
     "/apps.json",
     "/apps-catalog.json",
+    "/settings.json",
+    "/place.json",
     "/ambient.js",
     "/ambient.css",
     "/ambient.json",

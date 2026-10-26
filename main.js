@@ -1,38 +1,78 @@
-const TZ = "America/New_York";
-const DRIFT_MS = 3 * 60 * 1000;
+const FALLBACK_LOCATION = {
+  lat: 40.7128,
+  lon: -74.0060,
+  label: "New York, NY",
+  timezone: "America/New_York",
+  locked: false,
+};
+let activeLocation = { ...FALLBACK_LOCATION };
+let activeTimeZone = FALLBACK_LOCATION.timezone;
+
+const DRIFT_MS = 2 * 60 * 1000;
 const DRIFT = [
   [0, 0],
-  [1, 1],
+  [1, 0],
+  [2, 1],
   [2, 0],
   [1, -1],
   [0, -2],
-  [-1, -1],
+  [-1, -2],
+  [-2, -1],
   [-2, 0],
   [-1, 1],
   [0, 2],
+  [1, 2],
+  [2, 2],
+  [1, 1],
+  [-1, -1],
+  [-2, -2],
 ];
 const FOCUS_IDLE_MS = 15 * 1000;
 
 const stage = document.getElementById("stage");
 const hmEl = document.getElementById("clock-hm");
-const secEl = document.getElementById("clock-sec");
 const ampmEl = document.getElementById("clock-ampm");
 const dateEl = document.getElementById("date");
+const dashDateEl = document.getElementById("dash-date");
+const dashClockEl = document.getElementById("dash-clock");
 
-const timeFormat = new Intl.DateTimeFormat("en-US", {
-  timeZone: TZ,
-  hour: "numeric",
-  minute: "2-digit",
-  second: "2-digit",
-  hour12: true,
-});
+let timeFormat = makeTimeFormat(activeTimeZone);
+let dateFormat = makeDateFormat(activeTimeZone);
 
-const dateFormat = new Intl.DateTimeFormat("en-US", {
-  timeZone: TZ,
-  weekday: "long",
-  month: "long",
-  day: "numeric",
-});
+function makeTimeFormat(tz) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+}
+
+function makeDateFormat(tz) {
+  return new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    weekday: "long",
+    month: "long",
+    day: "numeric",
+  });
+}
+
+function setActiveTimeZone(tz) {
+  if (typeof tz !== "string" || !tz.includes("/")) return;
+  if (tz === activeTimeZone) return;
+  activeTimeZone = tz;
+  timeFormat = makeTimeFormat(activeTimeZone);
+  dateFormat = makeDateFormat(activeTimeZone);
+  window.slateTimezone = activeTimeZone;
+  try {
+    document.dispatchEvent(new CustomEvent("slate:timezone", { detail: { timezone: activeTimeZone } }));
+  } catch (err) {
+    /* old browser */
+  }
+  tickTime();
+}
+
+window.slateTimezone = activeTimeZone;
 
 function part(parts, type) {
   const found = parts.find((item) => item.type === type);
@@ -41,10 +81,14 @@ function part(parts, type) {
 
 function renderClock(now) {
   const parts = timeFormat.formatToParts(now);
-  hmEl.textContent = `${part(parts, "hour")}:${part(parts, "minute")}`;
-  secEl.textContent = `:${part(parts, "second")}`;
-  ampmEl.textContent = part(parts, "dayPeriod");
-  dateEl.textContent = dateFormat.format(now);
+  const hm = `${part(parts, "hour")}:${part(parts, "minute")}`;
+  const ampm = part(parts, "dayPeriod");
+  const dateText = dateFormat.format(now);
+  if (hmEl) hmEl.textContent = hm;
+  if (ampmEl) ampmEl.textContent = ampm;
+  if (dateEl) dateEl.textContent = dateText;
+  if (dashDateEl) dashDateEl.textContent = dateText;
+  if (dashClockEl) dashClockEl.textContent = `${hm} ${ampm}`;
 }
 
 function applyNight(now) {
@@ -54,7 +98,16 @@ function applyNight(now) {
 function tickTime() {
   const now = new Date();
   applyNight(now);
-  if (hmEl && secEl && ampmEl && dateEl) renderClock(now);
+  renderClock(now);
+}
+
+function scheduleMinuteClock() {
+  tickTime();
+  const now = new Date();
+  const ms = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
+  setTimeout(() => {
+    scheduleMinuteClock();
+  }, Math.max(100, ms));
 }
 
 let driftIndex = 0;
@@ -66,12 +119,14 @@ function shiftTerm(px) {
 }
 
 const TV_LAYOUT = window.matchMedia("(min-width: 1280px) and (min-height: 720px) and (min-aspect-ratio: 16/9)");
+const USE_TV_FRAME = false;
 
 function fitStage() {
+  if (!stage) return;
   const [x, y] = DRIFT[driftIndex];
   document.documentElement.style.setProperty("--drift-x", String(x));
   document.documentElement.style.setProperty("--drift-y", String(y));
-  if (TV_LAYOUT.matches) {
+  if (USE_TV_FRAME && TV_LAYOUT.matches) {
     const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
     document.documentElement.dataset.layout = "tv";
     stage.style.transform =
@@ -80,7 +135,7 @@ function fitStage() {
   }
   const phone = window.matchMedia("(max-width: 759px), (max-height: 500px) and (orientation: landscape)").matches;
   document.documentElement.dataset.layout = phone ? "phone" : "laptop";
-  stage.style.transform = "none";
+  stage.style.transform = `translate(${x}px, ${y}px)`;
 }
 
 function tileText(value) {
@@ -154,9 +209,56 @@ function homeTiles() {
   return [...nav.querySelectorAll(".tile")];
 }
 
+function homeFocusables() {
+  const list = homeTiles();
+  document.querySelectorAll(".foot-link[href='settings.html'], .home-settings[href='settings.html']").forEach((el) => {
+    if (!list.includes(el)) list.push(el);
+  });
+  return list.filter((el) => el && el.offsetParent !== null);
+}
+
+function moveHomeFocus(key) {
+  const items = homeFocusables();
+  if (!items.length) return;
+  let current = document.activeElement;
+  if (!items.includes(current)) {
+    items[0].focus({ preventScroll: true });
+    return;
+  }
+  const cr = current.getBoundingClientRect();
+  const cx = cr.left + cr.width / 2;
+  const cy = cr.top + cr.height / 2;
+  let best = null;
+  let bestScore = Infinity;
+  for (const el of items) {
+    if (el === current) continue;
+    const r = el.getBoundingClientRect();
+    const dx = r.left + r.width / 2 - cx;
+    const dy = r.top + r.height / 2 - cy;
+    if (key === "ArrowLeft" && dx >= -8) continue;
+    if (key === "ArrowRight" && dx <= 8) continue;
+    if (key === "ArrowUp" && dy >= -8) continue;
+    if (key === "ArrowDown" && dy <= 8) continue;
+    const primary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
+    const secondary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
+    const score = primary * 1000 + secondary;
+    if (score < bestScore) {
+      bestScore = score;
+      best = el;
+    }
+  }
+  if (best) best.focus({ preventScroll: true });
+}
+
 function openTile(tile) {
   const url = tile && tile.dataset.url;
-  if (url === "dashboard.html") location.href = url;
+  if (!url) return;
+  if (url === "dashboard.html") {
+    location.href = url;
+    return;
+  }
+  if (document.documentElement.dataset.layout === "tv") return;
+  window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function renderTileList(apps) {
@@ -187,7 +289,7 @@ function renderTileList(apps) {
     const title = document.createElement("b");
     title.textContent = "No other apps yet";
     const detail = document.createElement("span");
-    detail.textContent = "Add them in apps.json";
+    detail.textContent = "Choose them in Settings";
     empty.append(title, detail);
     nav.append(empty);
   }
@@ -293,32 +395,28 @@ document.addEventListener("keydown", (event) => {
   if (wasHidden) return;
 
   if (dash) {
-    if (select) location.href = "index.html";
+    if (select) {
+      const home = document.querySelector("a.home-pill[href='index.html']");
+      if (home) location.href = home.href;
+      else location.href = "index.html";
+    }
     return;
   }
 
-  const tiles = homeTiles();
-  if (key === "ArrowUp" || key === "ArrowDown") return;
   if (select) {
     const active = document.activeElement;
     if (active && active.classList.contains("tile")) openTile(active);
     else if (active && typeof active.click === "function") active.click();
     return;
   }
-  if (!tiles.length) return;
-  let index = tiles.indexOf(document.activeElement);
-  if (index < 0) index = 0;
-  else if (key === "ArrowRight") index = Math.min(index + 1, tiles.length - 1);
-  else index = Math.max(index - 1, 0);
-  tiles[index].focus({ preventScroll: true });
+  moveHomeFocus(key);
 });
 
 document.addEventListener("mousemove", () => {
   document.body.classList.add("has-mouse");
 }, { once: true });
 
-tickTime();
-setInterval(tickTime, 1000);
+scheduleMinuteClock();
 
 if (stage) {
   fitStage();
@@ -330,15 +428,16 @@ if (stage) {
   if (TV_LAYOUT.addEventListener) TV_LAYOUT.addEventListener("change", fitStage);
 }
 
-if (onDashboard()) {
-  const homeLink = document.querySelector("a.nav-link[href='index.html']");
-  if (homeLink) homeLink.focus({ preventScroll: true });
+function weatherUrl() {
+  const lat = activeLocation.lat;
+  const lon = activeLocation.lon;
+  return (
+    "https://api.open-meteo.com/v1/forecast?latitude=" + encodeURIComponent(String(lat)) +
+    "&longitude=" + encodeURIComponent(String(lon)) +
+    "&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,is_day" +
+    "&temperature_unit=fahrenheit&timezone=auto&forecast_hours=7"
+  );
 }
-
-const WEATHER_URL =
-  "https://api.open-meteo.com/v1/forecast?latitude=40.7128&longitude=-74.0060" +
-  "&current=temperature_2m,weather_code,is_day&hourly=temperature_2m,weather_code,is_day" +
-  "&temperature_unit=fahrenheit&timezone=America%2FNew_York&forecast_hours=7";
 const WEATHER_TICK_MS = 60 * 1000;
 const WEATHER_EVERY_MS = 10 * 60 * 1000;
 const WEATHER_STALE_MS = 20 * 60 * 1000;
@@ -346,7 +445,7 @@ const WEATHER_DROP_MS = 3 * 60 * 60 * 1000;
 const WEATHER_CACHE_KEY = "tv-weather";
 const ICON_FILES = new Set([
   "sun", "moon", "cloud", "cloudsun", "cloudmoon", "rain", "snow", "fog", "storm", "cloudoff",
-  "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker",
+  "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker", "eyeoff",
 ]);
 const TILE_ICONS = new Set([
   "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker",
@@ -370,7 +469,7 @@ let wxLoadGen = 0;
 
 function wallClock(date) {
   const parts = new Intl.DateTimeFormat("en-US", {
-    timeZone: TZ,
+    timeZone: activeTimeZone,
     hourCycle: "h23",
     year: "numeric",
     month: "2-digit",
@@ -596,6 +695,86 @@ function applyStale(el, message, svg) {
   el.append(text);
 }
 
+function formatPlaceLabel(label) {
+  const text = typeof label === "string" ? label.trim() : "";
+  return text || FALLBACK_LOCATION.label;
+}
+
+function updateWeatherPlace() {
+  const el = document.querySelector(".wx-place");
+  if (el) el.textContent = formatPlaceLabel(activeLocation.label);
+}
+
+function applyLocation(loc) {
+  if (!loc || typeof loc !== "object") return;
+  if (typeof loc.lat === "number" && typeof loc.lon === "number") {
+    activeLocation.lat = loc.lat;
+    activeLocation.lon = loc.lon;
+  }
+  if (typeof loc.label === "string" && loc.label.trim()) activeLocation.label = loc.label.trim();
+  if (typeof loc.timezone === "string") setActiveTimeZone(loc.timezone);
+  activeLocation.locked = loc.locked === true;
+  updateWeatherPlace();
+}
+
+async function reversePlaceLabel(lat, lon) {
+  try {
+    const url =
+      "/place.json?lat=" + encodeURIComponent(String(lat)) +
+      "&lon=" + encodeURIComponent(String(lon));
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    if (typeof data.label === "string" && data.label.trim()) return data.label.trim();
+  } catch (err) {
+    /* Fall back to coordinates below. */
+  }
+  return `${Number(lat).toFixed(2)}, ${Number(lon).toFixed(2)}`;
+}
+
+function detectDeviceLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve({
+          lat: Math.round(pos.coords.latitude * 100) / 100,
+          lon: Math.round(pos.coords.longitude * 100) / 100,
+        });
+      },
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 },
+    );
+  });
+}
+
+async function resolveLocation() {
+  try {
+    const settings = await readJson("settings.json");
+    const loc = settings.location;
+    if (loc && loc.locked === true) {
+      let label = typeof loc.label === "string" ? loc.label.trim() : "";
+      if (!label || label.toLowerCase() === "near you") {
+        label = await reversePlaceLabel(loc.lat, loc.lon);
+      }
+      applyLocation({ ...loc, label });
+      return;
+    }
+  } catch (err) {
+    /* settings missing: still try geolocation */
+  }
+  const detected = await detectDeviceLocation();
+  if (detected) {
+    const label = await reversePlaceLabel(detected.lat, detected.lon);
+    applyLocation({ ...detected, label, locked: false });
+    return;
+  }
+  applyLocation(FALLBACK_LOCATION);
+}
+
 function applyDash(iconName, svg, label) {
   if (!dwx) return;
   if (!label) {
@@ -680,13 +859,14 @@ async function loadWeather() {
   const gen = ++wxLoadGen;
   wxTriedAt = Date.now();
   try {
-    const response = await fetch(WEATHER_URL, { cache: "no-store" });
+    const response = await fetch(weatherUrl(), { cache: "no-store" });
     if (gen !== wxLoadGen) return;
     if (!response.ok) throw new Error(String(response.status));
     const data = await response.json();
     if (gen !== wxLoadGen) return;
     if (!weatherOk(data)) throw new Error("bad weather");
     wx = data;
+    if (typeof data.timezone === "string") setActiveTimeZone(data.timezone);
     wxGoodAt = Date.now();
     writeWeatherCache();
   } catch (err) {
@@ -696,18 +876,32 @@ async function loadWeather() {
   await renderWeather();
 }
 
-if (wxBox || dwx) {
-  readWeatherCache();
-  if (wx) renderWeather();
-}
-if (wxBox) {
-  loadWeather();
-  setInterval(() => {
-    if (Date.now() - wxTriedAt >= WEATHER_EVERY_MS) loadWeather();
-    else renderWeather();
-  }, WEATHER_TICK_MS);
-} else if (dwx) {
-  setInterval(renderWeather, WEATHER_TICK_MS);
+async function bootWeatherAndTiles() {
+  await resolveLocation();
+  updateWeatherPlace();
+  if (wxBox || dwx) {
+    readWeatherCache();
+    if (wx) renderWeather();
+  }
+  if (wxBox) {
+    loadWeather();
+    setInterval(() => {
+      if (Date.now() - wxTriedAt >= WEATHER_EVERY_MS) loadWeather();
+      else renderWeather();
+    }, WEATHER_TICK_MS);
+  } else if (dwx) {
+    setInterval(renderWeather, WEATHER_TICK_MS);
+  }
+  loadTiles();
 }
 
-loadTiles();
+bootWeatherAndTiles();
+
+if (onDashboard()) {
+  const homeLink = document.querySelector("a.home-pill[href='index.html']");
+  if (homeLink) homeLink.focus({ preventScroll: true });
+  ensureIcon("house").then((svg) => {
+    const holder = document.getElementById("home-pill-icon");
+    if (holder) applyIcon(holder, "house", svg);
+  });
+}

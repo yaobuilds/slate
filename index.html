@@ -6,7 +6,7 @@
     (function () {
       try {
         var parts = new Intl.DateTimeFormat("en-US", {
-          timeZone: "America/New_York",
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           hourCycle: "h23",
           hour: "2-digit"
         }).formatToParts(new Date());
@@ -27,7 +27,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Slate">
-  <title>Home · TV</title>
+  <title>Home</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="favicon.ico" sizes="48x48">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -39,18 +39,15 @@
 </head>
 <body class="page-home">
   <div id="stage" class="stage">
-    <header class="nav">
-      <a class="nav-link is-current" href="index.html" aria-current="page" data-focus>Home</a>
-      <a class="nav-link" href="dashboard.html" data-focus>Dashboard</a>
-    </header>
-
     <section class="hero" aria-label="Clock">
       <p class="clock">
-        <span id="clock-hm">--:--</span><span class="clock-sec" id="clock-sec"></span>
+        <span id="clock-hm">--:--</span>
         <span class="clock-ampm" id="clock-ampm"></span>
       </p>
-      <p class="date" id="date">New York, NY</p>
+      <p class="date" id="date"></p>
     </section>
+
+    <a class="home-settings focusable" href="settings.html">Settings</a>
 
     <aside class="weather" id="wx" aria-label="Weather in New York, NY" style="visibility: hidden">
       <p class="wx-place">New York, NY</p>
@@ -66,6 +63,13 @@
         <span class="hint hint-keys"><span class="cap">← →</span>Move</span>
         <span class="hint hint-keys"><span class="cap">Enter</span>Open</span>
         <span class="hint hint-touch">Tap a tile</span>
+      </div>
+      <div class="foot-end">
+        <a class="foot-link focusable" href="settings.html" tabindex="0">Settings</a>
+        <p class="signature">
+          <img src="assets/shift-a-slate-dim.svg" width="31" height="20" alt="">
+          <span>by Yao</span>
+        </p>
       </div>
     </footer>
   </div>

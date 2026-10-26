@@ -27,11 +27,11 @@
      a muddy blob. Each also wanders on its own small loop with a different period (61 / 73 / 83 s
      against the 88 s ride), so the picture never visibly repeats. The loop keeps the bright cores in
      the open band under the clock and weather and behind the glass tiles, not behind small text. */
-  var RIDE = { T: 88, cx: 920, cy: 600, rx: 860, ry: 250, rot: 7 * Math.PI / 180 };
+  var RIDE = { T: 72, cx: 920, cy: 600, rx: 900, ry: 280, rot: 7 * Math.PI / 180 };
   var SRC = [
-    { T: 61, ph: 0,     glow: [1500, 860, -12], wob: function (u) { var a = TAU * u; return [70 * Math.sin(a), 50 * Math.sin(2 * a + 0.6)]; } },
-    { T: 73, ph: 1 / 3, glow: [1340, 780, 16],  wob: function (u) { var a = TAU * u; return [60 * Math.sin(a + 2.0), 55 * Math.cos(a + 0.4)]; } },
-    { T: 83, ph: 2 / 3, glow: [1420, 820, -4],  wob: function (u) { var a = TAU * u; return [75 * Math.cos(a + 1.1), 45 * Math.sin(2 * a + 2.2)]; } }
+    { T: 53, ph: 0,     glow: [1500, 860, -12], wob: function (u) { var a = TAU * u; return [90 * Math.sin(a), 65 * Math.sin(2 * a + 0.6)]; } },
+    { T: 61, ph: 1 / 3, glow: [1340, 780, 16],  wob: function (u) { var a = TAU * u; return [80 * Math.sin(a + 2.0), 70 * Math.cos(a + 0.4)]; } },
+    { T: 67, ph: 2 / 3, glow: [1420, 820, -4],  wob: function (u) { var a = TAU * u; return [95 * Math.cos(a + 1.1), 58 * Math.sin(2 * a + 2.2)]; } }
   ];
   var ride = function (i, u) {
     var f = TAU * (u + SRC[i].ph), c = Math.cos(RIDE.rot), s = Math.sin(RIDE.rot);
@@ -93,8 +93,9 @@
   function hourNow() {
     // Same New York window as the midnight-to-6 screen dim.
     try {
+      var tz = (typeof window.slateTimezone === 'string' && window.slateTimezone) ? window.slateTimezone : 'America/New_York';
       var parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: 'America/New_York', hourCycle: 'h23', hour: '2-digit', minute: '2-digit'
+        timeZone: tz, hourCycle: 'h23', hour: '2-digit', minute: '2-digit'
       }).formatToParts(new Date());
       var hour = 0, minute = 0, i;
       for (i = 0; i < parts.length; i += 1) {
@@ -179,7 +180,7 @@
 
   /* ---------- text shields: soft ink pools under text blocks, so a light never sits behind text at
      full strength. Static (painted once, re-measured on resize); the lights move underneath. ---------- */
-  var SHIELD = ['.clock', '.date', '.wx-place', '.wx-now', '.wx-cond', '.wx-hours', '.wx-stale', '.nav', '.dhead', '.dstale'];
+  var SHIELD = ['.clock', '.date', '.wx-place', '.wx-now', '.wx-cond', '.wx-hours', '.wx-stale', '.dash-header', '.dash-date', '.dash-clock', '.data-stale'];
   var BAND = '.foot';   // the footer gets a soft full-width floor instead of small pools, which would read as dark pills
   var shieldWrap = null;
   function shields() {
@@ -287,6 +288,7 @@
     setInterval(updateGlass, 200);
     setInterval(publish, 1000);
     setInterval(function () { applyNight(false); }, 60 * 1000);
+    addEventListener('slate:timezone', function () { applyNight(false); });
     updateGlass(); publish();
   }
   fetch(CONFIG_URL, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(start, function () { start(null); });

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en" class="page-settings">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141A">
+  <title>Home apps · Settings</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="settings-stage">
+    <header class="settings-head">
+      <h1 class="settings-title">Home apps</h1>
+      <a class="settings-back" href="settings.html">Back</a>
+    </header>
+    <section class="settings-panel">
+      <p class="settings-count" id="apps-count">0 of 5</p>
+      <ul class="settings-list" id="apps-list"></ul>
+      <div class="settings-actions">
+        <button type="button" id="apps-save">Save</button>
+      </div>
+      <p class="settings-msg" id="apps-msg" role="status"></p>
+    </section>
+  </div>
+  <form id="settings-pin-form" class="settings-pin-form" hidden autocomplete="off">
+    <p class="pin-title">Enter the PIN from this Mac</p>
+    <label class="pin-label" for="settings-pin-input">PIN</label>
+    <input id="settings-pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
+    <button type="submit">Unlock</button>
+    <p id="settings-pin-error" class="pin-error" role="status"></p>
+  </form>
+  <script src="settings.js"></script>
+  <script src="settings-apps.js"></script>
+</body>
+</html>

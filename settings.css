@@ -1,0 +1,247 @@
+html.page-settings,
+html.page-settings body {
+  position: static;
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+.page-settings body {
+  inset: auto;
+}
+
+.settings-stage {
+  position: relative;
+  z-index: 1;
+  max-width: 960px;
+  margin: 0 auto;
+  padding:
+    max(28px, env(safe-area-inset-top))
+    max(32px, env(safe-area-inset-right))
+    max(32px, env(safe-area-inset-bottom))
+    max(32px, env(safe-area-inset-left));
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+}
+
+.settings-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px 24px;
+}
+
+.settings-title {
+  margin: 0;
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 600;
+}
+
+.settings-back {
+  display: inline-flex;
+  align-items: center;
+  min-height: 48px;
+  padding: 0 20px;
+  border: 2px solid var(--sl-line);
+  border-radius: 999px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font-size: 20px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings-panel {
+  padding: 28px 32px 32px;
+  border-radius: 24px;
+  background: var(--sl-panel);
+  box-shadow: inset 0 0 0 1px var(--sl-line);
+}
+
+.settings-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-height: 56px;
+  padding: 8px 12px;
+  border: 2px solid var(--sl-line);
+  border-radius: 16px;
+  background: var(--sl-ink);
+  cursor: pointer;
+}
+
+.settings-row.is-on {
+  border-color: var(--sl-ice);
+  background: var(--sl-panel-2);
+}
+
+.settings-row input {
+  width: 22px;
+  height: 22px;
+  accent-color: var(--sl-ice);
+}
+
+.settings-row .nm {
+  flex: 1;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.settings-row .ic {
+  width: 28px;
+  height: 28px;
+  color: var(--sl-text-2);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 24px;
+}
+
+.settings-actions button {
+  min-height: 52px;
+  padding: 0 24px;
+  border: 2px solid var(--sl-ice);
+  border-radius: 12px;
+  background: var(--sl-panel-2);
+  color: var(--sl-text);
+  font: 600 20px/1 var(--sl-font);
+  cursor: pointer;
+}
+
+.settings-count {
+  margin: 0;
+  font-size: 20px;
+  color: var(--sl-text-2);
+}
+
+.settings-msg {
+  min-height: 1.2em;
+  margin: 12px 0 0;
+  font-size: 18px;
+  color: var(--sl-text-2);
+}
+
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.theme-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  border: 2px solid var(--sl-line);
+  border-radius: 16px;
+  background: var(--sl-ink);
+  cursor: pointer;
+}
+
+.theme-card.is-on {
+  border-color: var(--sl-ice);
+  background: var(--sl-panel-2);
+}
+
+.theme-card input {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.theme-swatches {
+  display: flex;
+  gap: 8px;
+}
+
+.theme-swatches span {
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  border: 2px solid rgb(255 255 255 / 0.12);
+}
+
+.theme-name {
+  font-size: 20px;
+  font-weight: 600;
+}
+
+.settings-hub-link {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 72px;
+  padding: 0 24px;
+  border: 2px solid var(--sl-line);
+  border-radius: 20px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font-size: 28px;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.settings-hub-link:focus-visible {
+  outline: 3px solid var(--sl-ice);
+  outline-offset: 3px;
+}
+
+.settings-pin-form {
+  position: fixed;
+  z-index: 20;
+  left: 50%;
+  top: max(24px, env(safe-area-inset-top));
+  transform: translateX(-50%);
+  width: min(420px, calc(100vw - 32px));
+  padding: 20px 24px 24px;
+  border: 2px solid var(--sl-line);
+  border-radius: 16px;
+  background: var(--sl-panel);
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
+}
+
+.settings-pin-form[hidden] {
+  display: none;
+}
+
+.loc-readout {
+  margin: 12px 0 20px;
+  font-size: 20px;
+  line-height: 1.4;
+  color: var(--sl-text);
+}
+
+.loc-lock {
+  cursor: pointer;
+}
+
+.settings-pin-form input {
+  width: 100%;
+  min-height: 48px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 2px solid var(--sl-line);
+  border-radius: 12px;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font: 600 22px/1 var(--sl-font);
+}

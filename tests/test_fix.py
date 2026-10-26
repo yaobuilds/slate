@@ -454,6 +454,7 @@ class FixTests(unittest.TestCase):
             "/server.py",
             "/pin.local",
             "/data.local.json",
+            "/settings.local.json",
             "/.git/config",
             "/.git/HEAD",
             "/AGENTS.md",
@@ -486,6 +487,34 @@ class FixTests(unittest.TestCase):
         status, body, _headers = self._raw("GET", "/index.html")
         self.assertEqual(status, 200, body[:80])
         self.assertNotIn(TITLE, body)
+
+    def test_settings_json_localhost(self):
+        open_server = server.Server(("127.0.0.1", 0), server.Handler)
+        open_server.require_pin = False
+        thread = threading.Thread(target=open_server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{open_server.server_address[1]}"
+        try:
+            server.CATALOG_IDS = server.load_catalog_ids()
+            server.AMBIENT_PRESETS = server.load_ambient_preset_keys()
+            status, body = self._body("/settings.json")
+            self.assertEqual(status, 200, body)
+            data = json.loads(body)
+            self.assertIn("homeApps", data)
+            self.assertIn("ambientPreset", data)
+            req = urllib.request.Request(
+                base + "/settings.json",
+                data=json.dumps({"homeApps": ["netflix", "disney-plus"]}).encode(),
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                self.assertEqual(resp.status, 200)
+                saved = json.loads(resp.read().decode())
+            self.assertEqual(saved["homeApps"], ["netflix", "disney-plus"])
+        finally:
+            open_server.shutdown()
+            open_server.server_close()
 
     def test_pin_local_mode_600(self):
         pin_path = Path(self.tmp.name) / "pin.local"
@@ -523,8 +552,9 @@ class FixTests(unittest.TestCase):
         kicker = style.split(".kicker {", 1)[1].split("}", 1)[0]
         self.assertNotIn("22px", kicker)
         main = (ROOT / "main.js").read_text(encoding="utf-8")
-        self.assertIn("latitude=40.7128", main)
-        self.assertIn("longitude=-74.0060", main)
+        self.assertIn("40.7128", main)
+        self.assertIn("-74.0060", main)
+        self.assertIn("timezone=auto", main)
         self.assertIn("forecast_hours=7", main)
         self.assertIn("WEATHER_STALE_MS = 20 * 60 * 1000", main)
         self.assertIn("WEATHER_DROP_MS = 3 * 60 * 60 * 1000", main)
@@ -677,9 +707,9 @@ def run_browser(base):
           const ink = getComputedStyle(document.body).backgroundColor;
           const stageBg = getComputedStyle(stage).backgroundColor;
           const date = getComputedStyle(document.getElementById('date')).color;
-          const current = getComputedStyle(document.querySelector('.nav-link.is-current')).color;
+          const clock = getComputedStyle(document.querySelector('.clock')).color;
           const texts = [...document.querySelectorAll('.stage *')].slice(0, 40).map((el) => getComputedStyle(el).color);
-          return { ink, stageBg, date, current, verdigris: texts.some((c) => c === 'rgb(95, 163, 154)') };
+          return { ink, stageBg, date, clock, verdigris: texts.some((c) => c === 'rgb(95, 163, 154)') };
         })()""")
         evidence["colors_1920"] = colors
         if colors["ink"] != "rgb(16, 20, 26)":
@@ -753,7 +783,7 @@ def run_browser(base):
           w: innerWidth, h: innerHeight
         }))()""")
         evidence["fit_1920"] = fit
-        if fit["layout"] != "tv" or fit["scroll"] > 2 or fit["wide"] > 2:
+        if fit["layout"] != "laptop" or fit["scroll"] > 2 or fit["wide"] > 2:
             raise AssertionError(f"1920 scroll {fit}")
 
         cdp.send("Page.navigate", {"url": base + "/dashboard.html"})
@@ -831,7 +861,7 @@ def run_browser(base):
                 raise AssertionError(f"{label} showed no tiles: {info}")
             if TITLE in cdp.eval("document.body.innerText"):
                 raise AssertionError(f"{label} showed the event title")
-        if evidence["tv720"]["layout"] != "tv":
+        if evidence["tv720"]["layout"] != "laptop":
             raise AssertionError(f"1280x720 layout {evidence['tv720']}")
         if evidence["iphone"]["layout"] != "phone":
             raise AssertionError(f"iPhone layout {evidence['iphone']}")
@@ -862,6 +892,8 @@ class BrowserTests(unittest.TestCase):
         server.PUBLIC = public
         server.EXPECTED_PIN = PIN
         server.FULL_PAYLOAD = None
+        server.CATALOG_IDS = server.load_catalog_ids()
+        server.AMBIENT_PRESETS = server.load_ambient_preset_keys()
         server.FAILS.clear()
         server.SESSIONS.clear()
         httpd = server.Server(("127.0.0.1", 0), server.Handler)

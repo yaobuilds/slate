@@ -14,12 +14,27 @@ import threading
 import time
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import unquote, urlsplit
+from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 PORT = 8000
 LOCAL = ROOT / "data.local.json"
 PUBLIC = ROOT / "data.json"
+SETTINGS_LOCAL = ROOT / "settings.local.json"
+APPS_PUBLIC = ROOT / "apps.json"
+CATALOG = ROOT / "apps-catalog.json"
+AMBIENT = ROOT / "ambient.json"
+DEFAULT_HOME_APPS = ["netflix", "hulu", "hbo", "youtube", "youtube-music"]
+DEFAULT_AMBIENT_PRESET = "aurora"
+DEFAULT_LOCATION = {
+    "lat": 40.7128,
+    "lon": -74.0060,
+    "label": "New York, NY",
+    "timezone": "America/New_York",
+    "locked": False,
+}
+MAX_HOME_APPS = 5
 PIN_PATH = ROOT / "pin.local"
 PIN_RE = re.compile(r"^[0-9]{4,8}$")
 FAIL_LIMIT = 5
@@ -45,6 +60,16 @@ SESSIONS = set()
 FAILS = {}
 EXPECTED_PIN = ""
 FULL_PAYLOAD = None
+SETTINGS_STATE = {
+    "homeApps": list(DEFAULT_HOME_APPS),
+    "ambientPreset": DEFAULT_AMBIENT_PRESET,
+    "location": dict(DEFAULT_LOCATION),
+}
+CATALOG_IDS = set()
+AMBIENT_PRESETS = set()
+NOMINATIM_UA = "SlateDashboard/1.0 (local personal dashboard)"
+PLACE_LAST_CALL = 0.0
+PLACE_LOCK = threading.Lock()
 
 
 def write_public(text: str) -> None:
@@ -96,6 +121,190 @@ def publish_data() -> None:
         write_public(json.dumps(guest_schedule(payload), indent=2))
 
 
+def load_catalog_ids() -> set:
+    ids = set()
+    try:
+        raw = json.loads(CATALOG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ids
+    if not isinstance(raw, list):
+        return ids
+    for item in raw:
+        if isinstance(item, dict) and isinstance(item.get("id"), str) and item["id"]:
+            ids.add(item["id"])
+    return ids
+
+
+def load_ambient_preset_keys() -> set:
+    keys = set()
+    try:
+        raw = json.loads(AMBIENT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return keys
+    presets = raw.get("presets") if isinstance(raw, dict) else None
+    if isinstance(presets, dict):
+        keys.update(presets.keys())
+    return keys
+
+
+def protect_local_file(path: Path) -> None:
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
+def normalize_home_apps(values) -> list:
+    if not isinstance(values, list):
+        return list(DEFAULT_HOME_APPS)
+    out = []
+    seen = set()
+    for item in values:
+        if not isinstance(item, str) or not item or item in seen:
+            continue
+        if item not in CATALOG_IDS:
+            continue
+        seen.add(item)
+        out.append(item)
+        if len(out) >= MAX_HOME_APPS:
+            break
+    return out if out else list(DEFAULT_HOME_APPS)
+
+
+def normalize_ambient_preset(value) -> str:
+    if isinstance(value, str) and value in AMBIENT_PRESETS:
+        return value
+    return DEFAULT_AMBIENT_PRESET
+
+
+def normalize_location(raw) -> dict:
+    base = dict(DEFAULT_LOCATION)
+    if not isinstance(raw, dict):
+        return base
+    lat = raw.get("lat")
+    lon = raw.get("lon")
+    if isinstance(lat, (int, float)) and isinstance(lon, (int, float)):
+        if -90 <= lat <= 90 and -180 <= lon <= 180:
+            base["lat"] = round(float(lat), 4)
+            base["lon"] = round(float(lon), 4)
+    label = raw.get("label")
+    if isinstance(label, str):
+        cleaned = label.strip().replace("\n", " ")[:80]
+        if cleaned:
+            base["label"] = cleaned
+    tz = raw.get("timezone")
+    if isinstance(tz, str) and re.fullmatch(r"[A-Za-z_]+(/[A-Za-z_]+)+", tz.strip()):
+        base["timezone"] = tz.strip()
+    base["locked"] = raw.get("locked") is True
+    return base
+
+
+def read_settings_local() -> dict:
+    if not SETTINGS_LOCAL.exists():
+        return {}
+    try:
+        raw = json.loads(SETTINGS_LOCAL.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def write_settings_local(data: dict) -> None:
+    text = json.dumps(data, indent=2) + "\n"
+    SETTINGS_LOCAL.write_text(text, encoding="utf-8")
+    protect_local_file(SETTINGS_LOCAL)
+
+
+def publish_apps(home_apps: list) -> None:
+    entries = [{"id": app_id} for app_id in home_apps]
+    text = json.dumps(entries, indent=2) + "\n"
+    if APPS_PUBLIC.exists() and APPS_PUBLIC.read_text(encoding="utf-8") == text:
+        return
+    APPS_PUBLIC.write_text(text, encoding="utf-8")
+
+
+def publish_settings() -> None:
+    """Merge settings.local.json into memory and regenerate apps.json."""
+    global SETTINGS_STATE
+    with PUBLISH_LOCK:
+        local = read_settings_local()
+        home = normalize_home_apps(local.get("homeApps"))
+        preset = normalize_ambient_preset(local.get("ambientPreset"))
+        location = normalize_location(local.get("location"))
+        SETTINGS_STATE = {"homeApps": home, "ambientPreset": preset, "location": location}
+        publish_apps(home)
+
+
+def label_from_nominatim(payload: dict) -> str:
+    address = payload.get("address") if isinstance(payload, dict) else None
+    if isinstance(address, dict):
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("hamlet")
+            or address.get("municipality")
+            or address.get("county")
+            or address.get("borough")
+        )
+        state = address.get("state") or address.get("region") or address.get("state_district")
+        if isinstance(city, str) and isinstance(state, str):
+            return f"{city.strip()}, {state.strip()}"
+        if isinstance(city, str) and city.strip():
+            return city.strip()
+        country = address.get("country")
+        if isinstance(country, str) and country.strip():
+            return country.strip()
+    name = payload.get("display_name") if isinstance(payload, dict) else ""
+    if isinstance(name, str) and name.strip():
+        parts = [part.strip() for part in name.split(",") if part.strip()]
+        if len(parts) >= 2:
+            return f"{parts[0]}, {parts[-1]}"
+        return parts[0]
+    return ""
+
+
+def reverse_place_label(lat: float, lon: float) -> str:
+    global PLACE_LAST_CALL
+    with PLACE_LOCK:
+        now = time.monotonic()
+        wait = 1.05 - (now - PLACE_LAST_CALL)
+        if wait > 0:
+            time.sleep(wait)
+        PLACE_LAST_CALL = time.monotonic()
+    query = urlsplit(
+        f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lon}&format=json&addressdetails=1"
+    )
+    req = Request(query.geturl(), headers={"User-Agent": NOMINATIM_UA, "Accept": "application/json"})
+    try:
+        with urlopen(req, timeout=8) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+    except (OSError, json.JSONDecodeError, ValueError):
+        return ""
+    return label_from_nominatim(payload)
+
+
+def merge_ambient_payload() -> dict:
+    try:
+        base = json.loads(AMBIENT.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        base = {}
+    if not isinstance(base, dict):
+        base = {}
+    with PUBLISH_LOCK:
+        preset = SETTINGS_STATE.get("ambientPreset", DEFAULT_AMBIENT_PRESET)
+    if preset in AMBIENT_PRESETS:
+        base = dict(base)
+        base["preset"] = preset
+    base = dict(base)
+    base["speed"] = min(2.5, float(base.get("speed") or 1) * 1.35)
+    if isinstance(base.get("night"), dict):
+        night = dict(base["night"])
+        night["speed"] = min(2, float(night.get("speed") or 0.5) * 1.25)
+        base["night"] = night
+    return base
+
+
 def pin_matches(offered) -> bool:
     """Constant-time check. The length of a wrong PIN does not skip the compare."""
     raw = offered if isinstance(offered, str) else ""
@@ -109,10 +318,19 @@ ALLOWED_FILES = {
     "/",
     "/index.html",
     "/dashboard.html",
+    "/settings.html",
+    "/settings-apps.html",
+    "/settings-theme.html",
+    "/settings-location.html",
     "/style.css",
+    "/settings.css",
     "/tokens.css",
     "/main.js",
     "/dashboard.js",
+    "/settings.js",
+    "/settings-apps.js",
+    "/settings-theme.js",
+    "/settings-location.js",
     "/data.json",
     "/apps.json",
     "/apps-catalog.json",
@@ -122,11 +340,16 @@ ALLOWED_FILES = {
     "/manifest.webmanifest",
     "/favicon.ico",
     "/favicon.svg",
+    "/assets/shift-a-slate-dim.svg",
 }
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")
 APP_ICON = re.compile(r"^/assets/app/[a-z0-9][a-z0-9.-]*\.png$")
 BLOCKED_FILES = {"/data.local.json", "/server.py", "/pin.local"}
+ROUTE_REDIRECTS = {
+    "/settings": "/settings.html",
+    "/settings/": "/settings.html",
+}
 COOKIE_RE = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
 
 
@@ -261,6 +484,12 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def redirect(self, target: str, code=302):
+        self.send_response(code)
+        self.send_header("Location", target)
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+
     def reject(self, code=404):
         self.close_connection = True
         body = b"Not found\n"
@@ -310,13 +539,88 @@ class Handler(SimpleHTTPRequestHandler):
             body = payload if full else guest_schedule(payload)
         self.send_json(200, body)
 
+    def serve_settings_get(self):
+        with PUBLISH_LOCK:
+            publish_settings()
+            body = dict(SETTINGS_STATE)
+        self.send_json(200, body)
+
+    def serve_ambient(self):
+        self.send_json(200, merge_ambient_payload())
+
+    def serve_place(self):
+        split = urlsplit(self.path)
+        params = parse_qs(split.query)
+        lat_raw = params.get("lat", [""])[0]
+        lon_raw = params.get("lon", [""])[0]
+        try:
+            lat = round(float(lat_raw), 4)
+            lon = round(float(lon_raw), 4)
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "bad"})
+            return
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            self.send_json(400, {"error": "bad"})
+            return
+        label = reverse_place_label(lat, lon)
+        if not label:
+            label = f"{lat:.2f}, {lon:.2f}"
+        self.send_json(200, {"lat": lat, "lon": lon, "label": label})
+
+    def settings_write_ok(self) -> bool:
+        if not getattr(self.server, "require_pin", False):
+            return True
+        return session_ok(self.cookie("slate"))
+
+    def save_settings(self, obj):
+        if obj is None:
+            self.send_json(400, {"error": "bad"})
+            return
+        allowed = set(obj.keys())
+        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location"}):
+            self.send_json(400, {"error": "bad"})
+            return
+        with PUBLISH_LOCK:
+            current = dict(SETTINGS_STATE)
+            if "homeApps" in obj:
+                current["homeApps"] = normalize_home_apps(obj.get("homeApps"))
+            if "ambientPreset" in obj:
+                current["ambientPreset"] = normalize_ambient_preset(obj.get("ambientPreset"))
+            if "location" in obj:
+                merged = dict(current.get("location", DEFAULT_LOCATION))
+                if isinstance(obj.get("location"), dict):
+                    merged.update(obj["location"])
+                current["location"] = normalize_location(merged)
+            write_settings_local(current)
+            publish_settings()
+            body = dict(SETTINGS_STATE)
+        self.send_json(200, body)
+
     def do_GET(self):
         path = public_path(self.path)
-        if path is None or not path_allowed(path):
+        if path is None:
+            self.reject()
+            return
+        if path in ROUTE_REDIRECTS:
+            self.redirect(ROUTE_REDIRECTS[path])
+            return
+        if path.lower() == "/settings.html" and path != "/settings.html":
+            self.redirect("/settings.html")
+            return
+        if not path_allowed(path):
             self.reject()
             return
         if path == "/data.json":
             self.serve_schedule()
+            return
+        if path == "/settings.json":
+            self.serve_settings_get()
+            return
+        if path == "/ambient.json":
+            self.serve_ambient()
+            return
+        if path == "/place.json":
+            self.serve_place()
             return
         super().do_GET()
 
@@ -328,9 +632,18 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/data.json":
             self.serve_schedule()
             return
+        if path == "/settings.json":
+            self.serve_settings_get()
+            return
+        if path == "/ambient.json":
+            self.serve_ambient()
+            return
+        if path == "/place.json":
+            self.serve_place()
+            return
         super().do_HEAD()
 
-    def read_object(self):
+    def read_object(self, max_len=8192):
         raw_len = self.headers.get("Content-Length", "")
         if not raw_len.isdigit():
             self.close_connection = True
@@ -341,7 +654,7 @@ class Handler(SimpleHTTPRequestHandler):
             return None
         data = self.rfile.read(length) if length else b""
         ctype = self.headers.get("Content-Type", "")
-        if length > 128 or not ctype.startswith("application/json"):
+        if length > max_len or not ctype.startswith("application/json"):
             return None
         try:
             obj = json.loads(data.decode("utf-8"))
@@ -357,6 +670,13 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = public_path(self.path)
+        if path == "/settings.json":
+            if not self.settings_write_ok():
+                self.send_json(401, {"error": "pin"})
+                return
+            obj = self.read_object()
+            self.save_settings(obj)
+            return
         if not getattr(self.server, "require_pin", False):
             self.reject()
             return
@@ -371,7 +691,7 @@ class Handler(SimpleHTTPRequestHandler):
         if too_many(ip):
             self.send_json(429, {"error": "slow"})
             return
-        obj = self.read_object()
+        obj = self.read_object(max_len=128)
         offered = obj.get("pin") if obj is not None and set(obj) == {"pin"} else ""
         if not pin_matches(offered):
             note_fail(ip)
@@ -444,6 +764,10 @@ def main() -> None:
     args = parser.parse_args()
     lan = args.lan or os.environ.get("SLATE_LAN", "").strip() == "1"
     EXPECTED_PIN = load_pin(lan)
+    global CATALOG_IDS, AMBIENT_PRESETS
+    CATALOG_IDS = load_catalog_ids()
+    AMBIENT_PRESETS = load_ambient_preset_keys()
+    publish_settings()
     publish_data()
 
     local = listen("127.0.0.1", False)
@@ -451,6 +775,7 @@ def main() -> None:
         sys.exit(1)
     servers = [local]
     print(f"On this Mac: http://127.0.0.1:{PORT}")
+    print(f"Settings: http://127.0.0.1:{PORT}/settings.html")
 
     if lan:
         ip = lan_address()
@@ -465,6 +790,7 @@ def main() -> None:
             servers.append(remote)
             print(f"On this Wi-Fi: http://{ip}:{PORT}")
             print(f"Dashboard: http://{ip}:{PORT}/dashboard.html")
+            print(f"Settings: http://{ip}:{PORT}/settings.html")
             print("Same Wi-Fi only. The address is also in System Settings, Network, Wi-Fi, Details.")
             print("Or in Terminal: ipconfig getifaddr en0")
     else:

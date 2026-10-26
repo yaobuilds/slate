@@ -6,7 +6,7 @@
     (function () {
       try {
         var parts = new Intl.DateTimeFormat("en-US", {
-          timeZone: "America/New_York",
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
           hourCycle: "h23",
           hour: "2-digit"
         }).formatToParts(new Date());
@@ -27,7 +27,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Slate">
-  <title>Dashboard · TV</title>
+  <title>Dashboard</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="favicon.ico" sizes="48x48">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
@@ -39,18 +39,25 @@
 </head>
 <body class="page-dashboard guest">
   <div id="stage" class="stage">
-    <header class="nav">
-      <a class="nav-link" href="index.html" data-focus>Home</a>
-      <a class="nav-link is-current" href="dashboard.html" aria-current="page" tabindex="-1">Dashboard</a>
-      <div class="nav-end">
+    <header class="dash-header">
+      <a class="home-pill focusable" href="index.html" data-focus>
+        <span class="home-pill-icon" id="home-pill-icon" aria-hidden="true"></span>
+        <span>Home</span>
+      </a>
+      <p class="dash-date" id="dash-date"></p>
+      <div class="dash-header-end">
         <p class="dwx" id="dwx"></p>
-        <p class="guest-flag" id="guest-flag">Guest mode</p>
-        <button type="button" class="guest-toggle" id="guest-toggle" aria-pressed="false">Show all</button>
+        <p class="dash-clock" id="dash-clock"></p>
       </div>
+      <p class="data-stale" id="data-stale" hidden></p>
     </header>
 
     <section class="panel box panel-today" id="panel-today" aria-labelledby="today-label">
       <h2 class="kicker" id="today-label">Today</h2>
+      <p class="guest-pill" id="guest-pill" hidden>
+        <span class="guest-pill-icon" id="guest-pill-icon" aria-hidden="true"></span>
+        <span>Guest mode</span>
+      </p>
       <ul class="rows" id="today-list"></ul>
     </section>
 
@@ -63,6 +70,21 @@
       <h2 class="kicker" id="money-label">Money</h2>
       <p class="money-note" id="money-note"></p>
     </section>
+
+    <footer class="foot dash-foot">
+      <div class="hints">
+        <span class="hint hint-keys"><span class="cap">Enter</span>Home</span>
+        <span class="hint hint-keys"><span class="cap">G</span><span id="guest-hint">Show all</span></span>
+        <button type="button" class="guest-toggle" id="guest-toggle" aria-pressed="false">Show all</button>
+      </div>
+      <div class="foot-end">
+        <a class="foot-link" href="settings.html">Settings</a>
+        <p class="signature">
+          <img src="assets/shift-a-slate-dim.svg" width="31" height="20" alt="">
+          <span>by Yao</span>
+        </p>
+      </div>
+    </footer>
   </div>
   <form id="pin-form" class="pin-form" hidden autocomplete="off">
     <p class="pin-title">Enter the PIN from this Mac</p>

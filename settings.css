@@ -337,3 +337,66 @@ html.page-settings body {
   color: var(--sl-text);
   font: 600 22px/1 var(--sl-font);
 }
+
+.settings-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 12px 0 16px;
+}
+
+.settings-edit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.settings-field {
+  min-height: 48px;
+  padding: 8px 12px;
+  border: 2px solid var(--sl-line);
+  border-radius: 12px;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font: 600 18px/1.3 var(--sl-font);
+}
+
+.settings-field.time {
+  width: 140px;
+}
+
+.settings-field.title {
+  flex: 1;
+  min-width: 180px;
+}
+
+.settings-field.note {
+  width: 100%;
+  min-height: 96px;
+  resize: vertical;
+}
+
+.settings-edit-row button,
+.settings-add {
+  min-height: 48px;
+  padding: 0 16px;
+  border: 2px solid var(--sl-line);
+  border-radius: 12px;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font: 600 18px/1 var(--sl-font);
+  cursor: pointer;
+}
+
+.settings-edit-row button:focus-visible,
+.settings-add:focus-visible,
+.settings-field:focus-visible {
+  outline: 3px solid var(--sl-ice);
+  outline-offset: 2px;
+}
+
+.settings-add:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}

@@ -130,4 +130,58 @@ function wireSettingsSignOut() {
   btn.addEventListener("click", signOutOnLan);
 }
 
+function applyHidePointer(hide) {
+  document.body.classList.toggle("hide-pointer", hide);
+  if (hide) document.body.classList.remove("has-mouse");
+  else if (document.documentElement.classList.contains("page-settings")) {
+    document.body.classList.add("has-mouse");
+  }
+}
+
+async function persistHidePointer(hide) {
+  const msgEl = document.getElementById("pointer-msg");
+  const result = await saveSettings({ hidePointer: hide });
+  if (result.error === "pin") {
+    wireSettingsPinForm(() => persistHidePointer(hide));
+    return;
+  }
+  if (result.error === "slow") {
+    if (msgEl) msgEl.textContent = "Wait a moment and try again.";
+    return;
+  }
+  if (result.error) {
+    if (msgEl) msgEl.textContent = "Could not save.";
+    return;
+  }
+  applyHidePointer(result.hidePointer === true);
+  const input = document.getElementById("pointer-toggle");
+  if (input) input.checked = result.hidePointer === true;
+  if (msgEl) msgEl.textContent = result.hidePointer ? "Pointer hidden." : "Pointer shows when the mouse moves.";
+}
+
+function wirePointerToggle() {
+  const input = document.getElementById("pointer-toggle");
+  if (!input) return;
+  input.addEventListener("change", () => {
+    persistHidePointer(input.checked);
+  });
+}
+
+async function bootPointerSetting() {
+  try {
+    const settings = await loadSettings();
+    const hide = settings.hidePointer === true;
+    applyHidePointer(hide);
+    const input = document.getElementById("pointer-toggle");
+    if (input) input.checked = hide;
+  } catch (err) {
+    /* Leave the pointer on the default show-after-move path. */
+  }
+}
+
 wireSettingsSignOut();
+wirePointerToggle();
+if (document.documentElement.classList.contains("page-settings")) {
+  document.body.classList.add("has-mouse");
+}
+bootPointerSetting();

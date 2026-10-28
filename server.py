@@ -12,6 +12,7 @@ import socket
 import sys
 import threading
 import time
+from datetime import datetime
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlsplit
@@ -64,6 +65,7 @@ SETTINGS_STATE = {
     "homeApps": list(DEFAULT_HOME_APPS),
     "ambientPreset": DEFAULT_AMBIENT_PRESET,
     "location": dict(DEFAULT_LOCATION),
+    "hidePointer": False,
 }
 CATALOG_IDS = set()
 AMBIENT_PRESETS = set()
@@ -177,6 +179,73 @@ def normalize_ambient_preset(value) -> str:
     return DEFAULT_AMBIENT_PRESET
 
 
+ISO_DATE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})$")
+TODAY_CAP = 8
+DEADLINE_CAP = 8
+
+
+def clip_text(value, limit: int) -> str:
+    if not isinstance(value, str):
+        return ""
+    return value.strip().replace("\n", " ")[:limit]
+
+
+def valid_iso_date(value) -> bool:
+    if not isinstance(value, str) or not ISO_DATE.fullmatch(value.strip()):
+        return False
+    year, month, day = (int(part) for part in value.strip().split("-"))
+    try:
+        datetime(year, month, day)
+    except ValueError:
+        return False
+    return True
+
+
+def local_iso_now() -> str:
+    return datetime.now().astimezone().isoformat(timespec="seconds")
+
+
+def normalize_schedule(obj: dict) -> dict:
+    today = []
+    raw_today = obj.get("today") if isinstance(obj.get("today"), list) else []
+    for item in raw_today:
+        if not isinstance(item, dict):
+            continue
+        when = clip_text(item.get("time"), 16)
+        title = clip_text(item.get("title"), 120)
+        if not when and not title:
+            continue
+        today.append({"time": when, "title": title})
+        if len(today) >= TODAY_CAP:
+            break
+    deadlines = []
+    raw_deadlines = obj.get("deadlines") if isinstance(obj.get("deadlines"), list) else []
+    for item in raw_deadlines:
+        if not isinstance(item, dict):
+            continue
+        title = clip_text(item.get("title"), 120)
+        due = item.get("due").strip() if isinstance(item.get("due"), str) else ""
+        if not title or not valid_iso_date(due):
+            continue
+        deadlines.append({"title": title, "due": due})
+        if len(deadlines) >= DEADLINE_CAP:
+            break
+    money_raw = obj.get("money") if isinstance(obj.get("money"), dict) else {}
+    note = clip_text(money_raw.get("note"), 200)
+    return {
+        "updated": local_iso_now(),
+        "today": today,
+        "deadlines": deadlines,
+        "money": {"note": note},
+    }
+
+
+def write_schedule_local(payload: dict) -> None:
+    text = json.dumps(payload, indent=2) + "\n"
+    LOCAL.write_text(text, encoding="utf-8")
+    protect_local_file(LOCAL)
+
+
 def normalize_location(raw) -> dict:
     base = dict(DEFAULT_LOCATION)
     if not isinstance(raw, dict):
@@ -231,7 +300,13 @@ def publish_settings() -> None:
         home = normalize_home_apps(local.get("homeApps"))
         preset = normalize_ambient_preset(local.get("ambientPreset"))
         location = normalize_location(local.get("location"))
-        SETTINGS_STATE = {"homeApps": home, "ambientPreset": preset, "location": location}
+        hide_pointer = local.get("hidePointer") is True
+        SETTINGS_STATE = {
+            "homeApps": home,
+            "ambientPreset": preset,
+            "location": location,
+            "hidePointer": hide_pointer,
+        }
         publish_apps(home)
 
 
@@ -322,6 +397,7 @@ ALLOWED_FILES = {
     "/settings-apps.html",
     "/settings-theme.html",
     "/settings-location.html",
+    "/settings-schedule.html",
     "/style.css",
     "/settings.css",
     "/tokens.css",
@@ -331,6 +407,7 @@ ALLOWED_FILES = {
     "/settings-apps.js",
     "/settings-theme.js",
     "/settings-location.js",
+    "/settings-schedule.js",
     "/data.json",
     "/apps.json",
     "/apps-catalog.json",
@@ -579,7 +656,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "bad"})
             return
         allowed = set(obj.keys())
-        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location"}):
+        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location", "hidePointer"}):
             self.send_json(400, {"error": "bad"})
             return
         with PUBLISH_LOCK:
@@ -593,9 +670,28 @@ class Handler(SimpleHTTPRequestHandler):
                 if isinstance(obj.get("location"), dict):
                     merged.update(obj["location"])
                 current["location"] = normalize_location(merged)
+            if "hidePointer" in obj:
+                current["hidePointer"] = obj.get("hidePointer") is True
             write_settings_local(current)
             publish_settings()
             body = dict(SETTINGS_STATE)
+        self.send_json(200, body)
+
+    def save_schedule(self, obj):
+        if obj is None or set(obj.keys()) != {"today", "deadlines", "money"}:
+            self.send_json(400, {"error": "bad"})
+            return
+        if not isinstance(obj.get("today"), list) or not isinstance(obj.get("deadlines"), list):
+            self.send_json(400, {"error": "bad"})
+            return
+        if not isinstance(obj.get("money"), dict):
+            self.send_json(400, {"error": "bad"})
+            return
+        payload = normalize_schedule(obj)
+        with PUBLISH_LOCK:
+            write_schedule_local(payload)
+            publish_data()
+            body = dict(FULL_PAYLOAD) if isinstance(FULL_PAYLOAD, dict) else payload
         self.send_json(200, body)
 
     def do_GET(self):
@@ -678,6 +774,13 @@ class Handler(SimpleHTTPRequestHandler):
                 return
             obj = self.read_object()
             self.save_settings(obj)
+            return
+        if path == "/schedule.json":
+            if not self.settings_write_ok():
+                self.send_json(401, {"error": "pin"})
+                return
+            obj = self.read_object()
+            self.save_schedule(obj)
             return
         if not getattr(self.server, "require_pin", False):
             self.reject()

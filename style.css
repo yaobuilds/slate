@@ -79,27 +79,6 @@ html.night .weather {
     "foot foot";
 }
 
-.home-settings {
-  position: absolute;
-  z-index: 2;
-  top: max(28px, env(safe-area-inset-top));
-  right: max(32px, env(safe-area-inset-right));
-  font-family: var(--sl-font);
-  font-size: 22px;
-  font-weight: 600;
-  color: var(--sl-text-2);
-  text-decoration: none;
-}
-
-.home-settings:focus {
-  outline: 6px solid transparent;
-  outline-offset: 4px;
-}
-
-body.show-focus .home-settings:focus {
-  outline-color: var(--sl-ice);
-}
-
 .page-dashboard .stage {
   grid-template-columns: 1fr 1fr 1fr;
   grid-template-rows: auto 1fr auto;
@@ -683,6 +662,11 @@ body.has-mouse * {
 
 body.has-mouse .tile {
   cursor: pointer;
+}
+
+body.hide-pointer,
+body.hide-pointer * {
+  cursor: none;
 }
 
 .panel .kicker {

@@ -28,7 +28,7 @@ Leave this Mac awake while you use Slate. If it sleeps, the page stops.
 
 - **Home:** minute clock, weather, Dashboard plus up to five app tiles, footer **Settings**.
 - **Tiles:** streaming links open in a **new browser tab** so Home stays open. Dashboard opens in the same tab.
-- **Settings** (footer link): pick home apps, theme, and **location**. By default the browser may share your location for weather and the clock time zone (Open-Meteo, no key). **Lock location** in Settings → Location to keep a fixed place. Saves to `settings.local.json` on this Mac (gitignored).
+- **Settings** (footer link): pick home apps, theme, location, and **schedule**. **Hide mouse pointer** keeps the cursor off even when the mouse moves. By default the browser may share your location for weather and the clock time zone (Open-Meteo, no key). **Lock location** in Settings → Location to keep a fixed place. Home apps, theme, and the pointer choice save to `settings.local.json`. Schedule saves to `data.local.json`. Both files stay on this Mac and are gitignored.
 - **Time and weather** are live: the clock updates every minute; weather refreshes about every 10 minutes. Arrow keys on Home move focus in all four directions (tiles and Settings).
 - **Dashboard:** guest mode by default; **G** or **Show all** for Deadlines and Money. On Wi-Fi, the schedule needs the PIN once per session. On this Mac (`127.0.0.1`), no PIN. Esc or Backspace goes Home.
 

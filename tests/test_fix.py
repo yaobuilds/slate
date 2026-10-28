@@ -522,9 +522,108 @@ class FixTests(unittest.TestCase):
                 self.assertEqual([item["id"] for item in written], ["netflix", "disney-plus"])
                 self.assertTrue(server.SETTINGS_LOCAL.exists())
                 self.assertFalse((ROOT / "settings.local.json") == server.SETTINGS_LOCAL)
+                pointer = urllib.request.Request(
+                    base + "/settings.json",
+                    data=json.dumps({"hidePointer": True}).encode(),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(pointer, timeout=5) as resp:
+                    self.assertEqual(resp.status, 200)
+                    saved_pointer = json.loads(resp.read().decode())
+                self.assertIs(saved_pointer["hidePointer"], True)
+                self.assertEqual(saved_pointer["homeApps"], ["netflix", "disney-plus"])
         finally:
             server.SETTINGS_LOCAL = old_settings
             server.APPS_PUBLIC = old_apps
+            open_server.shutdown()
+            open_server.server_close()
+
+    def test_schedule_post_normalizes_and_stays_private(self):
+        title = "Recital EXAMPLE"
+        before = self.local.read_text(encoding="utf-8")
+        body = json.dumps({
+            "today": [
+                {"time": "", "title": ""},
+                {"time": "9:00", "title": title},
+            ],
+            "deadlines": [
+                {"title": "Outline EXAMPLE", "due": "Friday"},
+                {"title": "Draft EXAMPLE", "due": "2026-11-02"},
+            ],
+            "money": {"note": "No bills this week", "bars": [{"label": "Rent"}]},
+        }).encode()
+        status, raw, _headers = self._raw(
+            "POST",
+            "/schedule.json",
+            body,
+            {"Content-Type": "application/json"},
+        )
+        self.assertEqual(status, 401, raw)
+        self.assertEqual(self.local.read_text(encoding="utf-8"), before)
+        self.assertNotIn(title, raw)
+
+        status, raw, _headers = self._raw("GET", "/data.local.json")
+        self.assertEqual(status, 404)
+        self.assertNotIn(title, raw)
+
+        status, raw, _headers = self._raw("GET", "/settings-schedule.html")
+        self.assertEqual(status, 200, raw[:80])
+        self.assertNotIn(title, raw)
+
+        open_server = server.Server(("127.0.0.1", 0), server.Handler)
+        open_server.require_pin = False
+        thread = threading.Thread(target=open_server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{open_server.server_address[1]}"
+        try:
+            self.local.write_text("{", encoding="utf-8")
+            extra = json.dumps({
+                "today": [],
+                "deadlines": [],
+                "money": {"note": ""},
+                "extra": True,
+            }).encode()
+            req = urllib.request.Request(
+                base + "/schedule.json",
+                data=extra,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with self.assertRaises(urllib.error.HTTPError) as caught:
+                urllib.request.urlopen(req, timeout=5)
+            self.assertEqual(caught.exception.code, 400)
+            self.assertEqual(self.local.read_text(encoding="utf-8"), "{")
+
+            req = urllib.request.Request(
+                base + "/schedule.json",
+                data=body,
+                method="POST",
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                self.assertEqual(resp.status, 200)
+                saved = json.loads(resp.read().decode())
+            self.assertEqual(saved["today"], [{"time": "9:00", "title": title}])
+            self.assertEqual(saved["deadlines"], [{"title": "Draft EXAMPLE", "due": "2026-11-02"}])
+            self.assertEqual(saved["money"], {"note": "No bills this week"})
+            self.assertNotIn("bars", saved["money"])
+            self.assertIn("T", saved["updated"])
+            disk = json.loads(self.local.read_text(encoding="utf-8"))
+            self.assertEqual(disk["today"][0]["title"], title)
+            self.assertEqual(self.local.stat().st_mode & 0o777, 0o600)
+
+            with urllib.request.urlopen(base + "/data.json", timeout=5) as resp:
+                guest = resp.read().decode()
+            self.assertIn("Busy", guest)
+            self.assertNotIn(title, guest)
+
+            full_req = urllib.request.Request(base + "/data.json", headers={"X-Slate-Full": "1"})
+            with urllib.request.urlopen(full_req, timeout=5) as resp:
+                full = json.loads(resp.read().decode())
+            self.assertEqual(full["today"][0]["title"], title)
+            self.assertNotIn(title, "\n".join(self.logs))
+        finally:
             open_server.shutdown()
             open_server.server_close()
 

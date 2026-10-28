@@ -211,7 +211,7 @@ function homeTiles() {
 
 function homeFocusables() {
   const list = homeTiles();
-  document.querySelectorAll(".foot-link[href='settings.html'], .home-settings[href='settings.html']").forEach((el) => {
+  document.querySelectorAll(".foot-link[href='settings.html']").forEach((el) => {
     if (!list.includes(el)) list.push(el);
   });
   return list.filter((el) => el && el.offsetParent !== null);
@@ -413,8 +413,9 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.addEventListener("mousemove", () => {
+  if (document.body.classList.contains("hide-pointer")) return;
   document.body.classList.add("has-mouse");
-}, { once: true });
+});
 
 scheduleMinuteClock();
 
@@ -892,6 +893,19 @@ async function bootWeatherAndTiles() {
 }
 
 bootWeatherAndTiles();
+
+async function applyPointerSetting() {
+  try {
+    const settings = await readJson("settings.json");
+    const hide = settings.hidePointer === true;
+    document.body.classList.toggle("hide-pointer", hide);
+    if (hide) document.body.classList.remove("has-mouse");
+  } catch (err) {
+    /* A missing settings file keeps the pointer hidden until the mouse moves. */
+  }
+}
+
+applyPointerSetting();
 
 if (onDashboard()) {
   const homeLink = document.querySelector("a.home-pill[href='index.html']");

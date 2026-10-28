@@ -350,13 +350,60 @@ async function loadTiles() {
   await paintTileIcons(built);
 }
 
-const BACK_KEYS = new Set(["Escape", "Backspace", "BrowserBack", "GoBack"]);
-const BACK_CODES = new Set([461, 10009]);
+const BACK_KEYS = new Set(["Escape", "Backspace", "BrowserBack", "GoBack", "Back"]);
+const BACK_CODES = new Set([4, 461, 10009]);
 const MODIFIER_KEYS = new Set(["Shift", "Control", "Alt", "Meta"]);
 let idleTimer = 0;
 
 function onDashboard() {
   return document.body.classList.contains("page-dashboard");
+}
+
+function isBackKey(event) {
+  if (BACK_KEYS.has(event.key) || BACK_CODES.has(event.keyCode)) return true;
+  return false;
+}
+
+function goHome() {
+  location.href = "index.html";
+}
+
+function dashboardBackAction(fromPopState) {
+  const pinForm = document.getElementById("pin-form");
+  const pinInput = document.getElementById("pin-input");
+  const pinError = document.getElementById("pin-error");
+  if (pinForm && !pinForm.hidden) {
+    pinForm.hidden = true;
+    if (pinError) pinError.textContent = "";
+    if (pinInput) pinInput.blur();
+    if (fromPopState) {
+      try {
+        history.pushState({ slate: "dashboard" }, "", location.href);
+      } catch (err) {
+        /* History may be unavailable in some embeds. */
+      }
+    }
+    return;
+  }
+  goHome();
+}
+
+function installDashboardBack() {
+  if (!onDashboard()) return;
+  try {
+    history.pushState({ slate: "dashboard" }, "", location.href);
+  } catch (err) {
+    /* History may be unavailable in some embeds. */
+  }
+  window.addEventListener("popstate", () => {
+    if (!onDashboard()) return;
+    dashboardBackAction(true);
+  });
+  const bridge = window.SlateTV;
+  if (bridge && typeof bridge === "object") {
+    bridge.goHome = goHome;
+    bridge.onBackPressed = dashboardBackAction;
+  }
 }
 
 function showFocus(on) {
@@ -370,24 +417,25 @@ function bumpIdle() {
 
 document.addEventListener("keydown", (event) => {
   if (event.metaKey || event.ctrlKey || event.altKey) return;
-  const tag = document.activeElement && document.activeElement.tagName;
-  if (tag === "INPUT" || tag === "TEXTAREA") return;
   if (MODIFIER_KEYS.has(event.key)) return;
 
   const key = event.key;
   const dash = onDashboard();
+
+  if (isBackKey(event)) {
+    event.preventDefault();
+    if (dash) dashboardBackAction();
+    return;
+  }
+
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === "INPUT" || tag === "TEXTAREA") return;
 
   if (key === "g" || key === "G") {
     if (dash) {
       showFocus(true);
       bumpIdle();
     }
-    return;
-  }
-
-  if (BACK_KEYS.has(key) || BACK_CODES.has(event.keyCode)) {
-    event.preventDefault();
-    if (dash) location.href = "index.html";
     return;
   }
 
@@ -927,6 +975,7 @@ async function applyPointerSetting() {
 applyPointerSetting();
 
 if (onDashboard()) {
+  installDashboardBack();
   const homeLink = document.querySelector("a.home-pill[href='index.html']");
   if (homeLink) homeLink.focus({ preventScroll: true });
   ensureIcon("house").then((svg) => {

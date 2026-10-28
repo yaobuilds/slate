@@ -152,6 +152,7 @@ function tileUrl(url) {
   if (!value || value.length > 500) return "";
   if (/[\u0000-\u001f\\]/.test(value) || value.startsWith("//") || value.includes("..")) return "";
   if (/^[a-z0-9][a-z0-9._/-]*$/i.test(value)) return value;
+  if (/^slate:\/\/[a-z0-9][a-z0-9-]*$/i.test(value)) return value;
   try {
     const parsed = new URL(value);
     if (parsed.protocol === "http:" || parsed.protocol === "https:") return parsed.href;
@@ -159,6 +160,11 @@ function tileUrl(url) {
     return "";
   }
   return "";
+}
+
+function onAndroidTv() {
+  if (window.SlateTV) return true;
+  return /Android/i.test(navigator.userAgent || "");
 }
 
 function chosenText(override, fallback) {
@@ -197,7 +203,9 @@ function resolveApps(entries, catalog) {
     }
     name = name.replace(/\s+/g, " ").trim();
     if (!name) continue;
-    apps.push({ name, icon: tileIcon(icon), url: tileUrl(url) });
+    const resolved = tileUrl(url);
+    if (resolved.startsWith("slate://") && !onAndroidTv()) continue;
+    apps.push({ name, icon: tileIcon(icon), url: resolved });
   }
   return apps;
 }
@@ -254,6 +262,17 @@ function openTile(tile) {
   const url = tile && tile.dataset.url;
   if (!url) return;
   if (url === "dashboard.html") {
+    location.href = url;
+    return;
+  }
+  if (url.startsWith("slate://")) {
+    if (url.startsWith("slate://google-tv")) {
+      const bridge = window.SlateTV;
+      if (bridge && typeof bridge.openGoogleTvHome === "function") {
+        bridge.openGoogleTvHome();
+        return;
+      }
+    }
     location.href = url;
     return;
   }

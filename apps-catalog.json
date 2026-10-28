@@ -18,5 +18,6 @@
   {"id": "plex", "name": "Plex", "icon": "tv", "url": "https://app.plex.tv/"},
   {"id": "youtube-tv", "name": "YouTube TV", "icon": "tv", "url": "https://tv.youtube.com/"},
   {"id": "sling-tv", "name": "Sling TV", "icon": "tv", "url": "https://www.sling.com/"},
-  {"id": "starz", "name": "Starz", "icon": "film", "url": "https://www.starz.com/"}
+  {"id": "starz", "name": "Starz", "icon": "film", "url": "https://www.starz.com/"},
+  {"id": "google-tv", "name": "Google TV", "icon": "tv", "url": "slate://google-tv"}
 ]

@@ -5,7 +5,7 @@ let clearPreview = () => {};
 let ambientPresets = {};
 let ambientPalettes = {};
 const groups = [
-  ['appearance-styles', 'tvAppearance', [['sculptural', 'Sculptural Light'], ['aqua', 'Aqua']]],
+  ['appearance-styles', 'tvAppearance', [['sculptural', 'Sculptural Light'], ['flurry', 'Flurry']]],
   ['appearance-motion', 'tvMotion', [['still', 'Still'], ['drift', 'Drift'], ['reactive', 'Reactive']]],
   ['appearance-intensity', 'tvIntensity', [['soft', 'Soft'], ['balanced', 'Balanced'], ['vivid', 'Vivid']]],
 ];
@@ -35,19 +35,19 @@ function updatePreview() {
     document.getElementById(id).querySelectorAll('button').forEach(button => button.setAttribute('aria-checked', String(button.dataset.value === picked[key])));
   }
   const preview = document.getElementById('appearance-preview');
-  preview.dataset.style = picked.tvAppearance;
+  preview.dataset.style = picked.tvAppearance === 'aqua' ? 'flurry' : picked.tvAppearance;
   clearPreview();
   const preset = ambientPresets[picked.ambientPreset] || {};
   const colors = preset.enabled === false ? [] : ambientPalettes[preset.palette]?.colors;
-  const look = picked.tvAppearance === 'aqua' ? 'aqua' : 'sculptural';
+  const look = picked.tvAppearance === 'flurry' || picked.tvAppearance === 'aqua' ? 'flurry' : 'sculptural';
   clearPreview = window.SlateLooks.decorate(document.getElementById('preview-backdrop'), look, picked.tvMotion, picked.tvIntensity, colors);
-  document.getElementById('appearance-description').textContent = look === 'aqua'
-    ? 'Flowing ribbons and a glass app dock.'
+  document.getElementById('appearance-description').textContent = look === 'flurry'
+    ? 'Colored light streaks meeting at a bright core.'
     : 'Deep ink and luminous forms.';
   document.getElementById('motion-description').textContent = {
     still: 'A still composition, with no decorative animation.',
-    drift: 'Slow, continuous movement.',
-    reactive: 'The background follows remote focus. Selection flashes briefly.',
+    drift: 'Slow movement. Focus leans the field and leaves a short streak.',
+    reactive: 'Focus and the pointer pull the field. A press flashes the core.',
   }[picked.tvMotion];
   document.getElementById('ambient-controls').hidden = look !== 'sculptural';
   preview.classList.remove('menu-turn');
@@ -75,7 +75,8 @@ async function init() {
     ambientPresets = ambient.presets || {};
     ambientPalettes = ambient.palettes || {};
     for (const key of Object.keys(picked)) if (typeof settings[key] === 'string') picked[key] = settings[key];
-    if (picked.tvAppearance !== 'aqua') picked.tvAppearance = 'sculptural';
+    if (picked.tvAppearance === 'aqua') picked.tvAppearance = 'flurry';
+    if (picked.tvAppearance !== 'flurry') picked.tvAppearance = 'sculptural';
     const select = document.getElementById('ambient-preset');
     for (const [key, preset] of Object.entries(ambient.presets || {})) {
       const option = document.createElement('option');
@@ -92,7 +93,7 @@ saveBtn.addEventListener('click', persistTheme);
 addEventListener('pagehide', () => clearPreview());
 document.addEventListener('slate:motion-preference', updatePreview);
 function reactPreview(x, y) {
-  if (picked.tvMotion !== 'reactive' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  if (picked.tvMotion === 'still' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   const backdrop = document.getElementById('preview-backdrop');
   backdrop.style.setProperty('--look-x', `${(x - .5) * 12}px`);
   backdrop.style.setProperty('--look-y', `${(y - .5) * 8}px`);

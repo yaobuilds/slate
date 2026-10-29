@@ -43,7 +43,7 @@ Create a private Google Calendar for Slate. On this Mac, add `calendarId` to `se
 
 ## TV appearance
 
-**Settings → Appearance** offers **Sculptural Light** (deep ink, luminous forms, clock, forecast, and app grid) and **Aqua** (ribbons and a glass dock of six apps). Still, Drift, and Reactive motion stay, with Soft, Balanced, and Vivid intensity and a live thumbnail. Reactive focus pulls the background. A selection flashes briefly. Reduced motion stops the decoration. Select weather on Home to open the forecast page. Mac and iPad keep their layout.
+**Settings → Appearance** offers **Sculptural Light** (deep ink and luminous forms) and **Flurry** (colored light streaks around a bright core). Both show on Home for the TV, Mac, and phone. The TV keeps its frame and, for Flurry, a six-app dock. The Mac keeps the fluid grid. The phone keeps the stacked layout. Still, Drift, and Reactive stay, with Soft, Balanced, and Vivid intensity and a live thumbnail. Drift and Reactive lean the field as focus or the pointer moves, and a press flashes the core. Still and reduced motion stop that. Select weather on Home to open the forecast page.
 
 ## TV and server recovery
 

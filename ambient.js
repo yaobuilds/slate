@@ -291,13 +291,13 @@
     addEventListener('slate:timezone', function () { applyNight(false); });
     updateGlass(); publish();
   }
-  var onTvHome = !!window.SlateTV && document.body.classList.contains('page-home');
+  var onHome = document.body.classList.contains('page-home');
   Promise.all([
     fetch(CONFIG_URL, { cache: 'no-store' }).then(function (r) { return r.json(); }),
-    onTvHome ? (window.slateSettingsPromise || fetch('settings.json', { cache: 'no-store' }).then(function (r) { return r.json(); })) : Promise.resolve(null)
+    onHome ? (window.slateSettingsPromise || fetch('settings.json', { cache: 'no-store' }).then(function (r) { return r.json(); })) : Promise.resolve(null)
   ]).then(function (data) {
     var c = data[0], look = data[1];
-    if (look && (look.tvAppearance === 'sculptural' || look.tvAppearance === 'aqua')) return;
+    if (onHome && look && (look.tvAppearance === 'sculptural' || look.tvAppearance === 'flurry' || look.tvAppearance === 'aqua')) return;
     if (look && look.tvBackdrop && look.tvBackdrop !== 'ambient') return;
     if (look && (look.tvMotion === 'still' || matchMedia('(prefers-reduced-motion: reduce)').matches)) {
       var pr = c.presets && c.presets[c.preset];
@@ -307,5 +307,5 @@
     if (look && look.tvIntensity === 'soft') c.intensity = .4;
     if (look && look.tvIntensity === 'vivid') c.intensity = 1;
     start(c);
-  }, function () { if (!onTvHome) start(null); });
+  }, function () { if (!onHome) start(null); });
 })();

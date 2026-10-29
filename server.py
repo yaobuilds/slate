@@ -347,14 +347,20 @@ def publish_settings() -> None:
 
 
 def normalize_tv_appearance(source: dict) -> dict:
+    appearance = source.get("tvAppearance")
+    if appearance == "aqua":
+        appearance = "flurry"
+    if appearance not in ("sculptural", "flurry"):
+        appearance = "sculptural"
     choices = {
-        "tvAppearance": ("sculptural", "aqua"),
         "tvBackdrop": ("ambient", "landscape", "aqua", "flurry", "orbit"),
         "tvMotion": ("drift", "still", "reactive"),
         "tvIntensity": ("balanced", "soft", "vivid"),
     }
-    return {key: source.get(key) if source.get(key) in values else values[0]
-            for key, values in choices.items()}
+    normalized = {key: source.get(key) if source.get(key) in values else values[0]
+                  for key, values in choices.items()}
+    normalized["tvAppearance"] = appearance
+    return normalized
 
 
 def keychain_value(account: str) -> str:

@@ -463,11 +463,11 @@ html.page-settings body {
 .preview-dock { left: 7%; bottom: 16%; width: 86%; height: 28%; display: flex; gap: 8px; }
 .preview-dock > span { flex: 1; padding: 8px; border: 1px solid var(--sl-line); border-radius: 8px; background: rgba(22,27,34,.8); font-size: 20px; }
 .preview-dock small { display: block; font-size: 9px; margin-top: 5px; }
-[data-style='scenic'] .preview-hero { font-size: 24px; }
-[data-style='scenic'] .preview-weather { font-size: 18px; right: 23%; }
-[data-style='scenic'] .preview-settings { top: 12%; bottom: auto; }
-[data-style='scenic'] .preview-dock { border: 1px solid rgba(230,225,215,.2); border-radius: 12px; background: rgba(16,20,26,.62); padding: 5px; }
-[data-style='scenic'] .preview-dock > span { text-align: center; border: 0; background: transparent; padding: 2px; }
+[data-style='flurry'] .preview-hero { font-size: 24px; }
+[data-style='flurry'] .preview-weather { font-size: 18px; right: 23%; }
+[data-style='flurry'] .preview-settings { top: 12%; bottom: auto; }
+[data-style='flurry'] .preview-dock { border: 1px solid rgba(230,225,215,.2); border-radius: 12px; background: rgba(16,20,26,.62); padding: 5px; }
+[data-style='flurry'] .preview-dock > span { text-align: center; border: 0; background: transparent; padding: 2px; }
 .appearance-note { font: 450 14px/1.5 var(--sl-font); color: var(--sl-text-2); margin: 12px 0 0; }
 .appearance-save { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
 .appearance-save .settings-msg { margin: 0; font-size: 16px; }

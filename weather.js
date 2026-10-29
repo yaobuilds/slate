@@ -18,7 +18,7 @@ const radarTime = document.getElementById("radar-time");
 const radarPlay = document.getElementById("radar-play");
 const radarZoom = document.getElementById("radar-zoom");
 
-let location = { lat: 40.7128, lon: -74.0060, label: "New York, NY", timezone: "America/New_York" };
+let savedPlace = { lat: 40.7128, lon: -74.0060, label: "New York, NY", timezone: "America/New_York" };
 let forecast = null;
 let selectedDay = 0;
 let radarFrame = 0;
@@ -57,9 +57,9 @@ async function loadIcon(name) {
 function weatherUrl() {
   return (
     "https://api.open-meteo.com/v1/forecast?latitude=" +
-    encodeURIComponent(String(location.lat)) +
+    encodeURIComponent(String(savedPlace.lat)) +
     "&longitude=" +
-    encodeURIComponent(String(location.lon)) +
+    encodeURIComponent(String(savedPlace.lon)) +
     "&current=temperature_2m,weather_code,is_day" +
     "&hourly=temperature_2m,weather_code,is_day,precipitation_probability,precipitation" +
     "&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max" +
@@ -244,12 +244,12 @@ async function init() {
   try {
     const settings = await fetch("settings.json", { cache: "no-store" }).then((r) => r.json());
     if (settings.location && typeof settings.location.lat === "number") {
-      location = settings.location;
+      savedPlace = settings.location;
     }
   } catch (error) {
     /* Keep fallback location. */
   }
-  weatherPlace.textContent = location.label || "Weather";
+  weatherPlace.textContent = savedPlace.label || "Weather";
   try {
     const response = await fetch(weatherUrl(), { cache: "no-store" });
     if (!response.ok) throw new Error("weather");

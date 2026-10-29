@@ -1,13 +1,49 @@
-/* TV Home presentation. Local artwork and decorative motion only. */
+/* Home presentation. Local artwork and decorative motion only. */
 (() => {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const stops = ['#72c9d0', '#837ee0', '#db9cae', '#b7d2e4'];
+  const flurryHues = ['#ff4ad8', '#8a4bff', '#3a6dff', '#3ee7ff', '#ffe14a', '#3dff7a'];
+  const field = { nx: 0.68, ny: 0.42 };
   let stopBackdrop = () => {};
   let config = {};
   let page = 0;
+  let lastFocus = null;
+  let lastPointer = 0;
   const PAGE_SIZE = 6;
-  const isTvHome = () => document.body.classList.contains('page-home') && onAndroidTv();
-  const scenic = () => document.body.dataset.tvAppearance === 'aqua';
+  const isHome = () => document.body.classList.contains('page-home');
+  const androidTv = () => typeof onAndroidTv === 'function' && onAndroidTv();
+  const tvFrame = () => typeof TV_LAYOUT !== 'undefined' && TV_LAYOUT.matches;
+  const flurryDock = () => isHome() && androidTv() && tvFrame() && document.body.dataset.tvAppearance === 'flurry';
+  const motionLive = () => !reducedMotion.matches && config.tvMotion !== 'still';
+
+  function drawFlurry(ctx, tick) {
+    const coreX = 960 * field.nx;
+    const coreY = 540 * field.ny;
+    ctx.fillStyle = 'rgba(0,0,0,0.2)';
+    ctx.fillRect(0, 0, 960, 540);
+    ctx.lineCap = 'round';
+    for (let i = 0; i < 16; i += 1) {
+      const angle = tick * 0.12 + i * 0.42;
+      const sx = 480 + Math.cos(angle) * 560;
+      const sy = 270 + Math.sin(angle * 1.25) * 360;
+      ctx.strokeStyle = flurryHues[i % flurryHues.length];
+      ctx.globalAlpha = 0.2;
+      ctx.lineWidth = 22 - (i % 5) * 3;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo((sx + coreX) / 2, (sy + coreY) / 2 + Math.sin(angle) * 50, coreX, coreY);
+      ctx.stroke();
+    }
+    const glow = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, 78);
+    glow.addColorStop(0, 'rgba(255,255,255,0.95)');
+    glow.addColorStop(0.35, 'rgba(190,240,255,0.45)');
+    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(coreX, coreY, 78, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   function decorate(el, backdrop, motion, intensity, ambientColors = stops) {
     if (!el) return () => {};
@@ -40,8 +76,29 @@
       image.alt = '';
       image.addEventListener('error', () => { el.dataset.backdrop = 'unavailable'; });
       el.append(image);
-    } else if (backdrop === 'aqua') {
-      el.innerHTML = '<svg class="aqua-ribbons" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="ribbon-slate" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#256a9d"/><stop offset=".48" stop-color="#79c3d4"/><stop offset="1" stop-color="#5a4788"/></linearGradient></defs><g fill="none" stroke="url(#ribbon-slate)"><path class="aqua-band" stroke-width="190" opacity=".28" d="M-400 1100C300-240 660 1360 1210 650S1860 180 2300 0"/><path class="aqua-band" stroke-width="88" opacity=".55" d="M-300 1060C390 20 630 1270 1180 660S1850 320 2300 90"/><path class="aqua-band" stroke-width="3" opacity=".8" d="M-300 1000C390 20 620 1190 1160 620S1850 320 2300 90"/><path class="aqua-band" stroke-width="40" opacity=".3" d="M-300 1180C300 90 800 1400 1340 700S2000 180 2300 200"/></g></svg>';
+    } else if (backdrop === 'flurry' || backdrop === 'aqua') {
+      const canvas = document.createElement('canvas');
+      canvas.className = 'flurry-field';
+      el.append(canvas);
+      canvas.width = 960;
+      canvas.height = 540;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        let tick = 0;
+        ctx.fillStyle = '#000';
+        ctx.fillRect(0, 0, 960, 540);
+        for (let n = 0; n < 40; n += 1) {
+          tick += 0.08;
+          drawFlurry(ctx, tick);
+        }
+        if (motion !== 'still' && !reducedMotion.matches) {
+          timer = setInterval(() => {
+            if (document.hidden || document.body.classList.contains('tv-motion-paused')) return;
+            tick += 0.08;
+            drawFlurry(ctx, tick);
+          }, 50);
+        }
+      }
     } else if (backdrop === 'orbit') {
       for (let i = 0; i < 9; i += 1) {
         const ring = document.createElement('i');
@@ -49,43 +106,6 @@
         ring.style.setProperty('--ring-i', i);
         ring.style.setProperty('--ring-color', stops[i % stops.length]);
         el.append(ring);
-      }
-    } else if (backdrop === 'flurry') {
-      const canvas = document.createElement('canvas');
-      el.append(canvas);
-      canvas.width = 960;
-      canvas.height = 540;
-      const ctx = canvas.getContext('2d');
-      if (ctx) {
-        let tick = 0;
-        let last = [];
-        const render = () => {
-          tick += .035;
-          ctx.fillStyle = 'rgba(16,20,26,.11)';
-          ctx.fillRect(0, 0, 960, 540);
-          for (let i = 0; i < 42; i += 1) {
-            const phase = tick * (.3 + (i % 5) * .02) + i * .41;
-            const x = 480 + Math.sin(phase * 1.7) * (150 + i * 4) + Math.cos(phase * .67) * 100;
-            const y = 300 + Math.cos(phase * 1.2) * (60 + i * 2) + Math.sin(phase * 2.1) * 48;
-            ctx.strokeStyle = stops[i % stops.length];
-            ctx.lineWidth = 1.2 + (i % 3) * .6;
-            ctx.globalAlpha = .24;
-            ctx.beginPath();
-            ctx.moveTo(last[i]?.[0] ?? x, last[i]?.[1] ?? y);
-            ctx.lineTo(x, y);
-            ctx.stroke();
-            last[i] = [x, y];
-          }
-          ctx.globalAlpha = 1;
-        };
-        ctx.fillStyle = '#10141A';
-        ctx.fillRect(0, 0, 960, 540);
-        for (let n = 0; n < 100; n += 1) render();
-        if (motion !== 'still' && !reducedMotion.matches) {
-          timer = setInterval(() => {
-            if (!document.hidden && !document.body.classList.contains('tv-motion-paused')) render();
-          }, 42);
-        }
       }
     }
     return () => { if (timer) clearInterval(timer); el.replaceChildren(); };
@@ -98,16 +118,16 @@
     const all = tiles();
     const total = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
     page = Math.max(0, Math.min(next, total - 1));
-    all.forEach((tile, index) => { tile.hidden = scenic() && Math.floor(index / PAGE_SIZE) !== page; });
+    all.forEach((tile, index) => { tile.hidden = flurryDock() && Math.floor(index / PAGE_SIZE) !== page; });
     const indicator = document.getElementById('dock-pagination');
     if (indicator) {
-      indicator.hidden = !scenic() || total <= 1;
+      indicator.hidden = !flurryDock() || total <= 1;
       indicator.textContent = `${page + 1} / ${total}`;
     }
     const nav = document.getElementById('tiles');
     if (nav) {
       nav.style.setProperty('--dock-count', Math.min(PAGE_SIZE, all.length));
-      if (scenic()) {
+      if (flurryDock()) {
         nav.classList.remove('menu-turn');
         void nav.offsetWidth;
         nav.classList.add('menu-turn');
@@ -118,56 +138,102 @@
 
   function apply(settings) {
     config = settings || {};
-    if (!isTvHome()) return;
-    document.body.dataset.tvAppearance = config.tvAppearance === 'aqua' && TV_LAYOUT.matches ? 'aqua' : 'sculptural';
-    const backdrop = document.body.dataset.tvAppearance === 'aqua' ? 'aqua' : 'sculptural';
+    if (!isHome()) return;
+    const choice = config.tvAppearance === 'flurry' || config.tvAppearance === 'aqua' ? 'flurry' : 'sculptural';
+    document.body.dataset.tvAppearance = choice;
+    document.body.dataset.homeSurface = androidTv() && tvFrame() ? 'tv' : 'flex';
     const motion = ['still', 'drift', 'reactive'].includes(config.tvMotion) ? config.tvMotion : 'drift';
-    document.body.dataset.tvBackdrop = backdrop;
+    document.body.dataset.tvBackdrop = choice;
     document.body.dataset.tvMotion = reducedMotion.matches ? 'still' : motion;
     stopBackdrop();
-    stopBackdrop = decorate(document.getElementById('tv-backdrop'), backdrop, motion, config.tvIntensity || 'balanced');
+    stopBackdrop = decorate(document.getElementById('tv-backdrop'), choice, motion, config.tvIntensity || 'balanced');
     setPage(0);
   }
 
   function pullAmount() {
-    if (config.tvIntensity === 'soft') return 14;
-    if (config.tvIntensity === 'vivid') return 36;
-    return 24;
+    if (config.tvIntensity === 'soft') return 16;
+    if (config.tvIntensity === 'vivid') return 48;
+    return 30;
   }
 
   function reactTo(x, y) {
-    if (!isTvHome() || config.tvMotion !== 'reactive' || reducedMotion.matches) return;
+    if (!isHome() || !motionLive()) return;
     const pull = pullAmount();
+    const lean = config.tvMotion === 'reactive' ? 1 : 0.45;
     const el = document.getElementById('tv-backdrop');
-    document.body.style.setProperty('--look-x', `${(x - .5) * pull}px`);
-    document.body.style.setProperty('--look-y', `${(y - .5) * pull * .6}px`);
-    el?.style.setProperty('--look-x', `${(x - .5) * pull}px`);
-    el?.style.setProperty('--look-y', `${(y - .5) * pull * .6}px`);
+    const dx = `${(x - 0.5) * pull * lean}px`;
+    const dy = `${(y - 0.5) * pull * lean * 0.6}px`;
+    document.body.style.setProperty('--look-x', dx);
+    document.body.style.setProperty('--look-y', dy);
+    el?.style.setProperty('--look-x', dx);
+    el?.style.setProperty('--look-y', dy);
+    field.nx = 0.62 + (x - 0.5) * (config.tvMotion === 'reactive' ? 0.28 : 0.1);
+    field.ny = 0.42 + (y - 0.5) * (config.tvMotion === 'reactive' ? 0.2 : 0.08);
+  }
+
+  function showStreak(x, y, px, py) {
+    if (!isHome() || !motionLive()) return;
+    const host = document.getElementById('tv-backdrop');
+    if (!host) return;
+    const streak = document.createElement('i');
+    streak.className = 'move-streak';
+    streak.style.left = `${x * 100}%`;
+    streak.style.top = `${y * 100}%`;
+    streak.style.setProperty('--streak-angle', `${Math.atan2(py, px) * 180 / Math.PI}deg`);
+    host.append(streak);
+    setTimeout(() => streak.remove(), 460);
   }
 
   function flashSelection(el) {
-    if (!el || reducedMotion.matches || config.tvMotion === 'still') return;
+    if (!el || !motionLive()) return;
     el.classList.remove('light-hit');
     void el.offsetWidth;
     el.classList.add('light-hit');
+    const host = document.getElementById('tv-backdrop');
+    if (!host) return;
+    host.classList.remove('core-pulse');
+    void host.offsetWidth;
+    host.classList.add('core-pulse');
+    document.body.classList.add('field-hot');
+    setTimeout(() => document.body.classList.remove('field-hot'), 420);
   }
 
   document.addEventListener('slate:appearance', event => apply(event.detail));
-  document.addEventListener('slate:tiles', () => { if (isTvHome()) setPage(0); });
+  document.addEventListener('slate:tiles', () => { if (isHome()) setPage(0); });
   document.addEventListener('focusin', event => {
     const rect = event.target.getBoundingClientRect?.();
-    if (rect) reactTo((rect.left + rect.width / 2) / innerWidth, (rect.top + rect.height / 2) / innerHeight);
+    if (!rect || !rect.width) return;
+    const x = (rect.left + rect.width / 2) / innerWidth;
+    const y = (rect.top + rect.height / 2) / innerHeight;
+    reactTo(x, y);
+    if (lastFocus && lastFocus !== event.target) {
+      const prev = lastFocus.getBoundingClientRect?.();
+      if (prev) showStreak(x, y, rect.left - prev.left, rect.top - prev.top);
+    }
+    lastFocus = event.target;
   });
-  document.addEventListener('pointermove', event => reactTo(event.clientX / innerWidth, event.clientY / innerHeight));
+  document.addEventListener('pointermove', event => {
+    const x = event.clientX / innerWidth;
+    const y = event.clientY / innerHeight;
+    reactTo(x, y);
+    const now = Date.now();
+    if (now - lastPointer < 180 || Math.hypot(event.movementX, event.movementY) < 8) return;
+    lastPointer = now;
+    showStreak(x, y, event.movementX, event.movementY);
+    if (!isHome() && document.getElementById('preview-backdrop')?.dataset.backdrop === 'flurry') {
+      field.nx = 0.62 + (x - 0.5) * 0.2;
+      field.ny = 0.42 + (y - 0.5) * 0.16;
+    }
+  });
   document.addEventListener('click', event => {
-    if (!isTvHome()) return;
+    if (!isHome()) return;
     const tile = event.target.closest?.('.tile, #wx, .foot-link');
     if (tile) flashSelection(tile);
   });
   document.addEventListener('keydown', event => {
-    if (!isTvHome() || event.metaKey || event.ctrlKey || event.altKey) return;
+    if (!isHome() || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'Enter') flashSelection(document.activeElement);
-    if (!scenic()) return;
+    if (!flurryDock()) return;
     const fallback = document.getElementById('tv-app-fallback');
     if (fallback && !fallback.hidden) return;
     const active = document.activeElement;
@@ -193,7 +259,7 @@
   let resizeTimer;
   addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (isTvHome()) apply(config); }, 180);
+    resizeTimer = setTimeout(() => { if (isHome()) apply(config); }, 180);
   });
   addEventListener('pagehide', () => stopBackdrop());
   const setHidden = hidden => document.body.classList.toggle('tv-motion-paused', hidden);

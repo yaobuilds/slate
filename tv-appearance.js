@@ -2,6 +2,9 @@
 (() => {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const stops = ['#72c9d0', '#837ee0', '#db9cae', '#b7d2e4'];
+  const sculpturalWarm = ['#E0D3BB', '#C4A574', '#8A6A4E'];
+  const themeInk = { sculptural: '#14110E', aqua: '#0C2233', flurry: '#000000' };
+  const aquaRibbons = '<svg class="aqua-ribbons" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="ribbon-slate" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#256a9d"/><stop offset=".48" stop-color="#79c3d4"/><stop offset="1" stop-color="#5a4788"/></linearGradient></defs><g fill="none" stroke="url(#ribbon-slate)"><path class="aqua-band" stroke-width="190" opacity=".28" d="M-400 1100C300-240 660 1360 1210 650S1860 180 2300 0"/><path class="aqua-band" stroke-width="88" opacity=".55" d="M-300 1060C390 20 630 1270 1180 660S1850 320 2300 90"/><path class="aqua-band" stroke-width="3" opacity=".8" d="M-300 1000C390 20 620 1190 1160 620S1850 320 2300 90"/><path class="aqua-band" stroke-width="40" opacity=".3" d="M-300 1180C300 90 800 1400 1340 700S2000 180 2300 200"/></g></svg>';
   const flurryHues = ['#ff4ad8', '#8a4bff', '#3a6dff', '#3ee7ff', '#ffe14a', '#3dff7a'];
   const field = { nx: 0.68, ny: 0.42 };
   let stopBackdrop = () => {};
@@ -19,6 +22,29 @@
   };
   const profileDock = () => isHome() && androidTv() && tvFrame() && dockProfile();
   const motionLive = () => !reducedMotion.matches && config.tvMotion !== 'still';
+
+  function normalizeAppearance(raw = {}) {
+    let tvAppearance = raw.tvAppearance;
+    if (tvAppearance === 'classic') tvAppearance = 'sculptural';
+    else if (tvAppearance === 'scenic') tvAppearance = 'aqua';
+    else if (tvAppearance !== 'sculptural' && tvAppearance !== 'aqua' && tvAppearance !== 'flurry') tvAppearance = 'sculptural';
+    const tvMotion = ['still', 'drift', 'reactive'].includes(raw.tvMotion) ? raw.tvMotion : 'drift';
+    const tvIntensity = ['soft', 'balanced', 'vivid'].includes(raw.tvIntensity) ? raw.tvIntensity : 'balanced';
+    return { tvAppearance, tvMotion, tvIntensity };
+  }
+
+  function applyTheme(settings) {
+    const norm = normalizeAppearance(settings);
+    let motion = norm.tvMotion;
+    if (reducedMotion.matches || document.body.classList.contains('page-screensaver')) motion = 'still';
+    for (const el of [document.documentElement, document.body]) {
+      el.dataset.tvAppearance = norm.tvAppearance;
+      el.dataset.tvMotion = motion;
+      el.dataset.tvIntensity = norm.tvIntensity;
+    }
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute('content', themeInk[norm.tvAppearance] || themeInk.sculptural);
+  }
 
   function drawFlurry(ctx, tick) {
     const coreX = 960 * field.nx;
@@ -66,7 +92,7 @@
         : '#10141a';
       el.append(glow);
     } else if (backdrop === 'sculptural') {
-      const palette = ambientColors.length ? ambientColors : stops;
+      const palette = ambientColors.length ? ambientColors : sculpturalWarm;
       for (let i = 0; i < 5; i += 1) {
         const form = document.createElement('i');
         form.className = 'sculpt-form';
@@ -81,7 +107,7 @@
       image.addEventListener('error', () => { el.dataset.backdrop = 'unavailable'; });
       el.append(image);
     } else if (backdrop === 'aqua') {
-      el.innerHTML = '<svg class="aqua-ribbons" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="ribbon-slate" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#256a9d"/><stop offset=".48" stop-color="#79c3d4"/><stop offset="1" stop-color="#5a4788"/></linearGradient></defs><g fill="none" stroke="url(#ribbon-slate)"><path class="aqua-band" stroke-width="190" opacity=".28" d="M-400 1100C300-240 660 1360 1210 650S1860 180 2300 0"/><path class="aqua-band" stroke-width="88" opacity=".55" d="M-300 1060C390 20 630 1270 1180 660S1850 320 2300 90"/><path class="aqua-band" stroke-width="3" opacity=".8" d="M-300 1000C390 20 620 1190 1160 620S1850 320 2300 90"/><path class="aqua-band" stroke-width="40" opacity=".3" d="M-300 1180C300 90 800 1400 1340 700S2000 180 2300 200"/></g></svg>';
+      el.insertAdjacentHTML('beforeend', aquaRibbons);
     } else if (backdrop === 'flurry') {
       const canvas = document.createElement('canvas');
       canvas.className = 'flurry-field';
@@ -116,7 +142,7 @@
     }
     return () => { if (timer) clearInterval(timer); el.replaceChildren(); };
   }
-  window.SlateLooks = { decorate };
+  window.SlateLooks = { decorate, normalizeAppearance, applyTheme };
 
   function tiles() { return [...document.querySelectorAll('#tiles .tile')]; }
 
@@ -144,15 +170,19 @@
 
   function apply(settings) {
     config = settings || {};
+    applyTheme(config);
     if (!isHome()) return;
-    const choice = ['sculptural', 'aqua', 'flurry'].includes(config.tvAppearance) ? config.tvAppearance : 'sculptural';
-    document.body.dataset.tvAppearance = choice;
     document.body.dataset.homeSurface = androidTv() && tvFrame() ? 'tv' : 'flex';
-    const motion = ['still', 'drift', 'reactive'].includes(config.tvMotion) ? config.tvMotion : 'drift';
-    document.body.dataset.tvBackdrop = choice;
-    document.body.dataset.tvMotion = reducedMotion.matches ? 'still' : motion;
+    const norm = normalizeAppearance(config);
+    const motion = reducedMotion.matches ? 'still' : norm.tvMotion;
+    document.body.dataset.tvBackdrop = norm.tvAppearance;
     stopBackdrop();
-    stopBackdrop = decorate(document.getElementById('tv-backdrop'), choice, motion, config.tvIntensity || 'balanced');
+    stopBackdrop = decorate(
+      document.getElementById('tv-backdrop'),
+      norm.tvAppearance,
+      motion,
+      norm.tvIntensity,
+    );
     setPage(0);
   }
 
@@ -259,8 +289,9 @@
     }
   }, true);
   reducedMotion.addEventListener('change', () => {
-    apply(config);
-    document.dispatchEvent(new Event('slate:motion-preference'));
+    applyTheme(config);
+    if (isHome()) apply(config);
+    else document.dispatchEvent(new Event('slate:motion-preference'));
   });
   let resizeTimer;
   addEventListener('resize', () => {
@@ -274,4 +305,10 @@
   addEventListener('focus', () => setHidden(false));
   addEventListener('pageshow', event => { if (event.persisted) apply(config); });
   if (window.slateHomeSettings) apply(window.slateHomeSettings);
+  else if (!isHome() && !document.documentElement.classList.contains('page-appearance')) {
+    const promise = window.slateSettingsPromise
+      || fetch('settings.json', { cache: 'no-store' }).then(response => response.json());
+    if (!window.slateSettingsPromise) window.slateSettingsPromise = promise;
+    promise.then(settings => applyTheme(settings)).catch(() => applyTheme({}));
+  }
 })();

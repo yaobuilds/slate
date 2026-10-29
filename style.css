@@ -102,11 +102,10 @@ html.night .weather {
 
 .page-dashboard .stage {
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto 1fr auto;
   grid-template-areas:
     "header header"
     "today upcoming"
-    "news news"
     "foot foot";
 }
 
@@ -176,7 +175,7 @@ body.show-focus .nav-link:focus-visible {
 .date {
   margin: 28px 0 0;
   font-size: 48px;
-  font-weight: 540;
+  font-weight: 450;
   letter-spacing: 0.005em;
   color: var(--sl-text);
 }
@@ -268,10 +267,7 @@ body.show-focus .nav-link:focus-visible {
   width: 100%;
   margin-top: 30px;
   padding-top: 26px;
-}
-
-html:not([data-slate-surface='tv']) .page-home .wx-hours {
-  border-top: none;
+  border-top: 2px solid var(--sl-line);
 }
 
 .wx-hours:empty {
@@ -501,6 +497,8 @@ body.show-focus .foot-link:focus {
   gap: 12px;
   margin: 0;
   font-size: 24px;
+  /* --sl-dim is 4.75:1 on flat ink only; over the moving looks it fell to
+     4.2:1. This lift keeps it quieter than Stone and >=4.5:1 on any look. */
   color: #8C939C;
   text-decoration: none;
 }
@@ -630,6 +628,25 @@ body.show-focus .home-pill:focus {
   display: flex;
   gap: 40px;
   align-items: center;
+}
+
+.hint {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.cap {
+  font-family: var(--sl-mono);
+  font-weight: 500;
+  font-size: 24px;
+  color: var(--sl-dim);
+  border: 2px solid var(--sl-line);
+  border-radius: 8px;
+  padding: 0 10px;
+  line-height: 32px;
+  min-width: 40px;
+  text-align: center;
 }
 
 .guest-flag {
@@ -817,6 +834,11 @@ body.hide-pointer * {
   color: var(--muted);
 }
 
+/* Phone and Mac window. The TCL WebView reports 960×540 at devicePixelRatio 2. */
+.hint-touch {
+  display: none;
+}
+
 .guest-toggle {
   display: none;
   appearance: none;
@@ -910,59 +932,6 @@ body.hide-pointer * {
   margin: 0;
   font-size: 18px;
   color: var(--sl-text-2);
-}
-
-.place-prompt[hidden] {
-  display: none;
-}
-
-.place-prompt {
-  position: fixed;
-  z-index: 11;
-  left: 50%;
-  bottom: max(20px, env(safe-area-inset-bottom, 0px));
-  box-sizing: border-box;
-  width: min(920px, calc(100vw - 32px));
-  padding: 16px 20px;
-  transform: translateX(-50%);
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px 20px;
-  border: 1px solid var(--sl-line);
-  border-radius: 16px;
-  background: var(--sl-panel);
-  color: var(--sl-text);
-  font-family: var(--sl-font);
-  box-shadow: 0 12px 40px rgb(0 0 0 / 0.45);
-}
-
-.place-prompt p {
-  flex: 1 1 220px;
-  margin: 0;
-  font-size: clamp(18px, 2.2vw, 24px);
-  line-height: 1.35;
-}
-
-.place-prompt-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.place-prompt button {
-  min-height: 48px;
-  padding: 0 18px;
-  border: 1px solid var(--sl-line);
-  border-radius: 12px;
-  background: var(--sl-ink);
-  color: var(--sl-text);
-  font: 600 18px/1 var(--sl-font);
-}
-
-.place-prompt button:focus-visible {
-  outline: 3px solid var(--sl-ice);
-  outline-offset: 2px;
 }
 
 .tv-app-fallback[hidden] {
@@ -1212,8 +1181,18 @@ body.hide-pointer * {
     background: var(--sl-ink);
   }
 
-  .hints {
+  .hints,
+  .hint {
     flex-wrap: wrap;
+  }
+
+  .hint-keys {
+    display: none;
+  }
+
+  .hint-touch {
+    display: flex;
+    font-size: 18px;
   }
 
   .dwx {
@@ -1337,6 +1316,14 @@ body.hide-pointer * {
       gap: 16px;
     }
 
+    .hint-keys {
+      display: flex;
+    }
+
+    .hint-touch {
+      display: flex;
+    }
+
     .clock {
       font-size: clamp(84px, 9vw, 148px);
     }
@@ -1433,7 +1420,6 @@ body.hide-pointer * {
         "header"
         "today"
         "upcoming"
-        "news"
         "foot";
     }
 
@@ -1443,8 +1429,6 @@ body.hide-pointer * {
     .weather { grid-area: weather; align-items: flex-end; }
     .tiles { grid-area: apps; }
     .foot { grid-area: foot; }
-    .headlines { grid-area: news; max-height: none; }
-    .headline-list { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
     .nav-link {
       min-height: 44px;
@@ -1537,6 +1521,10 @@ body.hide-pointer * {
       min-height: 44px;
       font-size: 16px;
     }
+
+    .hint-touch {
+      font-size: 16px;
+    }
   }
 }
 
@@ -1598,6 +1586,10 @@ body.hide-pointer * {
     align-items: center;
     justify-content: center;
   }
+
+  .dash-foot .hint-keys:nth-child(2) {
+    display: none;
+  }
 }
 
 @media (min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9) {
@@ -1606,17 +1598,17 @@ body.hide-pointer * {
     left: auto;
     top: auto;
     z-index: 1;
-    width: 100%;
-    max-width: none;
-    margin: 0;
+    width: min(100%, 1180px);
+    max-width: 1180px;
+    margin: 0 auto;
     height: auto;
     min-height: 100dvh;
     transform: none !important;
     padding:
-      max(48px, env(safe-area-inset-top))
-      max(clamp(40px, 5vw, 96px), env(safe-area-inset-right))
-      max(40px, env(safe-area-inset-bottom))
-      max(clamp(40px, 5vw, 96px), env(safe-area-inset-left));
+      max(32px, env(safe-area-inset-top))
+      max(40px, env(safe-area-inset-right))
+      max(36px, env(safe-area-inset-bottom))
+      max(40px, env(safe-area-inset-left));
     background: transparent;
   }
 
@@ -1651,53 +1643,92 @@ body.hide-pointer * {
     justify-self: end;
     align-self: start;
     align-items: flex-end;
-    padding: 0;
-    border-radius: 0;
-    background: transparent;
-    border: none;
+    padding: 12px 16px;
+    border-radius: 20px;
+    background: rgba(16, 20, 26, 0.55);
+    border: 1px solid rgba(230, 225, 215, 0.12);
   }
 
-  html:not([data-slate-surface='tv']) .page-home .wx-hours {
-    border-top: none;
-    padding-top: 18px;
+  html:not([data-slate-surface='tv']) .page-home .tiles {
+    grid-area: apps;
+    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+    gap: 16px;
+    margin-bottom: 8px;
   }
 
   html:not([data-slate-surface='tv']) .page-home .tile {
-    border: none;
-    border-radius: 16px;
-    background: var(--sl-panel);
-  }
-
-  html:not([data-slate-surface='tv']) .page-home .tile .i {
-    color: var(--sl-text);
-  }
-
-  html:not([data-slate-surface='tv']) .page-home .tile .nm {
-    color: var(--sl-text);
-    font-weight: 600;
+    min-height: 108px;
+    border-radius: 22px;
   }
 
   html:not([data-slate-surface='tv']) .page-home .foot {
     grid-area: foot;
-    position: static;
-    padding-top: 0;
-    background: transparent;
+    position: sticky;
+    bottom: 0;
+    padding-top: 8px;
+    background: linear-gradient(180deg, transparent, rgba(16, 20, 26, 0.92) 28%);
   }
 
   html:not([data-slate-surface='tv']) .page-dashboard .stage,
   html:not([data-slate-surface='tv']) .page-dashboard.guest .stage {
     display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto;
+    grid-template-areas:
+      "header"
+      "today"
+      "upcoming"
+      "news"
+      "foot";
+    align-content: start;
+    gap: 20px;
+  }
+
+  /* Mac window at 16:9 (e.g. 1366x768): scale Home to the window instead of the 1920 TV sizes,
+     so tiles, labels and the hourly row stay inside their boxes. */
+  html:not([data-slate-surface='tv']) .page-home .clock { font-size: clamp(96px, 10vw, 160px); margin-left: -6px; }
+  html:not([data-slate-surface='tv']) .page-home .clock-ampm { font-size: 0.3em; margin-left: 18px; }
+  html:not([data-slate-surface='tv']) .page-home .date { margin-top: 18px; font-size: clamp(24px, 2.3vw, 34px); font-weight: 450; }
+  html:not([data-slate-surface='tv']) .page-home .weather { padding: 18px 22px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-place { font-size: 16px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-temp { font-size: clamp(56px, 5.6vw, 88px); }
+  html:not([data-slate-surface='tv']) .page-home .wx-now .i { font-size: 52px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-cond { font-size: 22px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-hours { justify-content: space-between; gap: 4px; margin-top: 14px; padding-top: 14px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-h { width: auto; flex: 1 1 0; min-width: 52px; gap: 6px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-h .t { font-size: 16px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-h .i { font-size: 28px; }
+  html:not([data-slate-surface='tv']) .page-home .wx-h .v { font-size: 20px; }
+  html:not([data-slate-surface='tv']) .page-home .tiles { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); min-height: 0; }
+  html:not([data-slate-surface='tv']) .page-home .stage { align-content: center; }
+  html:not([data-slate-surface='tv']) .page-home .tile { height: auto; aspect-ratio: 5 / 4; min-height: 132px; padding: 18px 18px 16px; }
+  html:not([data-slate-surface='tv']) .page-home .tile .i { font-size: 40px; }
+  html:not([data-slate-surface='tv']) .page-home .tile .nm { font-size: 19px; line-height: 1.2; }
+
+  /* Mac Dashboard: two boxes side by side once the window is wide enough, like the mockup. */
+  html:not([data-slate-surface='tv']) .page-dashboard .stage,
+  html:not([data-slate-surface='tv']) .page-dashboard.guest .stage {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    grid-template-rows: auto 1fr auto;
     grid-template-areas:
       "header header"
       "today upcoming"
+      "news news"
       "foot foot";
-    gap: 28px 36px;
-    min-height: 100dvh;
-    align-content: stretch;
   }
+  html:not([data-slate-surface='tv']) .page-dashboard .headlines { grid-area: news; max-height: none; }
+  html:not([data-slate-surface='tv']) .page-dashboard .dash-date { white-space: nowrap; font-size: clamp(24px, 2.4vw, 36px); }
+  html:not([data-slate-surface='tv']) .page-dashboard .home-pill { min-height: 64px; font-size: 24px; padding: 0 22px; }
+  html:not([data-slate-surface='tv']) .page-dashboard .panel { padding: 28px 30px 30px; }
+  html:not([data-slate-surface='tv']) .page-dashboard .row-meta { font-size: 22px; }
+  html:not([data-slate-surface='tv']) .page-dashboard .row-title { font-size: 28px; }
+  html:not([data-slate-surface='tv']) .page-dashboard .rows { margin-top: 20px; row-gap: 18px; }
 }
+
+/* Dashboard boxes read like the mockup: a sentence-case header with a hairline under it. */
+.page-dashboard .panel { border-radius: 24px; box-shadow: inset 0 0 0 2px var(--line); }
+.page-dashboard .panel-heading-row { padding-bottom: 18px; margin-bottom: 22px; border-bottom: 2px solid var(--sl-line); }
+.page-dashboard .panel .kicker { font-size: 40px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--sl-text); }
+.page-dashboard .guest-pill { margin: -6px 0 18px; }
 
 .slate-remote-banner {
   position: sticky;
@@ -1708,10 +1739,10 @@ body.hide-pointer * {
   align-items: center;
   gap: 12px 16px;
   padding: 10px 16px;
-  background: var(--sl-panel);
-  border-bottom: 1px solid var(--sl-line);
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
   font-size: 14px;
-  color: var(--sl-text-2);
+  color: var(--muted);
 }
 
 .slate-remote-banner a {
@@ -1723,3 +1754,4 @@ body.hide-pointer * {
   outline: 2px solid var(--sl-accent, #a9c2da);
   outline-offset: 2px;
 }
+html:not([data-slate-surface='tv']) .page-dashboard .panel .kicker { font-size: 28px; }

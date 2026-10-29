@@ -1528,17 +1528,17 @@ body.hide-pointer * {
     left: auto;
     top: auto;
     z-index: 1;
-    width: min(100%, 1180px);
-    max-width: 1180px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: none;
+    margin: 0;
     height: auto;
     min-height: 100dvh;
     transform: none !important;
     padding:
-      max(32px, env(safe-area-inset-top))
-      max(40px, env(safe-area-inset-right))
-      max(36px, env(safe-area-inset-bottom))
-      max(40px, env(safe-area-inset-left));
+      max(48px, env(safe-area-inset-top))
+      max(clamp(40px, 5vw, 96px), env(safe-area-inset-right))
+      max(40px, env(safe-area-inset-bottom))
+      max(clamp(40px, 5vw, 96px), env(safe-area-inset-left));
     background: transparent;
   }
 
@@ -1579,18 +1579,6 @@ body.hide-pointer * {
     border: 1px solid rgba(230, 225, 215, 0.12);
   }
 
-  html:not([data-slate-surface='tv']) .page-home .tiles {
-    grid-area: apps;
-    grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
-    gap: 16px;
-    margin-bottom: 8px;
-  }
-
-  html:not([data-slate-surface='tv']) .page-home .tile {
-    min-height: 108px;
-    border-radius: 22px;
-  }
-
   html:not([data-slate-surface='tv']) .page-home .foot {
     grid-area: foot;
     position: sticky;
@@ -1602,14 +1590,14 @@ body.hide-pointer * {
   html:not([data-slate-surface='tv']) .page-dashboard .stage,
   html:not([data-slate-surface='tv']) .page-dashboard.guest .stage {
     display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    grid-template-rows: auto;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-rows: auto 1fr auto;
     grid-template-areas:
-      "header"
-      "today"
-      "upcoming"
-      "foot";
-    align-content: start;
-    gap: 20px;
+      "header header"
+      "today upcoming"
+      "foot foot";
+    gap: 28px 36px;
+    min-height: 100dvh;
+    align-content: stretch;
   }
 }

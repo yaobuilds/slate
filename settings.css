@@ -13,6 +13,16 @@ html.page-settings body {
   inset: auto;
 }
 
+@media (min-width: 760px) {
+  html:not([data-slate-surface='tv']) .settings-stage {
+    width: 100%;
+    max-width: none;
+    margin: 0;
+    padding-left: max(clamp(40px, 5vw, 96px), env(safe-area-inset-left));
+    padding-right: max(clamp(40px, 5vw, 96px), env(safe-area-inset-right));
+  }
+}
+
 .settings-stage {
   position: relative;
   z-index: 1;
@@ -481,7 +491,7 @@ html.page-settings body {
 @media (min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9) {
   html.page-appearance[data-slate-surface='tv'],
   html.page-appearance[data-slate-surface='tv'] body { height: 100%; overflow: hidden; }
-  .appearance-stage { height: 100dvh; padding: 27px 48px; gap: 20px; }
+  html.page-appearance[data-slate-surface='tv'] .appearance-stage { height: 100dvh; padding: 27px 48px; gap: 20px; }
   .page-appearance .settings-title { font-size: 32px; font-weight: 450; }
   .appearance-workspace { flex: 1; gap: 32px; }
   .appearance-controls { overflow-y: auto; padding: 8px; margin: -8px; scroll-padding: 12px; }

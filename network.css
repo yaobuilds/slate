@@ -27,6 +27,12 @@ body.page-network {
   font-family: var(--sl-font);
 }
 
+html:not([data-slate-surface='tv']) .network-page {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+
 .network-head {
   display: grid;
   grid-template-columns: auto 1fr auto;

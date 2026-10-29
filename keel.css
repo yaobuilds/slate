@@ -1,0 +1,163 @@
+html,
+body.page-keel {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+}
+
+.page-keel .keel-viewport {
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+}
+
+.page-keel .keel-stage {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  box-sizing: border-box;
+  transform-origin: center center;
+  will-change: transform;
+  --px: 1px;
+}
+
+.page-keel .keel-safe {
+  box-sizing: border-box;
+  height: 100%;
+  padding: 54px 96px;
+  display: flex;
+  flex-direction: column;
+  gap: calc(16 * var(--px));
+}
+
+.page-keel .keel-head {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: calc(8 * var(--px));
+}
+
+.page-keel .keel-score {
+  margin: 0;
+  font-size: calc(32 * var(--px));
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--sl-text);
+}
+
+.page-keel .keel-rules {
+  margin: 0;
+  font-size: calc(24 * var(--px));
+  line-height: 1.3;
+  color: var(--sl-text-2);
+}
+
+.page-keel .keel-field {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.page-keel .keel-bars {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.page-keel .keel-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 32px;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 0;
+}
+
+.page-keel .keel-bar-seg {
+  background: var(--sl-panel);
+  box-shadow: inset 0 0 0 1px var(--sl-line);
+}
+
+.page-keel .keel-bar-seg.is-gap {
+  background: transparent;
+  box-shadow: none;
+}
+
+.page-keel .keel-ring {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 56px;
+  height: 56px;
+  margin-left: -28px;
+  margin-top: -28px;
+  border: 2px solid var(--sl-ice);
+  border-radius: 50%;
+  box-sizing: border-box;
+  background: transparent;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.page-keel .keel-foot {
+  flex: 0 0 auto;
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: calc(24 * var(--px));
+  min-height: calc(88 * var(--px));
+}
+
+.page-keel .keel-pad {
+  min-height: calc(88 * var(--px));
+  padding: calc(12 * var(--px)) calc(24 * var(--px));
+  border: 1px solid var(--sl-line);
+  border-radius: calc(16 * var(--px));
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+  font-size: calc(24 * var(--px));
+  font-weight: 600;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.page-keel .keel-pad-left {
+  justify-self: start;
+  min-width: calc(200 * var(--px));
+}
+
+.page-keel .keel-pad-right {
+  justify-self: end;
+  min-width: calc(200 * var(--px));
+}
+
+.page-keel .keel-pad:focus-visible {
+  outline: calc(4 * var(--px)) solid var(--sl-ice);
+  outline-offset: calc(4 * var(--px));
+}
+
+.page-keel .keel-mark {
+  position: absolute;
+  right: 0;
+  bottom: calc(8 * var(--px));
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: calc(8 * var(--px));
+  font-size: calc(24 * var(--px));
+  color: var(--sl-dim);
+  pointer-events: none;
+}
+
+.page-keel .keel-mark img {
+  display: block;
+}

@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script src="slate-surface.js"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141A">
+  <title>Keel</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="keel.css">
+</head>
+<body class="page-keel">
+  <div class="keel-viewport" id="keel-viewport">
+    <div class="keel-stage" id="keel-stage">
+      <div class="keel-safe">
+        <header class="keel-head">
+          <p class="keel-score" id="keel-score" aria-live="polite">0</p>
+          <p class="keel-rules">Arrows steer · Enter starts · Esc leaves</p>
+        </header>
+        <div class="keel-field" id="keel-field">
+          <div class="keel-bars" id="keel-bars" aria-hidden="true"></div>
+          <div class="keel-ring" id="keel-ring" aria-hidden="true"></div>
+        </div>
+        <footer class="keel-foot">
+          <button type="button" class="keel-pad keel-pad-left" id="keel-pad-left">Left</button>
+          <button type="button" class="keel-pad keel-pad-right" id="keel-pad-right">Right</button>
+          <p class="keel-mark">
+            <img src="assets/shift-a-slate-dim.svg" width="31" height="20" alt="">
+            <span>by Yao</span>
+          </p>
+        </footer>
+      </div>
+    </div>
+  </div>
+  <script src="keel.js"></script>
+</body>
+</html>

@@ -39,6 +39,24 @@ FIXTURE = {
     "money": {"note": MONEY},
 }
 
+HEADLINE_RSS_FIXTURE = b"""<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+<channel>
+<title>Fixture</title>
+<item>
+<title>  Wire &amp; headline  </title>
+<link>https://example.org/story-one</link>
+<pubDate>Wed, 28 Oct 2026 15:12:00 GMT</pubDate>
+<description>This description must not leak.</description>
+<content:encoded><![CDATA[<p>Article body must not leak.</p>]]></content:encoded>
+</item>
+<item>
+<title>Bad link</title>
+<link>ftp://bad.example/x</link>
+</item>
+</channel>
+</rss>"""
+
 
 def png_pixels(data):
     """Return (width, height, rows of RGBA) for an 8-bit PNG."""
@@ -226,10 +244,12 @@ class FixTests(unittest.TestCase):
         self.public = root / "data.json"
         self.local.write_text(json.dumps(FIXTURE), encoding="utf-8")
         self._old = (server.LOCAL, server.PUBLIC, server.EXPECTED_PIN, server.FULL_PAYLOAD)
+        self._headlines_old = server.HEADLINES_CACHE
         server.LOCAL = self.local
         server.PUBLIC = self.public
         server.EXPECTED_PIN = PIN
         server.FULL_PAYLOAD = None
+        server.HEADLINES_CACHE = {"updated": "", "items": []}
         server.FAILS.clear()
         server.SESSIONS.clear()
         self.logs = []
@@ -251,6 +271,7 @@ class FixTests(unittest.TestCase):
         self.httpd.server_close()
         server.Handler.log_message = self._log
         server.LOCAL, server.PUBLIC, server.EXPECTED_PIN, server.FULL_PAYLOAD = self._old
+        server.HEADLINES_CACHE = self._headlines_old
         server.FAILS.clear()
         server.SESSIONS.clear()
         self.tmp.cleanup()
@@ -700,6 +721,47 @@ class FixTests(unittest.TestCase):
         self.assertIn("loadWeather();", boot)
         self.assertNotIn("scene", (ROOT / "index.html").read_text(encoding="utf-8").lower())
         self.assertIn('style="visibility: hidden"', (ROOT / "index.html").read_text(encoding="utf-8"))
+
+    def test_headlines_parse_rss_ignores_body(self):
+        parsed = server.parse_rss_items(HEADLINE_RSS_FIXTURE, "NPR")
+        self.assertEqual(len(parsed), 1)
+        blob = json.dumps(parsed)
+        self.assertNotIn("description must not", blob)
+        self.assertNotIn("Article body", blob)
+        public = {key: parsed[0][key] for key in ("title", "source", "time", "url")}
+        self.assertEqual(set(public.keys()), {"title", "source", "time", "url"})
+        self.assertEqual(public["title"], "Wire & headline")
+        self.assertEqual(public["source"], "NPR")
+        self.assertTrue(public["url"].startswith("https://"))
+
+    def test_headlines_refresh_failure_empty(self):
+        with mock.patch.object(server, "fetch_rss_bytes", side_effect=OSError("offline")):
+            server.refresh_headlines_store()
+        self.assertEqual(server.HEADLINES_CACHE.get("items"), [])
+        status, body = self._body("/headlines.json")
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertEqual(set(data.keys()), {"updated", "items"})
+        self.assertEqual(data["items"], [])
+
+    def test_headlines_json_endpoint(self):
+        server.HEADLINES_CACHE = {
+            "updated": "2026-10-28T12:00:00-04:00",
+            "items": [
+                {
+                    "title": "Sample headline",
+                    "source": "BBC",
+                    "time": "2026-10-28T11:00:00-04:00",
+                    "url": "https://www.bbc.co.uk/news/example",
+                }
+            ],
+        }
+        status, body = self._body("/headlines.json")
+        self.assertEqual(status, 200)
+        data = json.loads(body)
+        self.assertEqual(set(data.keys()), {"updated", "items"})
+        self.assertEqual(len(data["items"]), 1)
+        self.assertEqual(set(data["items"][0].keys()), {"title", "source", "time", "url"})
 
 
 def wait_until(cdp, expression, timeout=8):

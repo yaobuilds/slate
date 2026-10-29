@@ -4,7 +4,6 @@ const TODAY_CAP = 4;
 
 const guestPill = document.getElementById("guest-pill");
 const guestToggle = document.getElementById("guest-toggle");
-const guestHint = document.getElementById("guest-hint");
 const pinForm = document.getElementById("pin-form");
 const pinInput = document.getElementById("pin-input");
 const pinError = document.getElementById("pin-error");
@@ -31,7 +30,6 @@ function setGuest(on) {
     guestToggle.textContent = on ? "Show all" : "Guest mode";
     guestToggle.setAttribute("aria-pressed", String(!on));
   }
-  if (guestHint) guestHint.textContent = on ? "Show all" : "Guest mode";
   loadCalendar();
 }
 

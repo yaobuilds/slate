@@ -223,7 +223,7 @@ function detectDeviceLocation() {
         lon: Math.round(pos.coords.longitude * 100) / 100,
       }),
       () => resolve(null),
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 },
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 10 * 60 * 1000 },
     );
   });
 }
@@ -243,21 +243,32 @@ async function reversePlaceLabel(lat, lon) {
   return `${Number(lat).toFixed(2)}, ${Number(lon).toFixed(2)}`;
 }
 
+function applyWeatherPlaceFromSettings(settings) {
+  const loc = settings?.location;
+  if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
+    const label = typeof loc.label === "string" && loc.label.trim() ? loc.label.trim() : savedPlace.label;
+    savedPlace = { ...savedPlace, ...loc, label };
+  }
+}
+
+function forecastOk(data) {
+  return !!(data && Array.isArray(data.daily?.time) && data.daily.time.length > 0);
+}
+
 async function resolveWeatherPlace(settings) {
   const loc = settings?.location;
   const onTv = /Android TV|Google TV/i.test(navigator.userAgent || "");
+  applyWeatherPlaceFromSettings(settings);
   if (loc && typeof loc.lat === "number" && (loc.locked === true || onTv)) {
     let label = typeof loc.label === "string" ? loc.label.trim() : "";
     if (!label) label = await reversePlaceLabel(loc.lat, loc.lon);
-    savedPlace = { ...loc, label };
+    savedPlace = { ...savedPlace, label };
     return;
   }
   const detected = await detectDeviceLocation();
   if (detected) {
     const label = await reversePlaceLabel(detected.lat, detected.lon);
     savedPlace = { ...detected, label, timezone: savedPlace.timezone };
-  } else if (loc && typeof loc.lat === "number") {
-    savedPlace = loc;
   }
 }
 
@@ -322,12 +333,17 @@ async function init() {
   } catch (error) {
     /* Keep fallback location. */
   }
-  await resolveWeatherPlace(settings);
+  applyWeatherPlaceFromSettings(settings);
   weatherPlace.textContent = savedPlace.label || "Weather";
+  const placeTask = resolveWeatherPlace(settings).then(() => {
+    weatherPlace.textContent = savedPlace.label || "Weather";
+  });
   try {
     const response = await fetch(weatherUrl(), { cache: "no-store" });
     if (!response.ok) throw new Error("weather");
-    forecast = await response.json();
+    const data = await response.json();
+    if (!forecastOk(data)) throw new Error("weather");
+    forecast = data;
     weatherUpdated.textContent = "Updated just now";
     renderDays();
     await renderHours();
@@ -336,6 +352,22 @@ async function init() {
   } catch (error) {
     weatherUpdated.textContent = "Weather unavailable";
   }
+  placeTask.then(async () => {
+    try {
+      const response = await fetch(weatherUrl(), { cache: "no-store" });
+      if (!response.ok) return;
+      const data = await response.json();
+      if (!forecastOk(data)) return;
+      forecast = data;
+      weatherUpdated.textContent = "Updated just now";
+      renderDays();
+      await renderHours();
+      renderRain();
+      updateRadarImage();
+    } catch (error) {
+      /* keep first load result */
+    }
+  });
 }
 
 radarPlay?.addEventListener("click", () => setRadarPlaying(!radarPlaying));

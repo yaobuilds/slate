@@ -233,14 +233,25 @@ function homeTiles() {
   return [...nav.querySelectorAll(".tile")].filter(el => !el.hidden);
 }
 
+function homeFocusable(el) {
+  if (!el || !el.isConnected || el.hidden) return false;
+  if (el.id === "wx" && Number(el.tabIndex) >= 0) return true;
+  const style = getComputedStyle(el);
+  if (style.display === "none") return false;
+  const rect = el.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
 function homeFocusables() {
   const list = homeTiles();
   document.querySelectorAll(".foot-link[href='settings.html']").forEach((el) => {
     if (!list.includes(el)) list.push(el);
   });
+  const credit = document.getElementById("site-credit");
+  if (credit && !credit.hidden && Number(credit.tabIndex) >= 0 && !list.includes(credit)) list.push(credit);
   const weather = document.getElementById("wx");
-  if (weather && Number(weather.tabIndex) >= 0) list.push(weather);
-  return list.filter((el) => el && el.offsetParent !== null);
+  if (weather && Number(weather.tabIndex) >= 0 && !list.includes(weather)) list.push(weather);
+  return list.filter(homeFocusable);
 }
 
 function moveHomeFocus(key) {
@@ -286,7 +297,19 @@ function moveDirectionalFocus(items, key) {
       best = el;
     }
   }
-  if (best) best.focus({ preventScroll: true });
+  if (best) {
+    best.focus({ preventScroll: true });
+    best.scrollIntoView({ block: "nearest", inline: "nearest" });
+    return;
+  }
+  const order = items.indexOf(current);
+  if (order === -1) return;
+  const step = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
+  const next = items[order + step];
+  if (next) {
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
 }
 
 let pendingTvLaunch = null;
@@ -944,7 +967,7 @@ function detectDeviceLocation() {
         });
       },
       () => resolve(null),
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 },
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 10 * 60 * 1000 },
     );
   });
 }
@@ -953,13 +976,16 @@ async function resolveLocation() {
   try {
     const settings = await homeSettings();
     const loc = settings.location;
-    if (loc && (loc.locked === true || onAndroidTv())) {
+    if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
       let label = typeof loc.label === "string" ? loc.label.trim() : "";
-      if (!label || label.toLowerCase() === "near you") {
-        label = await reversePlaceLabel(loc.lat, loc.lon);
+      applyLocation({ ...loc, label: label || activeLocation.label });
+      if (loc.locked === true || onAndroidTv()) {
+        if (!label || label.toLowerCase() === "near you") {
+          label = await reversePlaceLabel(loc.lat, loc.lon);
+          applyLocation({ ...loc, label });
+        }
+        return;
       }
-      applyLocation({ ...loc, label });
-      return;
     }
   } catch (err) {
     /* settings missing: still try geolocation */
@@ -970,7 +996,9 @@ async function resolveLocation() {
     applyLocation({ ...detected, label, locked: false });
     return;
   }
-  applyLocation(FALLBACK_LOCATION);
+  if (activeLocation.lat === FALLBACK_LOCATION.lat && activeLocation.lon === FALLBACK_LOCATION.lon) {
+    applyLocation(FALLBACK_LOCATION);
+  }
 }
 
 function applyDash(iconName, svg, label) {
@@ -1074,20 +1102,32 @@ async function loadWeather() {
   await renderWeather();
 }
 
+function applySettingsLocation(settings) {
+  const loc = settings && settings.location;
+  if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
+    const label = typeof loc.label === "string" && loc.label.trim() ? loc.label.trim() : activeLocation.label;
+    applyLocation({ ...loc, label });
+    updateWeatherPlace();
+  }
+}
+
 async function bootWeatherAndTiles() {
   // Apps must be usable while location/weather services are still loading.
+  const settingsPromise = homeSettings().catch(() => ({}));
   loadTiles();
-  await resolveLocation();
-  updateWeatherPlace();
   if (wxBox || dwx) {
     readWeatherCache();
     if (wx) renderWeather();
-    loadWeather();
+    settingsPromise.then(applySettingsLocation).finally(() => loadWeather());
     setInterval(() => {
       if (Date.now() - wxTriedAt >= WEATHER_EVERY_MS) loadWeather();
       else renderWeather();
     }, WEATHER_TICK_MS);
   }
+  resolveLocation().then(() => {
+    updateWeatherPlace();
+    loadWeather();
+  });
 }
 
 function wireHomeWeather() {
@@ -1123,6 +1163,11 @@ applyPointerSetting();
 function applyCredit(show) {
   document.querySelectorAll("#site-credit").forEach((el) => {
     el.classList.toggle("hidden", show === false);
+    if (show !== false) {
+      el.tabIndex = 0;
+    } else {
+      el.tabIndex = -1;
+    }
   });
 }
 

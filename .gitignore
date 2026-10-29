@@ -3,10 +3,7 @@ data.json
 settings.local.json
 calendar-cache.local.json
 pin.local
-<<<<<<< HEAD
 atv.local
-=======
 gallery.local/
->>>>>>> origin/cursor/slate-gallery-0581
 __pycache__/
 .DS_Store

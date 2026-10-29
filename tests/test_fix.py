@@ -39,7 +39,6 @@ FIXTURE = {
     "money": {"note": MONEY},
 }
 
-<<<<<<< HEAD
 HEADLINE_RSS_FIXTURE = b"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
@@ -57,7 +56,7 @@ HEADLINE_RSS_FIXTURE = b"""<?xml version="1.0" encoding="UTF-8"?>
 </item>
 </channel>
 </rss>"""
-=======
+
 TINY_JPEG = (
     b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
     b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\x27 ,#\x1c\x1c(7),01444\x1f\x27=9=82<.342"
@@ -73,7 +72,6 @@ def gallery_multipart(data: bytes, boundary="----slategallery"):
         "Content-Type: image/jpeg\r\n\r\n"
     ).encode("latin-1") + data + f"\r\n--{boundary}--\r\n".encode("latin-1")
     return body, f"multipart/form-data; boundary={boundary}"
->>>>>>> origin/cursor/slate-gallery-0581
 
 
 def png_pixels(data):

@@ -1,27 +1,4 @@
-<<<<<<< HEAD
 (function () {
-  function detectSurface() {
-    if (window.SlateTV || /Android TV|Google TV/i.test(navigator.userAgent || "")) return "tv";
-    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) return "pointer";
-    if (window.matchMedia("(any-pointer: coarse)").matches) return "touch";
-    return "remote";
-  }
-
-  function applySurface() {
-    document.documentElement.dataset.slateSurface = detectSurface();
-  }
-
-  applySurface();
-  const hover = window.matchMedia("(hover: hover)");
-  const coarse = window.matchMedia("(any-pointer: coarse)");
-  if (hover.addEventListener) {
-    hover.addEventListener("change", applySurface);
-    coarse.addEventListener("change", applySurface);
-  } else if (hover.addListener) {
-    hover.addListener(applySurface);
-    coarse.addListener(applySurface);
-=======
-(() => {
   const TV_LAYOUT = window.matchMedia("(min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9)");
   const DRIFT_MS = 3 * 60 * 1000;
   const DRIFT = [
@@ -36,12 +13,23 @@
     return px > 0 ? `calc(-50% + ${text}px)` : `calc(-50% - ${text}px)`;
   }
 
+  function detectSurface() {
+    if (window.SlateTV || /Android TV|Google TV/i.test(navigator.userAgent || "")) return "tv";
+    if (window.matchMedia("(hover: hover) and (pointer: fine)").matches) return "pointer";
+    if (window.matchMedia("(any-pointer: coarse)").matches) return "touch";
+    return "remote";
+  }
+
+  function applyHtmlSurface() {
+    document.documentElement.dataset.slateSurface = detectSurface();
+  }
+
   function androidTv() {
     const ua = navigator.userAgent || "";
     return /Android TV|Google TV|AFT[A-Z0-9]|CrKey/i.test(ua);
   }
 
-  function applySurface() {
+  function applyGallerySurface() {
     const tv = androidTv() && TV_LAYOUT.matches;
     document.body.dataset.slateSurface = tv ? "tv" : "flex";
     return tv;
@@ -62,7 +50,7 @@
 
   window.SlateSurface = {
     TV_LAYOUT,
-    applySurface,
+    applySurface: applyGallerySurface,
     fitGalleryFrame,
     onDrift(callback) {
       setInterval(() => {
@@ -72,11 +60,16 @@
     },
   };
 
-  applySurface();
-  if (TV_LAYOUT.addEventListener) {
-    TV_LAYOUT.addEventListener("change", applySurface);
-  } else {
-    TV_LAYOUT.addListener(applySurface);
->>>>>>> origin/cursor/slate-gallery-0581
+  applyHtmlSurface();
+  const hover = window.matchMedia("(hover: hover)");
+  const coarse = window.matchMedia("(any-pointer: coarse)");
+  if (hover.addEventListener) {
+    hover.addEventListener("change", applyHtmlSurface);
+    coarse.addEventListener("change", applyHtmlSurface);
+    TV_LAYOUT.addEventListener("change", applyHtmlSurface);
+  } else if (hover.addListener) {
+    hover.addListener(applyHtmlSurface);
+    coarse.addListener(applyHtmlSurface);
+    TV_LAYOUT.addListener(applyHtmlSurface);
   }
 })();

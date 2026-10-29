@@ -819,6 +819,31 @@ class FixTests(unittest.TestCase):
         self.assertEqual(len(data["items"]), 1)
         self.assertEqual(set(data["items"][0].keys()), {"title", "source", "time", "url"})
 
+    def test_headlines_feed_url_blocks_private(self):
+        self.assertFalse(server.feed_url_allowed("http://feeds.npr.org/1001/rss.xml"))
+        self.assertFalse(server.feed_url_allowed("https://127.0.0.1/rss"))
+        self.assertFalse(server.feed_url_allowed("https://localhost/rss"))
+        self.assertTrue(server.feed_url_allowed("https://feeds.npr.org/1001/rss.xml"))
+
+    def test_headlines_normalize_only_npr_enabled(self):
+        public = server.headlines_for_client({
+            "feeds": {
+                "npr": True,
+                "bbc": False,
+                "nyt": False,
+                "gothamist": False,
+                "thecity": False,
+            },
+            "custom": [],
+        })
+        enabled = [row for row in public["builtin"] if row.get("enabled")]
+        self.assertEqual(len(enabled), 1)
+        self.assertEqual(enabled[0]["id"], "npr")
+        with server.PUBLISH_LOCK:
+            server.SETTINGS_STATE["headlines"] = public
+        feeds = server.active_headline_feeds()
+        self.assertEqual([name for name, _url in feeds], ["NPR"])
+
 
 def wait_until(cdp, expression, timeout=8):
     deadline = time.time() + timeout

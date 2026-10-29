@@ -68,12 +68,114 @@ HEADLINES_LOCK = threading.Lock()
 HEADLINES_CACHE = {"updated": "", "items": []}
 HEADLINES_REFRESH_S = 15 * 60
 HEADLINES_READ_LIMIT = 300 * 1024
-HEADLINES_FEEDS = (
-    ("NPR", "https://feeds.npr.org/1001/rss.xml"),
-    ("BBC", "https://feeds.bbci.co.uk/news/rss.xml"),
-    ("NYT", "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"),
+HEADLINES_PRECONFIGURED = (
+    ("npr", "NPR", "https://feeds.npr.org/1001/rss.xml", True),
+    ("bbc", "BBC", "https://feeds.bbci.co.uk/news/rss.xml", True),
+    ("nyt", "NYT", "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml", True),
+    ("gothamist", "Gothamist", "https://gothamist.com/feed", False),
+    ("thecity", "The City", "https://www.thecity.nyc/feed", False),
 )
+HEADLINES_BUILTIN_IDS = {row[0] for row in HEADLINES_PRECONFIGURED}
+HEADLINES_CUSTOM_MAX = 8
+HEADLINES_NAME_MAX = 32
+HEADLINES_FEEDS = tuple((name, url) for _fid, name, url, on in HEADLINES_PRECONFIGURED if on)
 HEADLINES_UA = "Slate/1.0 (local TV dashboard)"
+
+
+def feed_url_allowed(url: str) -> bool:
+    if not isinstance(url, str):
+        return False
+    split = urlsplit(url.strip())
+    if split.scheme != "https":
+        return False
+    if split.username or split.password:
+        return False
+    host = split.hostname
+    if not host:
+        return False
+    host = host.lower().rstrip(".")
+    if host == "localhost":
+        return False
+    try:
+        infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
+    except OSError:
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        sockaddr = info[4]
+        if not sockaddr:
+            return False
+        try:
+            ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
+            return False
+    return True
+
+
+def default_headlines_feed_flags() -> dict:
+    return {fid: default for fid, _name, _url, default in HEADLINES_PRECONFIGURED}
+
+
+def normalize_headlines(raw) -> dict:
+    flags = default_headlines_feed_flags()
+    custom = []
+    if isinstance(raw, dict):
+        feed_raw = raw.get("feeds")
+        if not isinstance(feed_raw, dict) and isinstance(raw.get("builtin"), list):
+            feed_raw = {}
+            for row in raw["builtin"]:
+                if not isinstance(row, dict):
+                    continue
+                fid = row.get("id")
+                if fid in HEADLINES_BUILTIN_IDS:
+                    feed_raw[fid] = row.get("enabled") is True
+        if isinstance(feed_raw, dict):
+            for fid in HEADLINES_BUILTIN_IDS:
+                if fid in feed_raw:
+                    flags[fid] = feed_raw[fid] is True
+        custom_raw = raw.get("custom")
+        if isinstance(custom_raw, list):
+            for entry in custom_raw[:HEADLINES_CUSTOM_MAX]:
+                if not isinstance(entry, dict):
+                    continue
+                name_raw = entry.get("name")
+                url_raw = entry.get("url")
+                if not isinstance(name_raw, str) or not isinstance(url_raw, str):
+                    continue
+                name = name_raw.strip().replace("\n", " ")[:HEADLINES_NAME_MAX]
+                url = url_raw.strip()
+                if not name or not feed_url_allowed(url):
+                    continue
+                custom.append({
+                    "name": name,
+                    "url": url,
+                    "enabled": entry.get("enabled") is not False,
+                })
+    return {"feeds": flags, "custom": custom}
+
+
+def headlines_for_client(raw) -> dict:
+    cfg = normalize_headlines(raw)
+    builtin = []
+    for fid, name, url, _default in HEADLINES_PRECONFIGURED:
+        builtin.append({
+            "id": fid,
+            "name": name,
+            "url": url,
+            "enabled": cfg["feeds"].get(fid, False),
+        })
+    return {"builtin": builtin, "custom": list(cfg["custom"])}
+
+
 CALENDAR_PREFETCH_BACK_DAYS = 1
 CALENDAR_PREFETCH_FORWARD_DAYS = 45
 RADAR_LOCK = threading.Lock()
@@ -123,7 +225,27 @@ SETTINGS_STATE = {
     "tvMotion": "drift",
     "tvIntensity": "balanced",
     "remoteEnabled": True,
+    "headlines": headlines_for_client({}),
 }
+
+
+def active_headline_feeds() -> list:
+    with PUBLISH_LOCK:
+        cfg = normalize_headlines(SETTINGS_STATE.get("headlines"))
+    order = []
+    for fid, name, url, _default in HEADLINES_PRECONFIGURED:
+        if cfg["feeds"].get(fid):
+            order.append((name, url))
+    for entry in cfg["custom"]:
+        if entry.get("enabled") is False:
+            continue
+        name = entry.get("name") if isinstance(entry.get("name"), str) else ""
+        url = entry.get("url") if isinstance(entry.get("url"), str) else ""
+        if name and url and feed_url_allowed(url):
+            order.append((name, url))
+    return order
+
+
 REMOTE_COOKIE = "slate_remote"
 REMOTE_COOKIE_RE = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
 REMOTE_PAIR_LOCK = threading.Lock()
@@ -380,6 +502,8 @@ def parse_rss_items(xml_bytes: bytes, source: str) -> list:
 
 
 def fetch_rss_bytes(url: str) -> bytes:
+    if not feed_url_allowed(url):
+        raise ValueError("feed url not allowed")
     request = Request(
         url,
         headers={
@@ -399,12 +523,12 @@ def fetch_rss_bytes(url: str) -> bytes:
         return b"".join(chunks)
 
 
-def merge_headline_round_robin(per_source: dict) -> list:
+def merge_headline_round_robin(per_source: dict, feed_order: list) -> list:
     pools = {label: list(items) for label, items in per_source.items() if items}
     picked = []
     while len(picked) < 4:
         added = False
-        for label, _url in HEADLINES_FEEDS:
+        for label, _url in feed_order:
             pool = pools.get(label)
             if not pool:
                 continue
@@ -428,9 +552,14 @@ def merge_headline_round_robin(per_source: dict) -> list:
 
 def refresh_headlines_store() -> None:
     global HEADLINES_CACHE
+    feed_order = active_headline_feeds()
+    if not feed_order:
+        with HEADLINES_LOCK:
+            HEADLINES_CACHE = {"updated": local_iso_now(), "items": []}
+        return
     per_source = {}
     any_ok = False
-    for label, url in HEADLINES_FEEDS:
+    for label, url in feed_order:
         try:
             raw = fetch_rss_bytes(url)
             parsed = parse_rss_items(raw, label)
@@ -441,7 +570,10 @@ def refresh_headlines_store() -> None:
             continue
     if not any_ok:
         return
-    payload = {"updated": local_iso_now(), "items": merge_headline_round_robin(per_source)}
+    payload = {
+        "updated": local_iso_now(),
+        "items": merge_headline_round_robin(per_source, feed_order),
+    }
     with HEADLINES_LOCK:
         HEADLINES_CACHE = payload
 
@@ -576,6 +708,8 @@ def write_settings_local(data: dict) -> None:
             payload["calendarId"] = calendar_id.strip()
         else:
             payload.pop("calendarId", None)
+    if "headlines" in payload:
+        payload["headlines"] = normalize_headlines(payload["headlines"])
     text = json.dumps(payload, indent=2) + "\n"
     SETTINGS_LOCAL.write_text(text, encoding="utf-8")
     protect_local_file(SETTINGS_LOCAL)
@@ -613,6 +747,7 @@ def publish_settings() -> None:
             "showCredit": show_credit,
             "tileSize": tile_size,
             "remoteEnabled": remote_flag,
+            "headlines": headlines_for_client(local.get("headlines")),
             **normalize_tv_appearance(local),
         }
         publish_apps(home)
@@ -1761,6 +1896,7 @@ ALLOWED_FILES = {
     "/settings-apps.html",
     "/settings-theme.html",
     "/settings-location.html",
+    "/settings-headlines.html",
     "/settings-schedule.html",
     "/screensaver.html",
     "/screensaver.css",
@@ -1789,6 +1925,7 @@ ALLOWED_FILES = {
     "/settings-apps.js",
     "/settings-theme.js",
     "/settings-location.js",
+    "/settings-headlines.js",
     "/settings-schedule.js",
     "/data.json",
     "/apps.json",
@@ -2629,6 +2766,7 @@ class Handler(SimpleHTTPRequestHandler):
             "tvMotion",
             "tvIntensity",
             "remoteEnabled",
+            "headlines",
         }):
             self.send_json(400, {"error": "bad"})
             return
@@ -2651,12 +2789,18 @@ class Handler(SimpleHTTPRequestHandler):
                 current["tileSize"] = normalize_tile_size(obj.get("tileSize"))
             if "remoteEnabled" in obj:
                 current["remoteEnabled"] = obj.get("remoteEnabled") is not False
+            headlines_changed = False
+            if "headlines" in obj:
+                current["headlines"] = normalize_headlines(obj.get("headlines"))
+                headlines_changed = True
             current.update(normalize_tv_appearance({**current, **{
                 key: value for key, value in obj.items() if key.startswith("tv")
             }}))
             write_settings_local(current)
             publish_settings()
             body = dict(SETTINGS_STATE)
+        if headlines_changed:
+            refresh_headlines_store()
         self.send_json(200, body)
 
     def remote_api_ok(self) -> bool:

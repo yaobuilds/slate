@@ -140,7 +140,8 @@ function fitStage() {
   const [x, y] = DRIFT[driftIndex];
   document.documentElement.style.setProperty("--drift-x", String(x));
   document.documentElement.style.setProperty("--drift-y", String(y));
-  if (USE_TV_FRAME && TV_LAYOUT.matches) {
+  const tvSurface = document.documentElement.dataset.slateSurface === "tv";
+  if (USE_TV_FRAME && TV_LAYOUT.matches && tvSurface) {
     const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
     document.documentElement.dataset.layout = "tv";
     stage.style.transform =
@@ -1118,6 +1119,23 @@ async function applyPointerSetting() {
 }
 
 applyPointerSetting();
+
+function applyCredit(show) {
+  document.querySelectorAll("#site-credit").forEach((el) => {
+    el.classList.toggle("hidden", show === false);
+  });
+}
+
+async function applyCreditSetting() {
+  try {
+    const settings = await homeSettings();
+    applyCredit(settings.showCredit !== false);
+  } catch (err) {
+    applyCredit(true);
+  }
+}
+
+applyCreditSetting();
 
 if (onDashboard()) {
   installDashboardBack();

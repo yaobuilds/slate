@@ -14,7 +14,10 @@ const weatherTitle = document.getElementById("weather-title");
 const weatherPlace = document.getElementById("weather-place");
 const weatherUpdated = document.getElementById("weather-updated");
 const radarImage = document.getElementById("radar-image");
+const radarBasemap = document.getElementById("radar-basemap");
+const radarCaption = document.getElementById("radar-caption");
 const radarTime = document.getElementById("radar-time");
+const TV_LAYOUT = window.matchMedia("(min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9)");
 const radarPlay = document.getElementById("radar-play");
 const radarZoom = document.getElementById("radar-zoom");
 
@@ -186,10 +189,76 @@ function radarStamp(frame) {
   return base - frame * 600;
 }
 
+function radarSpanMiles() {
+  return radarZoomLevel === "near" ? 90 : 220;
+}
+
 function updateRadarImage() {
   const stamp = radarStamp(radarFrame);
+  const label = savedPlace.label || "Saved location";
+  if (radarCaption) {
+    radarCaption.textContent = `${label} · about ${radarSpanMiles()} miles across`;
+  }
+  if (radarBasemap) {
+    radarBasemap.src = `radar.png?layer=basemap&zoom=${radarZoomLevel}&t=${Math.floor(Date.now() / 86400000)}`;
+  }
   radarImage.src = `radar.png?zoom=${radarZoomLevel}&frame=${radarFrame}&t=${stamp}`;
   radarTime.textContent = `Recent radar · ${new Date(stamp * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
+}
+
+function applyWeatherLayout() {
+  const tvSurface = document.documentElement.dataset.slateSurface === "tv";
+  document.body.classList.toggle("weather-tv", TV_LAYOUT.matches && tvSurface);
+}
+
+function detectDeviceLocation() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => resolve({
+        lat: Math.round(pos.coords.latitude * 100) / 100,
+        lon: Math.round(pos.coords.longitude * 100) / 100,
+      }),
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 12000, maximumAge: 10 * 60 * 1000 },
+    );
+  });
+}
+
+async function reversePlaceLabel(lat, lon) {
+  try {
+    const response = await fetch(
+      `/place.json?lat=${encodeURIComponent(String(lat))}&lon=${encodeURIComponent(String(lon))}`,
+      { cache: "no-store" },
+    );
+    if (!response.ok) throw new Error(String(response.status));
+    const data = await response.json();
+    if (typeof data.label === "string" && data.label.trim()) return data.label.trim();
+  } catch (error) {
+    /* fall through */
+  }
+  return `${Number(lat).toFixed(2)}, ${Number(lon).toFixed(2)}`;
+}
+
+async function resolveWeatherPlace(settings) {
+  const loc = settings?.location;
+  const onTv = /Android TV|Google TV/i.test(navigator.userAgent || "");
+  if (loc && typeof loc.lat === "number" && (loc.locked === true || onTv)) {
+    let label = typeof loc.label === "string" ? loc.label.trim() : "";
+    if (!label) label = await reversePlaceLabel(loc.lat, loc.lon);
+    savedPlace = { ...loc, label };
+    return;
+  }
+  const detected = await detectDeviceLocation();
+  if (detected) {
+    const label = await reversePlaceLabel(detected.lat, detected.lon);
+    savedPlace = { ...detected, label, timezone: savedPlace.timezone };
+  } else if (loc && typeof loc.lat === "number") {
+    savedPlace = loc;
+  }
 }
 
 function setRadarPlaying(on) {
@@ -241,14 +310,19 @@ function moveFocus(key) {
 }
 
 async function init() {
+  applyWeatherLayout();
+  if (TV_LAYOUT.addEventListener) {
+    TV_LAYOUT.addEventListener("change", applyWeatherLayout);
+  } else {
+    addEventListener("resize", applyWeatherLayout);
+  }
+  let settings = null;
   try {
-    const settings = await fetch("settings.json", { cache: "no-store" }).then((r) => r.json());
-    if (settings.location && typeof settings.location.lat === "number") {
-      savedPlace = settings.location;
-    }
+    settings = await fetch("settings.json", { cache: "no-store" }).then((r) => r.json());
   } catch (error) {
     /* Keep fallback location. */
   }
+  await resolveWeatherPlace(settings);
   weatherPlace.textContent = savedPlace.label || "Weather";
   try {
     const response = await fetch(weatherUrl(), { cache: "no-store" });

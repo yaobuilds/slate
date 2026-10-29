@@ -14,9 +14,7 @@ html,
 body {
   margin: 0;
   width: 100%;
-  height: 100%;
-  overflow: hidden;
-  overflow: clip;
+  min-height: 100%;
   background: var(--bg);
   color: var(--text);
   color-scheme: dark;
@@ -25,10 +23,33 @@ body {
   -webkit-user-select: none;
 }
 
-body {
+html[data-slate-surface='tv'],
+html[data-slate-surface='tv'] body {
+  height: 100%;
+  overflow: hidden;
+  overflow: clip;
+}
+
+html[data-slate-surface='tv'] body {
   position: fixed;
   inset: 0;
   overscroll-behavior: none;
+}
+
+html:not([data-slate-surface='tv']),
+html:not([data-slate-surface='tv']) body {
+  height: auto;
+  min-height: 100%;
+  min-height: 100dvh;
+}
+
+html:not([data-slate-surface='tv']) body {
+  position: static;
+  inset: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 /* Midnight to 6 AM New York time. This 40% veil is the only dim on the text.
@@ -477,6 +498,17 @@ body.show-focus .foot-link:focus {
   margin: 0;
   font-size: 24px;
   color: var(--sl-dim);
+  text-decoration: none;
+}
+
+.signature.hidden {
+  display: none;
+}
+
+body.show-focus .signature:focus {
+  outline: 6px solid var(--sl-ice);
+  outline-offset: 6px;
+  border-radius: 8px;
 }
 
 .dash-header {
@@ -1487,5 +1519,37 @@ body.hide-pointer * {
 
   .dash-foot .hint-keys:nth-child(2) {
     display: none;
+  }
+}
+
+@media (min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9) {
+  html:not([data-slate-surface='tv']) .stage {
+    position: relative;
+    left: auto;
+    top: auto;
+    z-index: 1;
+    width: 100%;
+    max-width: 100%;
+    height: auto;
+    min-height: 100dvh;
+    transform: none !important;
+    display: flex;
+    flex-direction: column;
+    align-content: start;
+    gap: 12px;
+    padding:
+      max(16px, env(safe-area-inset-top))
+      max(16px, env(safe-area-inset-right))
+      max(16px, env(safe-area-inset-bottom))
+      max(16px, env(safe-area-inset-left));
+    background: var(--sl-ink);
+  }
+
+  html:not([data-slate-surface='tv']) .page-home .stage,
+  html:not([data-slate-surface='tv']) .page-dashboard .stage,
+  html:not([data-slate-surface='tv']) .page-dashboard.guest .stage {
+    grid-template-columns: none;
+    grid-template-rows: none;
+    grid-template-areas: none;
   }
 }

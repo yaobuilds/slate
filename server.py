@@ -60,6 +60,11 @@ CALENDAR_PREFETCH_BACK_DAYS = 1
 CALENDAR_PREFETCH_FORWARD_DAYS = 45
 RADAR_LOCK = threading.Lock()
 RADAR_CACHE = {}
+MAP_CACHE = {}
+OAUTH_LOCK = threading.Lock()
+OAUTH_PENDING: dict[str, float] = {}
+GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
+OAUTH_REDIRECT = "http://127.0.0.1:8000/oauth/callback"
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
     "today": [
@@ -85,6 +90,7 @@ SETTINGS_STATE = {
     "ambientPreset": DEFAULT_AMBIENT_PRESET,
     "location": dict(DEFAULT_LOCATION),
     "hidePointer": False,
+    "showCredit": True,
     "tileSize": "auto",
     "tvAppearance": "sculptural",
     "tvBackdrop": "ambient",
@@ -307,11 +313,18 @@ def read_settings_local() -> dict:
 def write_settings_local(data: dict) -> None:
     local = read_settings_local()
     payload = dict(data)
-    calendar_id = local.get("calendarId")
-    if isinstance(calendar_id, str) and calendar_id.strip():
-        payload["calendarId"] = calendar_id.strip()
+    if "calendarId" in data:
+        calendar_id = data.get("calendarId")
+        if isinstance(calendar_id, str) and calendar_id.strip():
+            payload["calendarId"] = calendar_id.strip()
+        else:
+            payload.pop("calendarId", None)
     else:
-        payload.pop("calendarId", None)
+        calendar_id = local.get("calendarId")
+        if isinstance(calendar_id, str) and calendar_id.strip():
+            payload["calendarId"] = calendar_id.strip()
+        else:
+            payload.pop("calendarId", None)
     text = json.dumps(payload, indent=2) + "\n"
     SETTINGS_LOCAL.write_text(text, encoding="utf-8")
     protect_local_file(SETTINGS_LOCAL)
@@ -334,12 +347,14 @@ def publish_settings() -> None:
         preset = normalize_ambient_preset(local.get("ambientPreset"))
         location = normalize_location(local.get("location"))
         hide_pointer = local.get("hidePointer") is True
+        show_credit = local.get("showCredit") is not False
         tile_size = normalize_tile_size(local.get("tileSize"))
         SETTINGS_STATE = {
             "homeApps": home,
             "ambientPreset": preset,
             "location": location,
             "hidePointer": hide_pointer,
+            "showCredit": show_credit,
             "tileSize": tile_size,
             **normalize_tv_appearance(local),
         }
@@ -348,9 +363,11 @@ def publish_settings() -> None:
 
 def normalize_tv_appearance(source: dict) -> dict:
     appearance = source.get("tvAppearance")
-    if appearance == "aqua":
-        appearance = "flurry"
-    if appearance not in ("sculptural", "flurry"):
+    if appearance == "classic":
+        appearance = "sculptural"
+    if appearance == "scenic":
+        appearance = "aqua"
+    if appearance not in ("sculptural", "aqua", "flurry"):
         appearance = "sculptural"
     choices = {
         "tvBackdrop": ("ambient", "landscape", "aqua", "flurry", "orbit"),
@@ -360,6 +377,8 @@ def normalize_tv_appearance(source: dict) -> dict:
     normalized = {key: source.get(key) if source.get(key) in values else values[0]
                   for key, values in choices.items()}
     normalized["tvAppearance"] = appearance
+    if appearance in ("sculptural", "aqua", "flurry"):
+        normalized["tvBackdrop"] = appearance
     return normalized
 
 
@@ -373,6 +392,41 @@ def keychain_value(account: str) -> str:
     except (OSError, subprocess.TimeoutExpired):
         return ""
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def keychain_set(account: str, secret: str) -> bool:
+    if not secret:
+        return False
+    subprocess.run(
+        ["security", "delete-generic-password", "-s", "Slate Calendar", "-a", account],
+        capture_output=True, timeout=3, check=False,
+    )
+    try:
+        result = subprocess.run(
+            ["security", "add-generic-password", "-s", "Slate Calendar", "-a", account, "-w", secret, "-U"],
+            capture_output=True, text=True, timeout=5, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def keychain_delete(account: str) -> None:
+    try:
+        subprocess.run(
+            ["security", "delete-generic-password", "-s", "Slate Calendar", "-a", account],
+            capture_output=True, timeout=3, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def request_is_localhost(handler) -> bool:
+    host = handler.headers.get("Host", "").split(":")[0].lower()
+    if host not in {"127.0.0.1", "localhost", "[::1]"}:
+        return False
+    ip = handler.client_address[0]
+    return ip in {"127.0.0.1", "::1"}
 
 
 def calendar_credentials() -> tuple[str, str, str, str]:
@@ -710,6 +764,8 @@ def merge_ambient_payload() -> dict:
 
 def pin_matches(offered) -> bool:
     """Constant-time check. The length of a wrong PIN does not skip the compare."""
+    if not pin_configured():
+        return False
     raw = offered if isinstance(offered, str) else ""
     left = hashlib.sha256(raw.encode("utf-8")).digest()
     right = hashlib.sha256(EXPECTED_PIN.encode("utf-8")).digest()
@@ -729,6 +785,9 @@ ALLOWED_FILES = {
     "/settings-theme.html",
     "/settings-location.html",
     "/settings-schedule.html",
+    "/screensaver.html",
+    "/screensaver.css",
+    "/screensaver.js",
     "/style.css",
     "/settings.css",
     "/network.css",
@@ -755,6 +814,7 @@ ALLOWED_FILES = {
     "/ambient.json",
     "/tv-appearance.css",
     "/tv-appearance.js",
+    "/slate-surface.js",
     "/assets/wallpapers/alpine.jpg",
     "/manifest.webmanifest",
     "/favicon.ico",
@@ -822,12 +882,8 @@ def load_pin(lan: bool) -> str:
         return pin
     if not lan:
         return ""
-    pin = f"{secrets.randbelow(900000) + 100000}"
-    PIN_PATH.write_text(pin + "\n", encoding="utf-8")
-    protect_pin_file()
-    print(f"Phone PIN: {pin}")
-    print("Saved in pin.local on this Mac. That file is not served and not committed.")
-    return pin
+    print("No PIN yet. Set one in Settings on this Mac before using Show all on Wi-Fi.")
+    return ""
 
 
 def protect_pin_file() -> None:
@@ -835,6 +891,101 @@ def protect_pin_file() -> None:
         os.chmod(PIN_PATH, 0o600)
     except OSError:
         pass
+
+
+def set_pin_value(pin: str, keep_token: str = "") -> None:
+    global EXPECTED_PIN
+    PIN_PATH.write_text(pin + "\n", encoding="utf-8")
+    protect_pin_file()
+    EXPECTED_PIN = pin
+    with STATE_LOCK:
+        if keep_token and keep_token in SESSIONS:
+            SESSIONS.clear()
+            SESSIONS.add(keep_token)
+        else:
+            SESSIONS.clear()
+
+
+def pin_configured() -> bool:
+    return bool(PIN_RE.fullmatch(EXPECTED_PIN or ""))
+
+
+def calendar_connection_status() -> dict:
+    calendar_id, client_id, client_secret, refresh_token = calendar_credentials()
+    name = ""
+    if calendar_id and refresh_token:
+        try:
+            token = google_access_token(client_id, client_secret, refresh_token)
+            if token:
+                url = "https://www.googleapis.com/calendar/v3/calendars/" + quote(calendar_id, safe="")
+                request = Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+                with urlopen(request, timeout=12) as response:
+                    meta = json.loads(response.read().decode("utf-8"))
+                if isinstance(meta, dict) and isinstance(meta.get("summary"), str):
+                    name = meta["summary"].strip()
+        except (OSError, HTTPError, json.JSONDecodeError, ValueError):
+            pass
+    synced = ""
+    stale = False
+    with CALENDAR_LOCK:
+        if isinstance(CALENDAR_CACHE, dict):
+            synced = CALENDAR_CACHE.get("syncedAt", "") if isinstance(CALENDAR_CACHE.get("syncedAt"), str) else ""
+            stale = CALENDAR_CACHE.get("stale") is True
+    return {
+        "configured": bool(calendar_id and client_id and client_secret and refresh_token),
+        "hasClient": bool(client_id and client_secret),
+        "hasToken": bool(refresh_token),
+        "calendarId": calendar_id if calendar_id else "",
+        "calendarName": name,
+        "syncedAt": synced,
+        "stale": stale,
+    }
+
+
+def list_google_calendars() -> list[dict]:
+    calendar_id, client_id, client_secret, refresh_token = calendar_credentials()
+    if not all((client_id, client_secret, refresh_token)):
+        return []
+    token = google_access_token(client_id, client_secret, refresh_token)
+    if not token:
+        return []
+    request = Request(
+        "https://www.googleapis.com/calendar/v3/users/me/calendarList?maxResults=50",
+        headers={"Authorization": f"Bearer {token}", "Accept": "application/json"},
+    )
+    with urlopen(request, timeout=15) as response:
+        raw = json.loads(response.read().decode("utf-8"))
+    out = []
+    for item in raw.get("items", []) if isinstance(raw, dict) else []:
+        if not isinstance(item, dict):
+            continue
+        cid = item.get("id")
+        if not isinstance(cid, str) or not cid.strip():
+            continue
+        summary = item.get("summary") if isinstance(item.get("summary"), str) else cid
+        out.append({"id": cid.strip(), "summary": summary.strip() or cid.strip()})
+    out.sort(key=lambda row: row["summary"].lower())
+    return out
+
+
+def oauth_exchange_code(code: str) -> dict:
+    client_id = keychain_value("client-id")
+    client_secret = keychain_value("client-secret")
+    body = urlencode({
+        "code": code,
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "redirect_uri": OAUTH_REDIRECT,
+        "grant_type": "authorization_code",
+    }).encode("utf-8")
+    request = Request(
+        "https://oauth2.googleapis.com/token",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=15) as response:
+        return json.loads(response.read().decode("utf-8"))
 
 
 def too_many(ip: str) -> bool:
@@ -987,6 +1138,7 @@ class Handler(SimpleHTTPRequestHandler):
         with PUBLISH_LOCK:
             publish_settings()
             body = dict(SETTINGS_STATE)
+        body["pinConfigured"] = pin_configured()
         self.send_json(200, body)
 
     def serve_calendar(self):
@@ -1009,20 +1161,57 @@ class Handler(SimpleHTTPRequestHandler):
         payload = calendar_payload(start_dt.isoformat(), end_dt.isoformat())
         self.send_json(200, payload if full else guest_calendar(payload))
 
-    def serve_radar(self):
-        params = parse_qs(urlsplit(self.path).query)
-        zoom = params.get("zoom", ["near"])[0]
-        try:
-            frame = int(params.get("frame", ["0"])[0])
-        except ValueError:
-            frame = -1
-        if zoom not in {"near", "wide"} or frame < 0 or frame > 5:
-            self.send_json(400, {"error": "bad"})
-            return
+    def radar_bbox(self, zoom: str) -> tuple[float, float, float, float, float, float]:
         with PUBLISH_LOCK:
             location = dict(SETTINGS_STATE.get("location", DEFAULT_LOCATION))
         lat, lon = float(location["lat"]), float(location["lon"])
         span = 1.45 if zoom == "near" else 3.5
+        return lat, lon, span, lon - span, lat - span * 0.58, lon + span, lat + span * 0.58
+
+    def serve_radar(self):
+        params = parse_qs(urlsplit(self.path).query)
+        zoom = params.get("zoom", ["near"])[0]
+        layer = params.get("layer", ["reflectivity"])[0]
+        try:
+            frame = int(params.get("frame", ["0"])[0])
+        except ValueError:
+            frame = -1
+        if zoom not in {"near", "wide"}:
+            self.send_json(400, {"error": "bad"})
+            return
+        lat, lon, span, west, south, east, north = self.radar_bbox(zoom)
+        if layer == "basemap":
+            key = ("basemap", round(lat, 2), round(lon, 2), zoom)
+            with RADAR_LOCK:
+                cached = MAP_CACHE.get(key)
+                if cached and time.monotonic() - cached[0] < 86400:
+                    self.send_bytes(200, cached[1], "image/png")
+                    return
+            bbox = f"{west},{south},{east},{north}"
+            query = urlencode({
+                "bbox": bbox, "bboxSR": "4326", "imageSR": "4326", "size": "960,540",
+                "format": "png", "f": "image",
+            })
+            request = Request(
+                "https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/export?"
+                + query,
+                headers={"User-Agent": NOMINATIM_UA, "Accept": "image/png"},
+            )
+            try:
+                with urlopen(request, timeout=20) as response:
+                    body = response.read(4 * 1024 * 1024)
+                if not body.startswith(b"\x89PNG"):
+                    raise OSError("basemap unavailable")
+            except (OSError, HTTPError):
+                self.send_json(502, {"error": "map"})
+                return
+            with RADAR_LOCK:
+                MAP_CACHE[key] = (time.monotonic(), body)
+            self.send_bytes(200, body, "image/png")
+            return
+        if frame < 0 or frame > 5:
+            self.send_json(400, {"error": "bad"})
+            return
         stamp = int(time.time() // 600 * 600) - frame * 600
         key = (round(lat, 2), round(lon, 2), zoom, stamp)
         with RADAR_LOCK:
@@ -1030,7 +1219,7 @@ class Handler(SimpleHTTPRequestHandler):
             if cached and time.monotonic() - cached[0] < 600:
                 self.send_bytes(200, cached[1], "image/png")
                 return
-        bbox = f"{lon-span},{lat-span*.58},{lon+span},{lat+span*.58}"
+        bbox = f"{west},{south},{east},{north}"
         query = urlencode({
             "bbox": bbox, "bboxSR": "4326", "imageSR": "4326", "size": "960,540",
             "format": "png32", "transparent": "true", "f": "image",
@@ -1055,6 +1244,143 @@ class Handler(SimpleHTTPRequestHandler):
                 oldest = min(RADAR_CACHE, key=lambda item: RADAR_CACHE[item][0])
                 RADAR_CACHE.pop(oldest, None)
         self.send_bytes(200, body, content_type if content_type.startswith("image/") else "image/png")
+
+    def serve_calendar_status(self):
+        self.send_json(200, calendar_connection_status())
+
+    def serve_calendar_list(self):
+        if not request_is_localhost(self):
+            self.send_json(403, {"error": "host"})
+            return
+        try:
+            items = list_google_calendars()
+        except (OSError, HTTPError, json.JSONDecodeError, ValueError):
+            self.send_json(502, {"error": "google"})
+            return
+        self.send_json(200, {"calendars": items})
+
+    def serve_oauth_start(self):
+        if not request_is_localhost(self):
+            self.send_json(403, {"error": "host"})
+            return
+        client_id = keychain_value("client-id")
+        if not client_id:
+            self.send_json(400, {"error": "client"})
+            return
+        state = secrets.token_urlsafe(24)
+        with OAUTH_LOCK:
+            OAUTH_PENDING[state] = time.monotonic() + 600
+        params = urlencode({
+            "client_id": client_id,
+            "redirect_uri": OAUTH_REDIRECT,
+            "response_type": "code",
+            "scope": GOOGLE_CALENDAR_SCOPE,
+            "access_type": "offline",
+            "prompt": "consent",
+            "state": state,
+        })
+        self.redirect("https://accounts.google.com/o/oauth2/v2/auth?" + params)
+
+    def serve_oauth_callback(self):
+        if not request_is_localhost(self):
+            self.reject(403)
+            return
+        params = parse_qs(urlsplit(self.path).query)
+        state = params.get("state", [""])[0]
+        code = params.get("code", [""])[0]
+        with OAUTH_LOCK:
+            expires = OAUTH_PENDING.pop(state, 0.0)
+        if not code or time.monotonic() > expires:
+            self.redirect("/settings-schedule.html?error=oauth")
+            return
+        try:
+            payload = oauth_exchange_code(code)
+            refresh = payload.get("refresh_token") if isinstance(payload, dict) else ""
+            if not isinstance(refresh, str) or not refresh.strip():
+                self.redirect("/settings-schedule.html?error=token")
+                return
+            if not keychain_set("refresh-token", refresh.strip()):
+                self.redirect("/settings-schedule.html?error=keychain")
+                return
+        except (OSError, HTTPError, json.JSONDecodeError, ValueError):
+            self.redirect("/settings-schedule.html?error=oauth")
+            return
+        refresh_calendar_store(force=True)
+        self.redirect("/settings-schedule.html?connected=1")
+
+    def save_pin(self, obj):
+        if obj is None or set(obj.keys()) != {"pin", "confirm"}:
+            self.send_json(400, {"error": "bad"})
+            return
+        pin = obj.get("pin") if isinstance(obj.get("pin"), str) else ""
+        confirm = obj.get("confirm") if isinstance(obj.get("confirm"), str) else ""
+        if pin != confirm or not PIN_RE.fullmatch(pin):
+            self.send_json(400, {"error": "format"})
+            return
+        if getattr(self.server, "require_pin", False):
+            if not self.settings_write_ok():
+                self.send_json(401, {"error": "pin"})
+                return
+        elif not request_is_localhost(self):
+            self.send_json(403, {"error": "host"})
+            return
+        keep = self.cookie("slate") if session_ok(self.cookie("slate")) else ""
+        set_pin_value(pin, keep)
+        self.send_json(200, {"ok": True, "pinConfigured": True})
+
+    def save_calendar_credentials(self, obj):
+        if not request_is_localhost(self):
+            self.send_json(403, {"error": "host"})
+            return
+        if obj is None:
+            self.send_json(400, {"error": "bad"})
+            return
+        client_id = obj.get("clientId") if isinstance(obj.get("clientId"), str) else ""
+        client_secret = obj.get("clientSecret") if isinstance(obj.get("clientSecret"), str) else ""
+        client_id = client_id.strip()
+        client_secret = client_secret.strip()
+        if not client_id or not client_secret:
+            self.send_json(400, {"error": "bad"})
+            return
+        if not keychain_set("client-id", client_id) or not keychain_set("client-secret", client_secret):
+            self.send_json(500, {"error": "keychain"})
+            return
+        self.send_json(200, {"ok": True, "hasClient": True})
+
+    def save_calendar_selection(self, obj):
+        if not request_is_localhost(self):
+            self.send_json(403, {"error": "host"})
+            return
+        if obj is None or set(obj.keys()) != {"calendarId"}:
+            self.send_json(400, {"error": "bad"})
+            return
+        calendar_id = obj.get("calendarId") if isinstance(obj.get("calendarId"), str) else ""
+        calendar_id = calendar_id.strip()
+        if not calendar_id:
+            self.send_json(400, {"error": "bad"})
+            return
+        with PUBLISH_LOCK:
+            current = dict(SETTINGS_STATE)
+            current["calendarId"] = calendar_id
+            write_settings_local(current)
+            publish_settings()
+        refresh_calendar_store(force=True)
+        self.send_json(200, calendar_connection_status())
+
+    def disconnect_calendar(self):
+        if not request_is_localhost(self):
+            self.send_json(403, {"error": "host"})
+            return
+        keychain_delete("refresh-token")
+        with PUBLISH_LOCK:
+            current = dict(SETTINGS_STATE)
+            current["calendarId"] = ""
+            write_settings_local(current)
+            publish_settings()
+        global CALENDAR_CACHE
+        with CALENDAR_LOCK:
+            CALENDAR_CACHE = None
+        self.send_json(200, calendar_connection_status())
 
     def serve_ambient(self):
         self.send_json(200, merge_ambient_payload())
@@ -1088,7 +1414,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "bad"})
             return
         allowed = set(obj.keys())
-        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location", "hidePointer", "tileSize", "tvAppearance", "tvBackdrop", "tvMotion", "tvIntensity"}):
+        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location", "hidePointer", "showCredit", "tileSize", "tvAppearance", "tvBackdrop", "tvMotion", "tvIntensity"}):
             self.send_json(400, {"error": "bad"})
             return
         with PUBLISH_LOCK:
@@ -1104,6 +1430,8 @@ class Handler(SimpleHTTPRequestHandler):
                 current["location"] = normalize_location(merged)
             if "hidePointer" in obj:
                 current["hidePointer"] = obj.get("hidePointer") is True
+            if "showCredit" in obj:
+                current["showCredit"] = obj.get("showCredit") is not False
             if "tileSize" in obj:
                 current["tileSize"] = normalize_tile_size(obj.get("tileSize"))
             current.update(normalize_tv_appearance({**current, **{
@@ -1149,6 +1477,18 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/calendar.json":
             self.serve_calendar()
+            return
+        if path == "/calendar/status.json":
+            self.serve_calendar_status()
+            return
+        if path == "/calendar/list.json":
+            self.serve_calendar_list()
+            return
+        if path == "/oauth/start":
+            self.serve_oauth_start()
+            return
+        if path == "/oauth/callback":
+            self.serve_oauth_callback()
             return
         if path == "/radar.png":
             self.serve_radar()
@@ -1228,6 +1568,21 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = public_path(self.path)
+        if path == "/pin.json":
+            obj = self.read_object(max_len=128)
+            self.save_pin(obj)
+            return
+        if path == "/calendar/credentials.json":
+            obj = self.read_object()
+            self.save_calendar_credentials(obj)
+            return
+        if path == "/calendar/select.json":
+            obj = self.read_object()
+            self.save_calendar_selection(obj)
+            return
+        if path == "/calendar/disconnect.json":
+            self.disconnect_calendar()
+            return
         if path == "/settings.json":
             if not self.settings_write_ok():
                 self.close_connection = True

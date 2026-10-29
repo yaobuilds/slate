@@ -130,8 +130,18 @@ document.addEventListener("keydown", (event) => {
   const editable = active && (
     active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable
   );
+  const arrow = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key);
+  if (editable && arrow) {
+    if (active.tagName === "TEXTAREA" && (event.key === "ArrowUp" || event.key === "ArrowDown")) return;
+    if (active.tagName === "INPUT" || active.tagName === "SELECT") {
+      event.preventDefault();
+      document.body.classList.add("show-focus");
+      moveSettingsFocus(event.key);
+      return;
+    }
+  }
   if (editable) return;
-  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+  if (arrow) {
     event.preventDefault();
     document.body.classList.add("show-focus");
     moveSettingsFocus(event.key);
@@ -307,12 +317,108 @@ async function bootPointerSetting() {
   }
 }
 
+function applyCredit(show) {
+  document.querySelectorAll("#site-credit").forEach((el) => {
+    el.classList.toggle("hidden", !show);
+  });
+}
+
+async function persistCredit(show) {
+  const msgEl = document.getElementById("credit-msg");
+  const result = await saveSettings({ showCredit: show });
+  if (result.error === "pin") {
+    wireSettingsPinForm(() => persistCredit(show));
+    return;
+  }
+  if (result.error) {
+    if (msgEl) msgEl.textContent = "Could not save.";
+    return;
+  }
+  applyCredit(result.showCredit !== false);
+  const input = document.getElementById("credit-toggle");
+  if (input) input.checked = result.showCredit !== false;
+  if (msgEl) msgEl.textContent = result.showCredit !== false ? "Credit shown." : "Credit hidden.";
+}
+
+function wireCreditToggle() {
+  const input = document.getElementById("credit-toggle");
+  if (!input) return;
+  input.addEventListener("change", () => persistCredit(input.checked));
+}
+
+async function bootCreditSetting() {
+  try {
+    const settings = await loadSettings();
+    const show = settings.showCredit !== false;
+    applyCredit(show);
+    const input = document.getElementById("credit-toggle");
+    if (input) input.checked = show;
+  } catch (err) {
+    /* default visible */
+  }
+}
+
+async function savePin(event) {
+  event.preventDefault();
+  const msgEl = document.getElementById("pin-msg");
+  const pinNew = document.getElementById("pin-new");
+  const pinConfirm = document.getElementById("pin-confirm");
+  const pin = pinNew?.value.trim() || "";
+  const confirm = pinConfirm?.value.trim() || "";
+  if (!/^[0-9]{4,8}$/.test(pin) || pin !== confirm) {
+    if (msgEl) msgEl.textContent = "Enter matching PINs with 4 to 8 digits.";
+    return;
+  }
+  const saveBtn = document.getElementById("pin-save");
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const response = await fetch("pin.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pin, confirm }),
+      cache: "no-store",
+    });
+    if (response.status === 401) {
+      wireSettingsPinForm(() => savePin(event));
+      return;
+    }
+    if (!response.ok) {
+      if (msgEl) msgEl.textContent = "Could not save the PIN.";
+      return;
+    }
+    if (pinNew) pinNew.value = "";
+    if (pinConfirm) pinConfirm.value = "";
+    if (msgEl) msgEl.textContent = "PIN saved.";
+  } catch (err) {
+    if (msgEl) msgEl.textContent = "Could not reach Slate.";
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+function wirePinForm() {
+  const form = document.getElementById("pin-form");
+  if (form) form.addEventListener("submit", savePin);
+}
+
+function wireScreensaverPanel() {
+  const panel = document.getElementById("screensaver-panel");
+  const bridge = window.SlateTV;
+  if (!panel || !bridge || typeof bridge.openScreensaverSettings !== "function") return;
+  panel.hidden = false;
+  document.getElementById("screensaver-open")?.addEventListener("click", () => bridge.openScreensaverSettings());
+}
+
 wireSettingsSignOut();
 wirePointerToggle();
+wireCreditToggle();
+wirePinForm();
+wireScreensaverPanel();
 if (document.documentElement.classList.contains("page-settings")) {
   document.body.classList.add("has-mouse");
 }
 bootPointerSetting();
+bootCreditSetting();
 
 function refreshHomeRouting() {
   const bridge = window.SlateTV;

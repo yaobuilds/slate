@@ -2,6 +2,7 @@
 <html lang="en" class="page-settings">
 <head>
   <meta charset="utf-8">
+  <script src="slate-surface.js"></script>
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#10141A">
   <title>Settings</title>
@@ -17,10 +18,15 @@
     </header>
     <nav class="settings-panel" aria-label="Settings sections">
       <a class="settings-hub-link" href="settings-apps.html">Home apps<span aria-hidden="true">→</span></a>
-      <a class="settings-hub-link" href="settings-schedule.html" style="margin-top:16px">Schedule<span aria-hidden="true">→</span></a>
+      <a class="settings-hub-link" href="settings-schedule.html" style="margin-top:16px">Calendar<span aria-hidden="true">→</span></a>
       <a class="settings-hub-link" href="settings-theme.html" style="margin-top:16px">Appearance<span aria-hidden="true">→</span></a>
       <a class="settings-hub-link" href="settings-location.html" style="margin-top:16px">Location<span aria-hidden="true">→</span></a>
     </nav>
+    <section class="settings-panel settings-lan-panel" id="screensaver-panel" hidden>
+      <h2 class="settings-subtitle">TV screensaver</h2>
+      <p class="settings-lan-copy">Slate can show clock, weather, and the next calendar line while the TV sleeps.</p>
+      <div class="settings-actions"><button type="button" id="screensaver-open">Open screensaver settings</button></div>
+    </section>
     <section class="settings-panel settings-lan-panel" id="home-routing-panel" hidden>
       <h2 class="settings-subtitle">TV Home button</h2>
       <label class="settings-row">
@@ -29,6 +35,26 @@
       </label>
       <p class="settings-lan-copy" id="home-routing-status"></p>
       <div class="settings-actions"><button type="button" id="home-routing-manage">Accessibility settings</button></div>
+    </section>
+    <section class="settings-panel settings-lan-panel">
+      <h2 class="settings-subtitle">Wi‑Fi PIN</h2>
+      <p class="settings-lan-copy">Used when Slate runs with <code>--lan</code> and you choose <strong>Show all</strong> on Dashboard or calendar. Not required on the host at <code>127.0.0.1</code>.</p>
+      <form id="pin-form" class="settings-pin-fields" autocomplete="off">
+        <label class="pin-label" for="pin-new">New PIN (4–8 digits)</label>
+        <input id="pin-new" class="settings-field" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+        <label class="pin-label" for="pin-confirm">Confirm PIN</label>
+        <input id="pin-confirm" class="settings-field" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+        <div class="settings-actions"><button type="submit" id="pin-save">Save PIN</button></div>
+      </form>
+      <p class="settings-msg" id="pin-msg" role="status"></p>
+    </section>
+    <section class="settings-panel settings-lan-panel">
+      <h2 class="settings-subtitle">Footer credit</h2>
+      <label class="settings-row loc-lock">
+        <input id="credit-toggle" type="checkbox" checked>
+        <span class="nm">Show GitHub credit on Home and Dashboard</span>
+      </label>
+      <p class="settings-msg" id="credit-msg" role="status"></p>
     </section>
     <section class="settings-panel settings-lan-panel">
       <h2 class="settings-subtitle">Mouse pointer</h2>

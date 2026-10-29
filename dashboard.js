@@ -182,6 +182,15 @@ function showPin(message = "") {
   pinForm.hidden = false;
   pinError.textContent = message;
   pinInput.focus();
+  if (message) return;
+  fetch("settings.json", { cache: "no-store" })
+    .then((response) => response.json())
+    .then((settings) => {
+      if (!settings.pinConfigured) {
+        pinError.textContent = "Set a PIN in Settings on the computer that runs Slate, then try again.";
+      }
+    })
+    .catch(() => {});
 }
 
 function hidePin() {

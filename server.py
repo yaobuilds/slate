@@ -1233,8 +1233,6 @@ def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str
         picked.append(out)
         if len(picked) >= 8:
             break
-    if not picked:
-        picked = [{k: v for k, v in row.items() if k != "distanceKm"} for row in ranked[:5]]
     return picked, True, feed
 
 

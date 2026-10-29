@@ -162,7 +162,7 @@ async function refreshTraffic() {
       return;
     }
     noteEl.hidden = false;
-    noteEl.textContent = "Live incidents are not available here.";
+    noteEl.textContent = "Could not refresh incidents. The map is still centered on your saved place.";
   }
 }
 

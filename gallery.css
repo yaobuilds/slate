@@ -93,7 +93,7 @@
   gap: 16px;
 }
 
-.page-gallery:not([data-slate-surface="tv"]) .gallery-controls {
+.page-gallery:not([data-slate-surface="tv"]) .gallery-nav {
   display: none;
 }
 

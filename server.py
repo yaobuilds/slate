@@ -2262,6 +2262,7 @@ ALLOWED_FILES = {
     "/remote.js",
     "/remote.css",
     "/remote-consumer.js",
+    "/remote-send.js",
     "/settings-apps.js",
     "/settings-theme.js",
     "/settings-location.js",

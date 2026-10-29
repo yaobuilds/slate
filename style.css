@@ -1698,3 +1698,28 @@ body.hide-pointer * {
     align-content: stretch;
   }
 }
+
+.slate-remote-banner {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+  padding: 10px 16px;
+  background: var(--sl-panel);
+  border-bottom: 1px solid var(--sl-line);
+  font-size: 14px;
+  color: var(--sl-text-2);
+}
+
+.slate-remote-banner a {
+  color: var(--sl-accent, #a9c2da);
+  text-decoration: none;
+}
+
+.slate-remote-banner a:focus-visible {
+  outline: 2px solid var(--sl-accent, #a9c2da);
+  outline-offset: 2px;
+}

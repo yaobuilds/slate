@@ -497,8 +497,7 @@ body.show-focus .foot-link:focus {
   gap: 12px;
   margin: 0;
   font-size: 24px;
-  /* --sl-dim is 4.75:1 on flat ink only; over the moving looks it fell to
-     4.2:1. This lift keeps it quieter than Stone and >=4.5:1 on any look. */
+  /* Brighter than --sl-dim so the signature remains readable over decorative light. */
   color: #8C939C;
   text-decoration: none;
 }
@@ -1684,8 +1683,7 @@ body.hide-pointer * {
     gap: 20px;
   }
 
-  /* Mac window at 16:9 (e.g. 1366x768): scale Home to the window instead of the 1920 TV sizes,
-     so tiles, labels and the hourly row stay inside their boxes. */
+  /* Compact Home type and tiles for wide desktop windows. */
   html:not([data-slate-surface='tv']) .page-home .clock { font-size: clamp(96px, 10vw, 160px); margin-left: -6px; }
   html:not([data-slate-surface='tv']) .page-home .clock-ampm { font-size: 0.3em; margin-left: 18px; }
   html:not([data-slate-surface='tv']) .page-home .date { margin-top: 18px; font-size: clamp(24px, 2.3vw, 34px); font-weight: 450; }
@@ -1705,7 +1703,7 @@ body.hide-pointer * {
   html:not([data-slate-surface='tv']) .page-home .tile .i { font-size: 40px; }
   html:not([data-slate-surface='tv']) .page-home .tile .nm { font-size: 19px; line-height: 1.2; }
 
-  /* Mac Dashboard: two boxes side by side once the window is wide enough, like the mockup. */
+  /* Calendar panels sit side by side in wide desktop windows. */
   html:not([data-slate-surface='tv']) .page-dashboard .stage,
   html:not([data-slate-surface='tv']) .page-dashboard.guest .stage {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -1724,7 +1722,7 @@ body.hide-pointer * {
   html:not([data-slate-surface='tv']) .page-dashboard .rows { margin-top: 20px; row-gap: 18px; }
 }
 
-/* Dashboard boxes read like the mockup: a sentence-case header with a hairline under it. */
+/* Calendar panel headings and dividers. */
 .page-dashboard .panel { border-radius: 24px; box-shadow: inset 0 0 0 2px var(--line); }
 .page-dashboard .panel-heading-row { padding-bottom: 18px; margin-bottom: 22px; border-bottom: 2px solid var(--sl-line); }
 .page-dashboard .panel .kicker { font-size: 40px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--sl-text); }

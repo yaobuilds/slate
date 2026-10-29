@@ -22,11 +22,11 @@
 @media (max-aspect-ratio: 1/1) {
   .tv-backdrop::after { background: linear-gradient(180deg, rgba(16,20,26,.72), rgba(16,20,26,.58) 50%, rgba(16,20,26,.66)); }
 }
-/* Intensity now reads as three clear steps (was .55 / .8 / 1, which looked nearly the same). */
+/* Intensity changes the decorative light, independently of text and panels. */
 .tv-backdrop[data-intensity='soft'] > * { opacity: .42; }
 .tv-backdrop[data-intensity='balanced'] > * { opacity: .72; }
 .tv-backdrop[data-intensity='vivid'] > * { opacity: 1; }
-/* Fine grain breaks up gradient banding on 8-bit TV panels. Static image, no CSS filter. */
+/* A static grain texture softens gradient bands without a CSS filter. */
 .tv-backdrop[data-intensity] > .look-grain {
   position: absolute; inset: 0; z-index: 2; opacity: .05; background-size: 180px 180px; pointer-events: none;
 }
@@ -158,8 +158,7 @@
   left: calc(6% + var(--form-i) * 13%);
   top: calc(16% + (var(--form-i) - 2) * 6%);
   border-radius: 50%;
-  /* Colored light with a quick falloff and a faint Linen highlight. No box-shadow:
-     the old 90px shadows drew grey discs and blocky tiles on the TV. */
+  /* Radial gradients give the light a soft falloff without large shadow edges. */
   background:
     radial-gradient(circle at 34% 30%, rgba(230,225,215,.10) 0%, transparent 26%),
     radial-gradient(circle at 46% 44%, var(--form-core, rgba(169,194,218,.4)) 0%, var(--form-mid, rgba(169,194,218,.14)) 36%, transparent 68%);
@@ -205,7 +204,7 @@
   .light-hit, .menu-turn, .sculpt-form, .move-streak, .tv-backdrop.core-pulse::before { animation: none !important; }
 }
 
-/* Screensaver: the chosen look sits far back (38%) and drifts very slowly, so nothing bright stays put. */
+/* Subdued saver backdrop. The Still and reduced-motion rules below disable its drift. */
 .page-screensaver .tv-backdrop { display: block; position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--sl-ink); opacity: .38; }
 .page-screensaver .tv-backdrop > :not(.look-grain) { animation: saver-drift 120s cubic-bezier(.45,.05,.55,.95) infinite alternate; }
 @keyframes saver-drift { from { transform: translate(-18px, 8px) scale(1.06); } to { transform: translate(18px, -10px) scale(1.08); } }

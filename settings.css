@@ -150,7 +150,7 @@ html.page-settings body {
   cursor: pointer;
 }
 
-/* One filled button per panel: the action that saves. Ice stays for focus only. */
+/* Save actions use a Linen fill; Ice remains the focus treatment. */
 .settings-actions button.button-primary,
 .appearance-save button.button-primary {
   border-color: var(--sl-text);
@@ -575,7 +575,7 @@ html[data-slate-surface='tv'] .settings-remote-only {
 .appearance-preview { position: relative; width: 100%; aspect-ratio: 16/9; border: 2px solid var(--sl-line); border-radius: 20px; overflow: hidden; background: var(--sl-ink); container-type: inline-size; }
 .appearance-preview .tv-backdrop { display: block; position: absolute; inset: 0; background: var(--sl-ink); overflow: hidden; }
 .appearance-preview [data-backdrop='ambient'] { background: radial-gradient(ellipse at 20% 70%, #1e5360, transparent 60%), radial-gradient(ellipse at 80% 80%, #3e2e55, transparent 65%), var(--sl-ink); }
-/* Preview type scales with the thumbnail (cqw), so it reads like the TV, not like tiny labels. */
+/* Container units keep preview type proportional to the thumbnail. */
 .preview-hero, .preview-weather, .preview-settings, .preview-dock { position: absolute; z-index: 3; }
 .preview-hero { top: 8%; left: 5%; font: 450 11cqw/1 var(--sl-font); letter-spacing: -.03em; }
 .preview-hero small { display: block; font-size: 2.3cqw; letter-spacing: 0; margin-top: 1.4cqw; color: var(--sl-text-2); }
@@ -593,7 +593,7 @@ html[data-slate-surface='tv'] .settings-remote-only {
 [data-style='flurry'] .preview-settings, [data-style='aqua'] .preview-settings { top: 8%; bottom: auto; padding: 1cqw 2cqw; border: 1px solid rgba(230,225,215,.2); border-radius: 99px; color: var(--sl-text); }
 [data-style='flurry'] .preview-dock, [data-style='aqua'] .preview-dock { left: 12%; width: 76%; bottom: 13%; height: 25%; padding: 1.2cqw; gap: 1cqw; border: 1px solid rgba(230,225,215,.22); border-radius: 3.2cqw; background: rgba(16,20,26,.62); }
 [data-style='flurry'] .preview-dock > span, [data-style='aqua'] .preview-dock > span { align-items: center; justify-content: center; gap: 1.2cqw; text-align: center; border: 0; background: transparent; }
-/* WebViews older than Chrome 105 have no container units: fixed sizes for a ~560px preview. */
+/* Fixed-size fallback for browsers without container units, sized for a ~560px preview. */
 @supports not (container-type: inline-size) {
   .preview-hero { font-size: 60px; } .preview-hero small { font-size: 13px; margin-top: 8px; }
   .preview-weather { font-size: 30px; } .preview-weather .preview-wx-icon { width: 26px; height: 26px; margin-right: 6px; }
@@ -640,7 +640,7 @@ html[data-slate-surface='tv'] .settings-remote-only {
   html[data-slate-surface='tv'] .appearance-save button { min-height: 40px; padding: 0 20px; }
 }
 @media (max-width: 759px) {
-  /* Phone order: preview, look, colors, then motion and intensity. */
+  /* Phone order: preview, caption, look/colors, then motion and intensity. */
   .appearance-workspace { display: flex; flex-direction: column; gap: 0; }
   .appearance-preview-area { display: contents; }
   .appearance-preview { order: 1; }

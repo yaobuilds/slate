@@ -31,7 +31,7 @@ html:not([data-slate-surface='tv']) body.page-calendar .calendar-shell { height:
 .event-detail h2 { margin:14px 0 22px; font-size:48px; }.event-detail p:not(.calendar-eyebrow) { color:var(--sl-text-2); font-size:28px; line-height:1.45; white-space:pre-wrap; }
 @media(max-width:900px), (max-height:620px) { .calendar-shell{padding:27px 48px;gap:12px}.calendar-head{grid-template-columns:130px 1fr 220px}.calendar-head h1{font-size:34px}.calendar-back,.calendar-tabs button,.calendar-foot button{min-height:46px;font-size:17px;padding:0 18px}.agenda-item{min-height:58px;padding:10px 18px;grid-template-columns:minmax(150px,auto) 1fr;gap:20px}.agenda-time{white-space:nowrap}.agenda-title{font-size:23px}.agenda-time{font-size:18px}.week-event{font-size:18px}.calendar-eyebrow,.calendar-sync{font-size:15px}.calendar-foot{grid-template-columns:140px 1fr 140px}}
 
-/* Agenda rows: the time column no longer wraps, titles get the full width. */
+/* Keep time ranges on one line; titles use the remaining row width. */
 .agenda-item { border-width:2px; }
 .calendar-tabs button, .calendar-back, .calendar-foot button { border-width:2px; }
 .agenda-item { grid-template-columns:minmax(220px,auto) 1fr; }

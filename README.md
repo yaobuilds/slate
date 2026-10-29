@@ -72,7 +72,15 @@ Enable the Google Calendar API for the project.
 
 ## Home appearance
 
-**Settings → Appearance** offers **Sculptural Light** (deep ink and luminous forms), **Aqua** (flowing ribbons), and **Flurry** (colored light streaks around a bright core). Panels, text, and focus rings stay on the shared Slate palette on every page; only the decorative backdrop changes with the look. **Aqua** and **Flurry** each have six color sets (defaults **Tide** and **Spectrum**): Aqua — Tide, Glacier, Lagoon, Dusk, Moss, Ember; Flurry — Spectrum, Ice, Aurora, Ember, Lagoon, Bloom. Sculptural Light can follow any of nine ambient presets. All three show on Home for the TV, Mac, and phone. The TV keeps its frame. Aqua and Flurry on the TV use a six-app dock. The Mac keeps the fluid grid. The phone keeps the stacked layout. Still, Drift, and Reactive stay, with Soft, Balanced, and Vivid intensity and a live preview. Drift and Reactive lean the background as focus or the pointer moves, and a press flashes briefly. Still and reduced motion stop that. Select weather on Home to open the forecast page.
+Choose **Sculptural Light**, **Aqua**, or **Flurry** in **Settings → Appearance**. The look changes the decorative Home backdrop; panels, text, and focus rings keep the shared Slate palette.
+
+- **Sculptural Light:** soft light forms colored by the ambient preset. There are nine ambient choices, including still versions and Off. Off uses the original Home colors while turning off Dashboard ambient light.
+- **Aqua:** flowing ribbons. Colors: **Tide** (default), Glacier, Lagoon, Dusk, Moss, Ember.
+- **Flurry:** colored streaks around a soft core. Colors: **Spectrum** (default), Ice, Aurora, Ember, Lagoon, Bloom.
+
+The live preview updates before saving. Each look remembers its color choice. **Save and open Home** saves the choices and returns Home. Motion offers **Still**, **Drift**, and **Reactive**; intensity offers **Soft**, **Balanced**, and **Vivid**. Still and reduced motion stop decorative Home movement and press effects.
+
+All three looks work on TV, Mac, and phone. Aqua and Flurry use a six-app paged dock on TV; Mac and phone keep responsive grids. Select weather on Home to open the forecast page.
 
 ## TV (optional)
 
@@ -89,3 +97,5 @@ Install and verify the TV app on your own network.
 ## Wi‑Fi session
 
 With `--lan`, unlocking **Show all** sets a cookie on that device. **Settings → Sign out on Wi‑Fi** clears it so the PIN is asked again.
+
+To check the PIN prompt again, open the same Wi‑Fi address, sign out in Settings, then return to Dashboard or Calendar and choose **Show all**. A private browser window also starts without the saved session. The standard Mac-only server skips PIN checks, so clearing its cookies will not make it ask for a PIN; use the Wi‑Fi address printed by `--lan` for this check.

@@ -2,8 +2,8 @@
 (() => {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const stops = ['#72c9d0', '#837ee0', '#db9cae', '#b7d2e4'];
-  /* Curated color sets for the two looks that used to have one fixed colorway.
-     Keys are saved as tvAquaPalette / tvFlurryPalette. The first key is the default. */
+  /* Persisted as tvAquaPalette and tvFlurryPalette.
+     The first entry in each set is its fallback: Tide or Spectrum. */
   const LOOK_PALETTES = {
     aqua: {
       tide:    { name: 'Tide',    base: '#0E2338', colors: ['#2F78B0', '#7CC4D6', '#6A57A0'] },
@@ -43,7 +43,7 @@
     }
     return ambientLoad;
   }
-  /* Sculptural Light takes its colors from the chosen ambient preset, the same way the Appearance preview does. */
+  /* Resolve Sculptural colors from the ambient preset; Off uses the fallback colors. */
   function ambientColorsFor(presetKey) {
     const cfg = ambientConfig || {};
     const preset = (cfg.presets || {})[presetKey] || {};
@@ -105,7 +105,7 @@
   }
 
   function drawFlurry(ctx, tick) {
-    /* The core wanders on a small loop so no bright spot sits still. */
+    /* During live motion, move the core along a small loop to spread its light. */
     const coreX = 960 * (field.nx + Math.sin(tick * 0.045) * 0.035);
     const coreY = 540 * (field.ny + Math.cos(tick * 0.037) * 0.04);
     ctx.globalAlpha = 1;

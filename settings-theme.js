@@ -1,87 +1,105 @@
-const gridEl = document.getElementById("theme-grid");
-const msgEl = document.getElementById("theme-msg");
-const saveBtn = document.getElementById("theme-save");
-
-let presetKeys = [];
-let presetMeta = {};
-let paletteColors = {};
-let current = "aurora";
-let picked = "aurora";
-
-function swatchRow(colors) {
-  const row = document.createElement("div");
-  row.className = "theme-swatches";
-  for (const color of colors || []) {
-    const dot = document.createElement("span");
-    dot.style.background = color;
-    row.append(dot);
-  }
-  return row;
-}
-
-function renderGrid() {
-  if (!gridEl) return;
-  gridEl.replaceChildren();
-  for (const key of presetKeys) {
-    const meta = presetMeta[key] || {};
-    const card = document.createElement("label");
-    card.className = "theme-card";
-    card.dataset.key = key;
-    const input = document.createElement("input");
-    input.type = "radio";
-    input.name = "theme";
-    input.value = key;
-    input.checked = key === picked;
-    const name = document.createElement("span");
-    name.className = "theme-name";
-    name.textContent = meta.name || key;
-    card.append(input, name);
-    const pal = meta.palette || (key.endsWith("-still") ? key.replace("-still", "") : key);
-    if (key !== "off" && paletteColors[pal]) {
-      card.append(swatchRow(paletteColors[pal].colors));
-    }
-    card.classList.toggle("is-on", key === picked);
-    card.addEventListener("click", () => {
-      picked = key;
-      gridEl.querySelectorAll(".theme-card").forEach((el) => {
-        el.classList.toggle("is-on", el.dataset.key === picked);
+const msgEl = document.getElementById('theme-msg');
+const saveBtn = document.getElementById('theme-save');
+const picked = { tvAppearance: 'sculptural', tvMotion: 'drift', tvIntensity: 'balanced', ambientPreset: 'aurora' };
+let clearPreview = () => {};
+let ambientPresets = {};
+let ambientPalettes = {};
+const groups = [
+  ['appearance-styles', 'tvAppearance', [['sculptural', 'Sculptural Light'], ['aqua', 'Aqua']]],
+  ['appearance-motion', 'tvMotion', [['still', 'Still'], ['drift', 'Drift'], ['reactive', 'Reactive']]],
+  ['appearance-intensity', 'tvIntensity', [['soft', 'Soft'], ['balanced', 'Balanced'], ['vivid', 'Vivid']]],
+];
+function renderOptions() {
+  for (const [id, key, options] of groups) {
+    const root = document.getElementById(id);
+    root.replaceChildren();
+    for (const [value, label] of options) {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.setAttribute('role', 'radio');
+      button.setAttribute('aria-checked', String(picked[key] === value));
+      button.className = 'appearance-option';
+      button.dataset.value = value;
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        picked[key] = value;
+        updatePreview();
       });
-    });
-    gridEl.append(card);
+      root.append(button);
+    }
   }
+  updatePreview();
 }
-
+function updatePreview() {
+  for (const [id, key] of groups) {
+    document.getElementById(id).querySelectorAll('button').forEach(button => button.setAttribute('aria-checked', String(button.dataset.value === picked[key])));
+  }
+  const preview = document.getElementById('appearance-preview');
+  preview.dataset.style = picked.tvAppearance;
+  clearPreview();
+  const preset = ambientPresets[picked.ambientPreset] || {};
+  const colors = preset.enabled === false ? [] : ambientPalettes[preset.palette]?.colors;
+  const look = picked.tvAppearance === 'aqua' ? 'aqua' : 'sculptural';
+  clearPreview = window.SlateLooks.decorate(document.getElementById('preview-backdrop'), look, picked.tvMotion, picked.tvIntensity, colors);
+  document.getElementById('appearance-description').textContent = look === 'aqua'
+    ? 'Flowing ribbons and a glass app dock.'
+    : 'Deep ink and luminous forms.';
+  document.getElementById('motion-description').textContent = {
+    still: 'A still composition, with no decorative animation.',
+    drift: 'Slow, continuous movement.',
+    reactive: 'The background follows remote focus. Selection flashes briefly.',
+  }[picked.tvMotion];
+  document.getElementById('ambient-controls').hidden = look !== 'sculptural';
+  preview.classList.remove('menu-turn');
+  void preview.offsetWidth;
+  preview.classList.add('menu-turn');
+}
 async function persistTheme() {
-  const result = await saveSettings({ ambientPreset: picked });
-  if (result.error === "pin") {
-    wireSettingsPinForm(persistTheme);
-    return;
-  }
-  if (result.error === "slow") {
-    if (msgEl) msgEl.textContent = "Wait a moment and try again.";
-    return;
-  }
-  if (result.error) {
-    if (msgEl) msgEl.textContent = "Could not save.";
-    return;
-  }
-  location.href = "index.html";
+  saveBtn.disabled = true;
+  try {
+    const result = await saveSettings({ ...picked });
+    if (result.error === 'pin') { wireSettingsPinForm(persistTheme); return; }
+    if (result.error) {
+      msgEl.textContent = result.error === 'slow' ? 'Wait a moment and try again.'
+        : result.error === 'offline' ? 'Could not reach Slate. Keep this page open and try again.' : 'Could not save.';
+      return;
+    }
+    location.href = 'index.html';
+  } catch (err) {
+    msgEl.textContent = 'Could not reach Slate. Keep this page open and try again.';
+  } finally { saveBtn.disabled = false; }
 }
-
 async function init() {
   try {
-    const [ambient, settings] = await Promise.all([readJson("ambient.json"), loadSettings()]);
-    const presets = ambient.presets && typeof ambient.presets === "object" ? ambient.presets : {};
-    presetKeys = Object.keys(presets);
-    presetMeta = presets;
-    paletteColors = ambient.palettes && typeof ambient.palettes === "object" ? ambient.palettes : {};
-    current = typeof settings.ambientPreset === "string" ? settings.ambientPreset : ambient.preset;
-    picked = current;
-    renderGrid();
-  } catch (err) {
-    if (msgEl) msgEl.textContent = "Could not load themes.";
-  }
+    const [ambient, settings] = await Promise.all([readJson('ambient.json'), loadSettings()]);
+    ambientPresets = ambient.presets || {};
+    ambientPalettes = ambient.palettes || {};
+    for (const key of Object.keys(picked)) if (typeof settings[key] === 'string') picked[key] = settings[key];
+    if (picked.tvAppearance !== 'aqua') picked.tvAppearance = 'sculptural';
+    const select = document.getElementById('ambient-preset');
+    for (const [key, preset] of Object.entries(ambient.presets || {})) {
+      const option = document.createElement('option');
+      option.value = key;
+      option.textContent = preset.name || key;
+      select.append(option);
+    }
+    select.value = picked.ambientPreset;
+    select.addEventListener('change', () => { picked.ambientPreset = select.value; updatePreview(); });
+    renderOptions();
+  } catch (err) { msgEl.textContent = 'Could not load appearance settings.'; }
 }
-
-if (saveBtn) saveBtn.addEventListener("click", persistTheme);
+saveBtn.addEventListener('click', persistTheme);
+addEventListener('pagehide', () => clearPreview());
+document.addEventListener('slate:motion-preference', updatePreview);
+function reactPreview(x, y) {
+  if (picked.tvMotion !== 'reactive' || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const backdrop = document.getElementById('preview-backdrop');
+  backdrop.style.setProperty('--look-x', `${(x - .5) * 12}px`);
+  backdrop.style.setProperty('--look-y', `${(y - .5) * 8}px`);
+}
+document.addEventListener('pointermove', event => reactPreview(event.clientX / innerWidth, event.clientY / innerHeight));
+document.addEventListener('focusin', event => {
+  const rect = event.target.getBoundingClientRect?.();
+  if (rect) reactPreview((rect.left + rect.width / 2) / innerWidth, (rect.top + rect.height / 2) / innerHeight);
+});
 init();

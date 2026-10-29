@@ -1,0 +1,227 @@
+html.page-network,
+body.page-network {
+  position: static;
+  width: 100%;
+  height: auto;
+  min-height: 100%;
+  min-height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
+
+body.page-network {
+  inset: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+.network-page {
+  width: min(1728px, 100%);
+  min-height: 100dvh;
+  margin: 0 auto;
+  padding: clamp(24px, 4vw, 64px);
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  color: var(--sl-text);
+  font-family: var(--sl-font);
+}
+
+.network-head {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 24px;
+}
+
+.network-head h1 {
+  margin: 0;
+  font-size: clamp(32px, 3vw, 52px);
+  font-weight: 600;
+}
+
+.network-head p,
+.network-devices-head p {
+  margin: 8px 0 0;
+  color: var(--sl-text-2);
+  font-size: clamp(18px, 1.4vw, 24px);
+}
+
+.network-back,
+.network-button {
+  min-height: 60px;
+  padding: 0 24px;
+  border: 2px solid var(--sl-line);
+  border-radius: 16px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  font: 600 20px/1.15 var(--sl-font);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.network-button {
+  border-color: var(--sl-ice);
+  background: var(--sl-panel-2);
+}
+
+.network-back:focus-visible,
+.network-button:focus-visible,
+.network-device-list:focus-visible {
+  outline: 4px solid var(--sl-ice);
+  outline-offset: 4px;
+}
+
+.network-status-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.network-card,
+.network-devices {
+  min-width: 0;
+  padding: clamp(22px, 2vw, 32px);
+  border: 2px solid var(--sl-line);
+  border-radius: 20px;
+  background: var(--sl-panel);
+}
+
+.network-card h2,
+.network-devices h2 {
+  margin: 0;
+  font-size: clamp(22px, 2vw, 32px);
+  font-weight: 600;
+}
+
+.network-state {
+  margin: 20px 0 0;
+  font-size: clamp(28px, 2.4vw, 40px);
+  font-weight: 600;
+}
+
+.network-state[data-state="good"] {
+  color: var(--sl-text);
+}
+
+.network-state[data-state="bad"] {
+  color: var(--sl-text-2);
+}
+
+.network-detail {
+  margin: 8px 0 0;
+  color: var(--sl-text-2);
+  font-size: clamp(16px, 1.3vw, 22px);
+  overflow-wrap: anywhere;
+}
+
+.network-devices {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.network-devices-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.network-message {
+  min-height: 1.3em;
+  margin: 20px 0 10px;
+  color: var(--sl-text-2);
+  font-size: 18px;
+}
+
+.network-device-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 12px;
+  max-height: 44vh;
+  overflow: auto;
+  margin: 0;
+  padding: 2px;
+  list-style: none;
+}
+
+.network-device {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  min-height: 72px;
+  padding: 12px 16px;
+  border: 1px solid var(--sl-line);
+  border-radius: 14px;
+  background: var(--sl-ink);
+}
+
+.network-device-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--sl-text);
+  font-size: 18px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.network-device-ip {
+  color: var(--sl-text-2);
+  font: 500 16px/1.2 var(--sl-mono);
+  white-space: nowrap;
+}
+
+.network-device.local {
+  border-color: var(--sl-ice);
+}
+
+@media (max-width: 760px) {
+  .network-page {
+    gap: 16px;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom));
+  }
+
+  .network-head {
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+  }
+
+  .network-head > div {
+    grid-column: 1 / -1;
+    grid-row: 1;
+  }
+
+  .network-back,
+  .network-button {
+    min-height: 48px;
+    padding: 0 14px;
+    font-size: 16px;
+  }
+
+  .network-status-grid {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .network-card {
+    padding: 18px;
+  }
+
+  .network-state {
+    margin-top: 10px;
+  }
+
+  .network-devices-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .network-device-list {
+    grid-template-columns: 1fr;
+    max-height: 60vh;
+  }
+}

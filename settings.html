@@ -18,9 +18,18 @@
     <nav class="settings-panel" aria-label="Settings sections">
       <a class="settings-hub-link" href="settings-apps.html">Home apps<span aria-hidden="true">→</span></a>
       <a class="settings-hub-link" href="settings-schedule.html" style="margin-top:16px">Schedule<span aria-hidden="true">→</span></a>
-      <a class="settings-hub-link" href="settings-theme.html" style="margin-top:16px">Theme<span aria-hidden="true">→</span></a>
+      <a class="settings-hub-link" href="settings-theme.html" style="margin-top:16px">Appearance<span aria-hidden="true">→</span></a>
       <a class="settings-hub-link" href="settings-location.html" style="margin-top:16px">Location<span aria-hidden="true">→</span></a>
     </nav>
+    <section class="settings-panel settings-lan-panel" id="home-routing-panel" hidden>
+      <h2 class="settings-subtitle">TV Home button</h2>
+      <label class="settings-row">
+        <input id="home-routing-toggle" type="checkbox">
+        <span class="nm">Return Home to Slate</span>
+      </label>
+      <p class="settings-lan-copy" id="home-routing-status"></p>
+      <div class="settings-actions"><button type="button" id="home-routing-manage">Accessibility settings</button></div>
+    </section>
     <section class="settings-panel settings-lan-panel">
       <h2 class="settings-subtitle">Mouse pointer</h2>
       <label class="settings-row loc-lock">

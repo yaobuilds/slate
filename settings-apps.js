@@ -1,13 +1,18 @@
-const MAX = 5;
 const listEl = document.getElementById("apps-list");
 const orderListEl = document.getElementById("apps-order-list");
 const orderEmptyEl = document.getElementById("apps-order-empty");
 const countEl = document.getElementById("apps-count");
 const msgEl = document.getElementById("apps-msg");
 const saveBtn = document.getElementById("apps-save");
+const tileSizeEl = document.getElementById("tile-size");
 
 let catalog = [];
 let selected = [];
+let tileSize = "auto";
+
+function isTvSurface() {
+  return !!window.SlateTV || /Android TV|Google TV/i.test(navigator.userAgent || "");
+}
 
 function catalogName(id) {
   const item = catalog.find((entry) => entry.id === id);
@@ -15,7 +20,7 @@ function catalogName(id) {
 }
 
 function updateCount() {
-  if (countEl) countEl.textContent = `${selected.length} of ${MAX}`;
+  if (countEl) countEl.textContent = `${selected.length} of ${catalog.length}`;
 }
 
 function moveSelected(id, delta) {
@@ -84,17 +89,15 @@ function renderList() {
     input.type = "checkbox";
     input.name = "app";
     input.value = item.id;
+    const tvOnly = item.id === "google-tv" && !isTvSurface();
+    input.disabled = tvOnly;
     const name = document.createElement("span");
     name.className = "nm";
-    name.textContent = item.name;
+    name.textContent = tvOnly ? `${item.name} (TV only)` : item.name;
+    if (tvOnly) row.classList.add("is-disabled");
     row.append(input, name);
     input.addEventListener("change", () => {
       if (input.checked) {
-        if (selected.length >= MAX && !selected.includes(item.id)) {
-          input.checked = false;
-          if (msgEl) msgEl.textContent = `Choose at most ${MAX} apps besides Dashboard.`;
-          return;
-        }
         if (!selected.includes(item.id)) selected.push(item.id);
       } else {
         selected = selected.filter((id) => id !== item.id);
@@ -108,7 +111,8 @@ function renderList() {
 }
 
 async function persistApps() {
-  const result = await saveSettings({ homeApps: selected });
+  if (tileSizeEl) tileSize = tileSizeEl.value === "large" ? "large" : "auto";
+  const result = await saveSettings({ homeApps: selected, tileSize });
   if (result.error === "pin") {
     wireSettingsPinForm(persistApps);
     return;
@@ -123,8 +127,12 @@ async function persistApps() {
   }
   if (Array.isArray(result.homeApps)) {
     const known = new Set(catalog.map((item) => item.id));
-    selected = result.homeApps.filter((id) => known.has(id)).slice(0, MAX);
+    selected = result.homeApps.filter((id) => known.has(id));
     syncRows();
+  }
+  if (typeof result.tileSize === "string") {
+    tileSize = result.tileSize;
+    if (tileSizeEl) tileSizeEl.value = tileSize;
   }
   if (msgEl) {
     msgEl.textContent = selected.length
@@ -139,7 +147,9 @@ async function init() {
     catalog = Array.isArray(cat) ? cat.filter((item) => item && item.id) : [];
     const known = new Set(catalog.map((item) => item.id));
     const raw = Array.isArray(settings.homeApps) ? settings.homeApps : [];
-    selected = raw.filter((id, index) => known.has(id) && raw.indexOf(id) === index).slice(0, MAX);
+    selected = raw.filter((id, index) => known.has(id) && raw.indexOf(id) === index);
+    tileSize = settings.tileSize === "large" ? "large" : "auto";
+    if (tileSizeEl) tileSizeEl.value = tileSize;
     renderList();
   } catch (err) {
     if (msgEl) msgEl.textContent = "Could not load the app list.";

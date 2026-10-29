@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#10141A"><title>Calendar</title>
+  <link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="calendar.css">
+</head>
+<body class="page-calendar guest">
+  <main class="calendar-shell">
+    <header class="calendar-head">
+      <a class="calendar-back" href="dashboard.html" data-cal-focus>Dashboard</a>
+      <div><p class="calendar-eyebrow">Slate calendar</p><h1 id="calendar-title">Today</h1></div>
+      <p class="calendar-sync" id="calendar-sync"></p>
+    </header>
+    <nav class="calendar-tabs" aria-label="Calendar view">
+      <button type="button" data-view="today" data-cal-focus>Today</button>
+      <button type="button" data-view="week" data-cal-focus>Week</button>
+      <button type="button" data-view="month" data-cal-focus>Month</button>
+      <button type="button" id="calendar-guest" data-cal-focus>Show all</button>
+    </nav>
+    <section class="calendar-content" id="calendar-content" aria-live="polite"></section>
+    <footer class="calendar-foot">
+      <button type="button" id="calendar-prev" data-cal-focus>Previous</button>
+      <p id="calendar-page"></p>
+      <button type="button" id="calendar-next" data-cal-focus>Next</button>
+    </footer>
+  </main>
+  <section class="event-detail" id="event-detail" hidden role="dialog" aria-modal="true" aria-labelledby="event-title">
+    <div class="event-detail-card">
+      <p class="calendar-eyebrow" id="event-when"></p><h2 id="event-title"></h2>
+      <p id="event-location"></p><p id="event-notes"></p>
+      <button type="button" id="event-close" data-cal-focus>Back</button>
+    </div>
+  </section>
+  <form id="calendar-pin" class="pin-form" hidden autocomplete="off">
+    <p class="pin-title">Enter the PIN from this Mac</p><label class="pin-label" for="calendar-pin-input">PIN</label>
+    <input id="calendar-pin-input" type="password" inputmode="numeric" maxlength="8"><button type="submit">Unlock</button>
+    <p id="calendar-pin-error" class="pin-error" role="status"></p>
+  </form>
+  <script src="calendar.js"></script>
+</body>
+</html>

@@ -65,7 +65,7 @@ html.night .weather {
   transition: none;
   display: grid;
   gap: 28px 36px;
-  padding: 36px 64px 52px;
+  padding: 54px 96px;
   background: var(--bg);
 }
 
@@ -80,19 +80,12 @@ html.night .weather {
 }
 
 .page-dashboard .stage {
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr;
   grid-template-rows: auto 1fr auto;
   grid-template-areas:
-    "header header header"
-    "today deadlines money"
-    "foot foot foot";
-}
-
-.page-dashboard.guest .stage {
-  grid-template-areas:
-    "header header header"
-    "today today today"
-    "foot foot foot";
+    "header header"
+    "today upcoming"
+    "foot foot";
 }
 
 .nav {
@@ -352,8 +345,8 @@ body.show-focus .nav-link:focus-visible {
 .tiles {
   grid-area: apps;
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 48px;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 24px;
   min-height: 248px;
   margin-bottom: 64px;
 }
@@ -397,6 +390,12 @@ body.show-focus .tile:focus {
 
 body.show-focus .tile:focus .i {
   color: var(--sl-ice);
+}
+
+body.show-focus .guest-toggle:focus-visible {
+  outline: 4px solid var(--sl-ice);
+  outline-offset: 4px;
+  background: var(--sl-panel-2);
 }
 
 .tile .nm {
@@ -642,12 +641,32 @@ body.show-focus .panel:focus-visible {
 }
 
 .panel-today { grid-area: today; }
-.panel-deadlines { grid-area: deadlines; }
-.panel-money { grid-area: money; }
+.panel-upcoming { grid-area: upcoming; }
 
-.page-dashboard.guest .panel-deadlines,
-.page-dashboard.guest .panel-money {
-  display: none;
+.panel-heading-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.panel-open {
+  font-size: 24px;
+  color: var(--sl-text-2);
+  white-space: nowrap;
+}
+
+.calendar-panel-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.row.is-now .row-title {
+  color: var(--sl-ice);
+}
+
+.row-tall .row-title {
+  line-height: 1.25;
 }
 
 body:not(.has-mouse),
@@ -724,7 +743,7 @@ body.hide-pointer * {
   color: var(--muted);
 }
 
-/* Phone and Mac window. The 16:9 TV frame (1280×720 and up) stays as it is. */
+/* Phone and Mac window. The TCL WebView reports 960×540 at devicePixelRatio 2. */
 .hint-touch {
   display: none;
 }
@@ -824,7 +843,61 @@ body.hide-pointer * {
   color: var(--sl-text-2);
 }
 
-@media not all and (min-width: 1280px) and (min-height: 720px) and (min-aspect-ratio: 16/9) {
+.tv-app-fallback[hidden] {
+  display: none;
+}
+
+.tv-app-fallback {
+  position: fixed;
+  z-index: 12;
+  inset: 50% auto auto 50%;
+  width: min(760px, calc(100vw - 48px));
+  padding: 40px;
+  transform: translate(-50%, -50%);
+  border: 2px solid var(--sl-line);
+  border-radius: 24px;
+  background: var(--sl-panel);
+  color: var(--sl-text);
+  box-shadow: 0 24px 80px rgb(0 0 0 / 0.5);
+  font-family: var(--sl-font);
+}
+
+.tv-app-fallback h1 {
+  margin: 0;
+  font-size: clamp(32px, 2.5vw, 44px);
+  font-weight: 600;
+}
+
+.tv-app-fallback p {
+  margin: 18px 0 0;
+  color: var(--sl-text-2);
+  font-size: clamp(24px, 1.6vw, 30px);
+}
+
+.tv-app-fallback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 32px;
+}
+
+.tv-app-fallback button {
+  min-height: 64px;
+  padding: 0 24px;
+  border: 2px solid var(--sl-line);
+  border-radius: 14px;
+  background: var(--sl-ink);
+  color: var(--sl-text);
+  font: 600 24px/1 var(--sl-font);
+}
+
+.tv-app-fallback button:focus-visible {
+  outline: 4px solid var(--sl-ice);
+  outline-offset: 4px;
+  background: var(--sl-panel-2);
+}
+
+@media not all and (min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9) {
   html,
   body {
     position: static;
@@ -1010,6 +1083,11 @@ body.hide-pointer * {
   .foot {
     height: auto;
     min-height: 28px;
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    padding: 6px 0 max(6px, env(safe-area-inset-bottom));
+    background: var(--sl-ink);
   }
 
   .hints,
@@ -1093,33 +1171,17 @@ body.hide-pointer * {
     }
 
     .page-dashboard .stage,
-    .page-dashboard.guest .stage {
+    .page-dashboard.guest .stage,
+    .page-dashboard:not(.guest) .stage {
       display: grid;
       grid-template-columns: minmax(0, 1fr);
       grid-template-rows: auto;
       grid-template-areas:
         "header"
         "today"
-        "deadlines"
-        "money"
+        "upcoming"
         "foot";
       align-content: start;
-    }
-
-    .page-dashboard.guest .stage {
-      grid-template-areas:
-        "header"
-        "today"
-        "foot";
-    }
-
-    .page-dashboard:not(.guest) .stage {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      grid-template-rows: auto auto auto;
-      grid-template-areas:
-        "header header header"
-        "today deadlines money"
-        "foot foot foot";
     }
 
     .dash-header {
@@ -1150,8 +1212,7 @@ body.hide-pointer * {
     }
 
     .panel-today { grid-area: today; }
-    .panel-deadlines { grid-area: deadlines; }
-    .panel-money { grid-area: money; }
+    .panel-upcoming { grid-area: upcoming; }
 
     .hint-keys {
       display: flex;
@@ -1230,11 +1291,11 @@ body.hide-pointer * {
     }
   }
 
-  @media (max-height: 500px) and (orientation: landscape) {
+  @media (max-height: 700px) and (orientation: landscape) {
     .page-home .stage {
       display: grid;
       grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-      grid-template-rows: auto auto auto;
+      grid-template-rows: minmax(0, 1fr) auto auto;
       grid-template-areas:
         "hero weather"
         "apps apps"
@@ -1256,8 +1317,7 @@ body.hide-pointer * {
       grid-template-areas:
         "header"
         "today"
-        "deadlines"
-        "money"
+        "upcoming"
         "foot";
     }
 
@@ -1322,8 +1382,10 @@ body.hide-pointer * {
     }
 
     .tiles {
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fit, minmax(min(100%, 120px), 1fr));
       gap: 8px;
+      min-height: 0;
+      margin-bottom: 0;
     }
 
     .tile {
@@ -1345,6 +1407,10 @@ body.hide-pointer * {
       -webkit-line-clamp: 2;
     }
 
+    .foot {
+      min-height: 36px;
+    }
+
     .wx-place {
       letter-spacing: 0.04em;
     }
@@ -1357,5 +1423,69 @@ body.hide-pointer * {
     .hint-touch {
       font-size: 16px;
     }
+  }
+}
+
+@media (min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9) {
+  .page-home .clock {
+    font-size: 224px;
+  }
+
+  .tiles {
+    grid-template-columns: repeat(auto-fit, minmax(var(--tile-min-width, 190px), 1fr));
+    gap: var(--tile-gap, 24px);
+    min-height: 0;
+    margin-bottom: 16px;
+  }
+
+  body[data-tile-size="large"] .tiles:not(.tiles-many) {
+    --tile-min-width: 280px;
+    --tile-gap: 32px;
+  }
+
+  .tiles.tiles-many {
+    --tile-min-width: 190px;
+    --tile-gap: 20px;
+  }
+
+  .tiles.tiles-many .tile {
+    height: 176px;
+    padding: 20px;
+  }
+
+  .tiles.tiles-many .tile .i {
+    font-size: 56px;
+  }
+
+  .tiles.tiles-many .tile .nm {
+    font-size: 26px;
+  }
+
+  .tiles.tiles-dense {
+    --tile-min-width: 185px;
+    --tile-gap: 20px;
+  }
+
+  .tiles.tiles-dense .tile {
+    height: 128px;
+    padding: 16px;
+  }
+
+  .tiles.tiles-dense .tile .i {
+    font-size: 40px;
+  }
+
+  .tiles.tiles-dense .tile .nm {
+    font-size: 21px;
+  }
+
+  .guest-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .dash-foot .hint-keys:nth-child(2) {
+    display: none;
   }
 }

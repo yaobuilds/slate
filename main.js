@@ -74,6 +74,20 @@ function setActiveTimeZone(tz) {
 
 window.slateTimezone = activeTimeZone;
 
+function updateSlateInputFocus() {
+  const active = document.activeElement;
+  const focused = !!(
+    active && active.matches && active.matches("input, textarea, select, [contenteditable='true']")
+  );
+  const bridge = window.SlateTV;
+  if (bridge && typeof bridge.setInputFocused === "function") {
+    bridge.setInputFocused(focused);
+  }
+}
+
+document.addEventListener("focusin", updateSlateInputFocus);
+document.addEventListener("focusout", () => setTimeout(updateSlateInputFocus, 0));
+
 function part(parts, type) {
   const found = parts.find((item) => item.type === type);
   return found ? found.value : "";
@@ -118,8 +132,8 @@ function shiftTerm(px) {
   return px > 0 ? `calc(-50% + ${text}px)` : `calc(-50% - ${text}px)`;
 }
 
-const TV_LAYOUT = window.matchMedia("(min-width: 1280px) and (min-height: 720px) and (min-aspect-ratio: 16/9)");
-const USE_TV_FRAME = false;
+const TV_LAYOUT = window.matchMedia("(min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9)");
+const USE_TV_FRAME = true;
 
 function fitStage() {
   if (!stage) return;
@@ -164,7 +178,7 @@ function tileUrl(url) {
 
 function onAndroidTv() {
   if (window.SlateTV) return true;
-  return /Android/i.test(navigator.userAgent || "");
+  return /Android TV|Google TV/i.test(navigator.userAgent || "");
 }
 
 function chosenText(override, fallback) {
@@ -183,14 +197,15 @@ function resolveApps(entries, catalog) {
   const apps = [];
   if (!Array.isArray(entries)) return apps;
   for (const entry of entries) {
-    if (apps.length >= MAX_APP_TILES) break;
     if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
+    let id = "";
     let name = "";
     let icon = "grid";
     let url = "";
     if (typeof entry.id === "string" && entry.id) {
       const base = byId.get(entry.id);
       if (!base) continue;
+      id = entry.id;
       name = chosenText(entry.name, base.name);
       icon = typeof entry.icon === "string" && entry.icon ? entry.icon : tileText(base.icon);
       url = typeof entry.url === "string" ? entry.url : tileText(base.url);
@@ -205,7 +220,7 @@ function resolveApps(entries, catalog) {
     if (!name) continue;
     const resolved = tileUrl(url);
     if (resolved.startsWith("slate://") && !onAndroidTv()) continue;
-    apps.push({ name, icon: tileIcon(icon), url: resolved });
+    apps.push({ id, name, icon: tileIcon(icon), url: resolved });
   }
   return apps;
 }
@@ -214,7 +229,7 @@ function homeTiles() {
   if (!document.body.classList.contains("page-home")) return [];
   const nav = document.getElementById("tiles");
   if (!nav) return [];
-  return [...nav.querySelectorAll(".tile")];
+  return [...nav.querySelectorAll(".tile")].filter(el => !el.hidden);
 }
 
 function homeFocusables() {
@@ -222,11 +237,26 @@ function homeFocusables() {
   document.querySelectorAll(".foot-link[href='settings.html']").forEach((el) => {
     if (!list.includes(el)) list.push(el);
   });
+  const weather = document.getElementById("wx");
+  if (weather && Number(weather.tabIndex) >= 0) list.push(weather);
   return list.filter((el) => el && el.offsetParent !== null);
 }
 
 function moveHomeFocus(key) {
-  const items = homeFocusables();
+  moveDirectionalFocus(homeFocusables(), key);
+}
+
+function dashboardFocusables() {
+  return [...document.querySelectorAll(
+    ".home-pill[href], #guest-toggle, .calendar-panel-link[data-focus], .dash-foot .foot-link[href]",
+  )].filter((el) => el && el.offsetParent !== null && !el.disabled);
+}
+
+function moveDashboardFocus(key) {
+  moveDirectionalFocus(dashboardFocusables(), key);
+}
+
+function moveDirectionalFocus(items, key) {
   if (!items.length) return;
   let current = document.activeElement;
   if (!items.includes(current)) {
@@ -258,6 +288,48 @@ function moveHomeFocus(key) {
   if (best) best.focus({ preventScroll: true });
 }
 
+let pendingTvLaunch = null;
+
+function tvFallbackPanel() {
+  return document.getElementById("tv-app-fallback");
+}
+
+function closeTvFallback() {
+  const panel = tvFallbackPanel();
+  if (!panel || panel.hidden) return;
+  panel.hidden = true;
+  const tile = pendingTvLaunch && pendingTvLaunch.tile;
+  pendingTvLaunch = null;
+  if (tile && tile.isConnected) tile.focus({ preventScroll: true });
+}
+
+function showTvFallback() {
+  const panel = tvFallbackPanel();
+  if (!panel || !pendingTvLaunch) return;
+  const message = document.getElementById("tv-app-fallback-message");
+  if (message) message.textContent = `${pendingTvLaunch.name} isn't available on this TV.`;
+  panel.hidden = false;
+  const webButton = document.getElementById("tv-app-open-web");
+  if (webButton) webButton.focus({ preventScroll: true });
+}
+
+window.addEventListener("slate:native-app-unavailable", showTvFallback);
+
+const tvAppOpenWeb = document.getElementById("tv-app-open-web");
+if (tvAppOpenWeb) {
+  tvAppOpenWeb.addEventListener("click", () => {
+    const pending = pendingTvLaunch;
+    if (!pending) return;
+    pendingTvLaunch = null;
+    const panel = tvFallbackPanel();
+    if (panel) panel.hidden = true;
+    location.href = pending.url;
+  });
+}
+
+const tvAppGoBack = document.getElementById("tv-app-go-back");
+if (tvAppGoBack) tvAppGoBack.addEventListener("click", closeTvFallback);
+
 function openTile(tile) {
   const url = tile && tile.dataset.url;
   if (!url) return;
@@ -276,14 +348,32 @@ function openTile(tile) {
     location.href = url;
     return;
   }
-  if (document.documentElement.dataset.layout === "tv") return;
+  const appId = tile.dataset.appId || "";
+  if (window.SlateTV && TV_NATIVE_APP_IDS.has(appId)) {
+      const name = tile.querySelector(".nm");
+      pendingTvLaunch = {
+        id: appId,
+        name: name ? name.textContent : "App",
+        url,
+        tile,
+      };
+      location.href = `slate://app/${encodeURIComponent(appId)}`;
+      return;
+  }
+  if (window.SlateTV || document.documentElement.dataset.layout === "tv") {
+    // The TV WebView is a single surface; keep its history so remote Back returns Home.
+    location.href = url;
+    return;
+  }
   window.open(url, "_blank", "noopener,noreferrer");
 }
 
 function renderTileList(apps) {
   const nav = document.getElementById("tiles");
   if (!nav) return [];
-  const list = [{ name: "Dashboard", icon: "grid", url: "dashboard.html" }, ...apps];
+  const list = [{ id: "", name: "Dashboard", icon: "grid", url: "dashboard.html" }, ...apps];
+  nav.classList.toggle("tiles-many", list.length > 5);
+  nav.classList.toggle("tiles-dense", list.length > 12);
   const built = [];
   nav.replaceChildren();
   for (const app of list) {
@@ -291,6 +381,7 @@ function renderTileList(apps) {
     button.type = "button";
     button.className = "tile focusable";
     if (app.url) button.dataset.url = app.url;
+    if (app.id) button.dataset.appId = app.id;
     if (!built.length) button.autofocus = true;
     const iconHolder = document.createElement("span");
     iconHolder.className = "tile-icon";
@@ -314,15 +405,22 @@ function renderTileList(apps) {
   }
   const first = built[0] && built[0].button;
   if (first) first.focus({ preventScroll: true });
+  document.dispatchEvent(new Event("slate:tiles"));
+  performance.mark("slate-tiles-ready");
   return built;
 }
 
 async function paintTileIcons(built) {
-  for (const tile of built) {
-    const svg = await ensureIcon(tile.icon);
+  await Promise.all(built.map(async (tile) => {
+    let icon = onAndroidTv() ? TV_BRAND_ICONS[tile.button.dataset.appId] || tile.icon : tile.icon;
+    let svg = await ensureIcon(icon);
+    if (icon !== tile.icon && svg === ICON_FALLBACK) {
+      icon = tile.icon;
+      svg = await ensureIcon(icon);
+    }
     if (!tile.iconHolder.isConnected) return;
-    applyIcon(tile.iconHolder, tile.icon, svg);
-  }
+    applyIcon(tile.iconHolder, icon, svg);
+  }));
 }
 
 async function readJson(url) {
@@ -331,21 +429,21 @@ async function readJson(url) {
   return response.json();
 }
 
+function homeSettings() {
+  if (!window.slateSettingsPromise) window.slateSettingsPromise = readJson("settings.json");
+  return window.slateSettingsPromise;
+}
+
 async function loadTiles() {
   const nav = document.getElementById("tiles");
   if (!nav) return;
-  let entries = [];
-  let catalog = [];
-  try {
-    entries = await readJson("apps.json");
-  } catch (err) {
-    entries = [];
-  }
-  try {
-    catalog = await readJson("apps-catalog.json");
-  } catch (err) {
-    catalog = [];
-  }
+  const results = await Promise.allSettled([readJson("apps.json"), readJson("apps-catalog.json"), homeSettings()]);
+  const entries = results[0].status === "fulfilled" ? results[0].value : [];
+  const catalog = results[1].status === "fulfilled" ? results[1].value : [];
+  const settings = results[2].status === "fulfilled" ? results[2].value : {};
+  document.body.dataset.tileSize = settings.tileSize === "large" ? "large" : "auto";
+  window.slateHomeSettings = settings;
+  document.dispatchEvent(new CustomEvent("slate:appearance", { detail: settings }));
   const built = renderTileList(resolveApps(entries, catalog));
   await paintTileIcons(built);
 }
@@ -424,7 +522,25 @@ document.addEventListener("keydown", (event) => {
 
   if (isBackKey(event)) {
     event.preventDefault();
-    if (dash) dashboardBackAction();
+    if (!dash && tvFallbackPanel() && !tvFallbackPanel().hidden) closeTvFallback();
+    else if (dash) dashboardBackAction();
+    return;
+  }
+
+  const fallbackPanel = tvFallbackPanel();
+  if (!dash && fallbackPanel && !fallbackPanel.hidden) {
+    const webButton = document.getElementById("tv-app-open-web");
+    const backButton = document.getElementById("tv-app-go-back");
+    if (key === "ArrowLeft" || key === "ArrowRight") {
+      event.preventDefault();
+      if (document.activeElement === webButton && backButton) backButton.focus({ preventScroll: true });
+      else if (webButton) webButton.focus({ preventScroll: true });
+    } else if (key === "Enter") {
+      event.preventDefault();
+      if (document.activeElement && typeof document.activeElement.click === "function") {
+        document.activeElement.click();
+      }
+    }
     return;
   }
 
@@ -441,14 +557,6 @@ document.addEventListener("keydown", (event) => {
 
   const arrow = key === "ArrowLeft" || key === "ArrowRight" || key === "ArrowUp" || key === "ArrowDown";
   const select = key === "Enter";
-  if (select && dash) {
-    const active = document.activeElement;
-    if (active && active.id === "guest-toggle") {
-      showFocus(true);
-      bumpIdle();
-      return;
-    }
-  }
   if (!arrow && !select) {
     showFocus(true);
     bumpIdle();
@@ -456,22 +564,26 @@ document.addEventListener("keydown", (event) => {
   }
 
   event.preventDefault();
-  const wasHidden = !document.body.classList.contains("show-focus");
   showFocus(true);
   bumpIdle();
-  if (wasHidden) return;
 
   if (dash) {
     if (select) {
-      const home = document.querySelector("a.home-pill[href='index.html']");
-      if (home) location.href = home.href;
-      else location.href = "index.html";
+      const active = document.activeElement;
+      if (active && typeof active.click === "function") active.click();
+      else goHome();
+      return;
     }
+    if (arrow) moveDashboardFocus(key);
     return;
   }
 
   if (select) {
     const active = document.activeElement;
+    if (active && active.id === "wx") {
+      location.href = "weather.html";
+      return;
+    }
     if (active && active.classList.contains("tile")) openTile(active);
     else if (active && typeof active.click === "function") active.click();
     return;
@@ -514,13 +626,21 @@ const WEATHER_CACHE_KEY = "tv-weather";
 const ICON_FILES = new Set([
   "sun", "moon", "cloud", "cloudsun", "cloudmoon", "rain", "snow", "fog", "storm", "cloudoff",
   "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker", "eyeoff",
+  "brand-netflix", "brand-youtube", "brand-youtubemusic", "brand-googletv",
 ]);
 const TILE_ICONS = new Set([
   "tv", "music", "photo", "bulb", "sliders", "grid", "house", "film", "focus", "power", "mic", "speaker",
 ]);
-const MAX_APP_TILES = 5;
-
+const TV_NATIVE_APP_IDS = new Set([
+  "netflix", "hulu", "hbo", "youtube", "youtube-music", "disney-plus",
+  "prime-video", "apple-tv", "spotify", "youtube-tv", "sling-tv",
+]);
+const TV_BRAND_ICONS = {
+  netflix: "brand-netflix", youtube: "brand-youtube",
+  "youtube-music": "brand-youtubemusic", "google-tv": "brand-googletv",
+};
 const iconSvg = new Map();
+const ICON_FALLBACK = '<svg class="i" focusable="false" aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 16.2a4.5 4.5 0 0 0-.9-8.9A6.2 6.2 0 0 0 7.3 6a4.8 4.8 0 0 0-1 9.9H20Z"/><path d="m4 21 16-18"/></svg>';
 const wxBox = document.getElementById("wx");
 const wxIcon = document.getElementById("wx-icon");
 const wxTemp = document.getElementById("wx-temp");
@@ -617,7 +737,10 @@ function weatherOk(data) {
     Array.isArray(hourly.time) &&
     Array.isArray(hourly.temperature_2m) &&
     Array.isArray(hourly.weather_code) &&
-    Array.isArray(hourly.is_day)
+    Array.isArray(hourly.is_day) &&
+    hourly.time.length === hourly.temperature_2m.length &&
+    hourly.time.length === hourly.weather_code.length &&
+    hourly.time.length === hourly.is_day.length
   );
 }
 
@@ -640,26 +763,31 @@ function localSvg(text) {
   return text.replace("<svg ", '<svg class="i" focusable="false" aria-hidden="true" ');
 }
 
-async function ensureIcon(name) {
-  if (!ICON_FILES.has(name)) return "";
+async function fetchIcon(name) {
+  const response = await fetch(`assets/icons/${name}.svg`);
+  if (!response.ok) throw new Error(String(response.status));
+  const svg = localSvg(await response.text());
+  if (!svg) throw new Error("bad icon");
+  return svg;
+}
+
+function ensureIcon(name) {
+  if (!ICON_FILES.has(name)) return Promise.resolve("");
   if (iconSvg.has(name)) return iconSvg.get(name);
-  try {
-    const response = await fetch(`assets/icons/${name}.svg`);
-    if (!response.ok) throw new Error(String(response.status));
-    const svg = localSvg(await response.text());
-    if (!svg) throw new Error("bad icon");
-    iconSvg.set(name, svg);
-    return svg;
-  } catch (err) {
-    iconSvg.set(name, "");
-    return "";
-  }
+  let pending;
+  pending = fetchIcon(name).catch(() => {
+    if (iconSvg.get(name) === pending) iconSvg.delete(name);
+    return ICON_FALLBACK;
+  });
+  iconSvg.set(name, pending);
+  return pending;
 }
 
 function applyIcon(el, name, svg) {
   if (!el) return;
+  if (el._slateIconSvg === svg) return;
+  el._slateIconSvg = svg;
   const key = svg ? name : "";
-  if (el.dataset.icon === key) return;
   el.replaceChildren();
   if (!svg) {
     el.dataset.icon = "";
@@ -672,6 +800,7 @@ function applyIcon(el, name, svg) {
     el.dataset.icon = "";
     return;
   }
+  icon.classList.toggle("brand-mark", name.startsWith("brand-"));
   el.append(icon);
   el.dataset.icon = name;
 }
@@ -821,9 +950,9 @@ function detectDeviceLocation() {
 
 async function resolveLocation() {
   try {
-    const settings = await readJson("settings.json");
+    const settings = await homeSettings();
     const loc = settings.location;
-    if (loc && loc.locked === true) {
+    if (loc && (loc.locked === true || onAndroidTv())) {
       let label = typeof loc.label === "string" ? loc.label.trim() : "";
       if (!label || label.toLowerCase() === "near you") {
         label = await reversePlaceLabel(loc.lat, loc.lon);
@@ -945,6 +1074,8 @@ async function loadWeather() {
 }
 
 async function bootWeatherAndTiles() {
+  // Apps must be usable while location/weather services are still loading.
+  loadTiles();
   await resolveLocation();
   updateWeatherPlace();
   if (wxBox || dwx) {
@@ -956,14 +1087,28 @@ async function bootWeatherAndTiles() {
       else renderWeather();
     }, WEATHER_TICK_MS);
   }
-  loadTiles();
+}
+
+function wireHomeWeather() {
+  const wx = document.getElementById("wx");
+  if (!wx || !document.body.classList.contains("page-home")) return;
+  wx.tabIndex = 0;
+  wx.setAttribute("role", "button");
+  wx.setAttribute("aria-label", "Weather. Open forecast");
+  if (wx.dataset.weatherLink === "1") return;
+  wx.dataset.weatherLink = "1";
+  wx.addEventListener("click", () => {
+    location.href = "weather.html";
+  });
 }
 
 bootWeatherAndTiles();
+wireHomeWeather();
+document.addEventListener("slate:appearance", wireHomeWeather);
 
 async function applyPointerSetting() {
   try {
-    const settings = await readJson("settings.json");
+    const settings = await homeSettings();
     const hide = settings.hidePointer === true;
     document.body.classList.toggle("hide-pointer", hide);
     if (hide) document.body.classList.remove("has-mouse");

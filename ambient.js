@@ -285,11 +285,27 @@
     if (mode === 'off') { window.ambient.currentColors = function () { return { colors: [], intensity: 0, palette: cfg.palette, mode: 'off', updated: new Date().toISOString() }; }; return; }
     build(); startDrift(); applyNight(true); playArrival();
     shields(); setTimeout(shields, 1500); addEventListener('resize', shields);   // re-measure once weather has filled in
-    setInterval(updateGlass, 200);
+    setInterval(function () { if (!document.hidden) updateGlass(); }, window.SlateTV ? 1000 : 200);
     setInterval(publish, 1000);
     setInterval(function () { applyNight(false); }, 60 * 1000);
     addEventListener('slate:timezone', function () { applyNight(false); });
     updateGlass(); publish();
   }
-  fetch(CONFIG_URL, { cache: 'no-store' }).then(function (r) { return r.json(); }).then(start, function () { start(null); });
+  var onTvHome = !!window.SlateTV && document.body.classList.contains('page-home');
+  Promise.all([
+    fetch(CONFIG_URL, { cache: 'no-store' }).then(function (r) { return r.json(); }),
+    onTvHome ? (window.slateSettingsPromise || fetch('settings.json', { cache: 'no-store' }).then(function (r) { return r.json(); })) : Promise.resolve(null)
+  ]).then(function (data) {
+    var c = data[0], look = data[1];
+    if (look && (look.tvAppearance === 'sculptural' || look.tvAppearance === 'aqua')) return;
+    if (look && look.tvBackdrop && look.tvBackdrop !== 'ambient') return;
+    if (look && (look.tvMotion === 'still' || matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+      var pr = c.presets && c.presets[c.preset];
+      if (pr) { pr.mode = 'static'; pr.arrival = false; }
+      c.mode = 'static'; c.arrival = false;
+    }
+    if (look && look.tvIntensity === 'soft') c.intensity = .4;
+    if (look && look.tvIntensity === 'vivid') c.intensity = 1;
+    start(c);
+  }, function () { if (!onTvHome) start(null); });
 })();

@@ -11,25 +11,30 @@ async function loadSettings() {
 }
 
 async function saveSettings(body) {
-  const response = await fetch("settings.json", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-    cache: "no-store",
-  });
-  if (response.status === 401) return { error: "pin" };
-  if (response.status === 429) return { error: "slow" };
-  if (!response.ok) return { error: "bad" };
-  return response.json();
+  try {
+    const response = await fetch("settings.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+      cache: "no-store",
+    });
+    if (response.status === 401) return { error: "pin" };
+    if (response.status === 429) return { error: "slow" };
+    if (!response.ok) return { error: "bad" };
+    return await response.json();
+  } catch (err) { return { error: "offline" }; }
 }
 
 function pinForm() {
   return document.getElementById("settings-pin-form");
 }
 
+let pinReturnFocus = null;
+
 function showSettingsPin(message) {
   const form = pinForm();
   if (!form) return;
+  if (form.hidden) pinReturnFocus = document.activeElement;
   form.hidden = false;
   const err = document.getElementById("settings-pin-error");
   if (err && message) err.textContent = message;
@@ -37,16 +42,135 @@ function showSettingsPin(message) {
   if (input) input.focus();
 }
 
+function settingsBack(event) {
+  if (!document.documentElement.classList.contains("page-settings")) return;
+  const backKeys = new Set(["Escape", "Backspace", "BrowserBack", "GoBack", "Back"]);
+  const backCodes = new Set([4, 461, 10009]);
+  if (!backKeys.has(event.key) && !backCodes.has(event.keyCode)) return;
+  const active = document.activeElement;
+  const editable = active && (
+    active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.isContentEditable
+  );
+  if (event.key === "Backspace" && editable && !backCodes.has(event.keyCode)) return;
+
+  event.preventDefault();
+  event.stopPropagation();
+  const form = pinForm();
+  if (form && !form.hidden) {
+    form.hidden = true;
+    const input = document.getElementById("settings-pin-input");
+    const error = document.getElementById("settings-pin-error");
+    if (input) {
+      input.value = "";
+      input.blur();
+    }
+    if (error) error.textContent = "";
+    if (pinReturnFocus && typeof pinReturnFocus.focus === "function") {
+      pinReturnFocus.focus({ preventScroll: true });
+    }
+    return;
+  }
+  const link = document.querySelector("a.settings-back[href]");
+  if (link) location.href = link.href;
+}
+
+document.addEventListener("keydown", settingsBack, true);
+
+function settingsFocusables() {
+  return [...document.querySelectorAll(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+  )].filter((el) => {
+    if (el.offsetParent === null) return false;
+    const form = pinForm();
+    if (form && !form.hidden) return form.contains(el);
+    return !form || !form.contains(el);
+  });
+}
+
+function moveSettingsFocus(direction) {
+  const items = settingsFocusables();
+  if (!items.length) return;
+  const current = document.activeElement;
+  const rect = current && current.getBoundingClientRect ? current.getBoundingClientRect() : null;
+  if (!rect || !items.includes(current)) {
+    items[0].focus({ preventScroll: true });
+    return;
+  }
+  const x = rect.left + rect.width / 2;
+  const y = rect.top + rect.height / 2;
+  let next = null;
+  let score = Infinity;
+  for (const item of items) {
+    if (item === current) continue;
+    const target = item.getBoundingClientRect();
+    const dx = target.left + target.width / 2 - x;
+    const dy = target.top + target.height / 2 - y;
+    if (direction === "ArrowLeft" && dx >= -8) continue;
+    if (direction === "ArrowRight" && dx <= 8) continue;
+    if (direction === "ArrowUp" && dy >= -8) continue;
+    if (direction === "ArrowDown" && dy <= 8) continue;
+    const primary = direction === "ArrowLeft" || direction === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
+    const secondary = direction === "ArrowLeft" || direction === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
+    const candidateScore = primary * 1000 + secondary;
+    if (candidateScore < score) {
+      next = item;
+      score = candidateScore;
+    }
+  }
+  if (next) {
+    next.focus({ preventScroll: true });
+    next.scrollIntoView({ block: "nearest", inline: "nearest" });
+  }
+}
+
+document.addEventListener("keydown", (event) => {
+  if (!document.documentElement.classList.contains("page-settings")) return;
+  if (event.key === "Enter" && event.target && event.target.id === "settings-pin-input") return;
+  const active = document.activeElement;
+  const editable = active && (
+    active.tagName === "INPUT" || active.tagName === "TEXTAREA" || active.tagName === "SELECT" || active.isContentEditable
+  );
+  if (editable) return;
+  if (["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"].includes(event.key)) {
+    event.preventDefault();
+    document.body.classList.add("show-focus");
+    moveSettingsFocus(event.key);
+    return;
+  }
+  if (event.key === "Enter" && active && typeof active.click === "function") {
+    event.preventDefault();
+    active.click();
+  }
+});
+
+function updateSettingsInputFocus() {
+  const active = document.activeElement;
+  const focused = !!(
+    active && active.matches && active.matches("input, textarea, select, [contenteditable='true']")
+  );
+  const bridge = window.SlateTV;
+  if (bridge && typeof bridge.setInputFocused === "function") {
+    bridge.setInputFocused(focused);
+  }
+}
+
+document.addEventListener("focusin", updateSettingsInputFocus);
+document.addEventListener("focusout", () => setTimeout(updateSettingsInputFocus, 0));
+const settingsBackLink = document.querySelector("a.settings-back[href]");
+if (settingsBackLink) settingsBackLink.focus({ preventScroll: true });
+
 async function unlockSettingsPin(pin) {
-  const response = await fetch("unlock", {
+  try {
+    const response = await fetch("unlock", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ pin }),
     cache: "no-store",
   });
-  if (response.status === 429) return "slow";
-  if (!response.ok) return "pin";
-  return "ok";
+    if (response.status === 429) return "slow";
+    if (!response.ok) return "pin";
+    return "ok";
+  } catch (err) { return "offline"; }
 }
 
 async function saveWithPin(body) {
@@ -76,6 +200,10 @@ function wireSettingsPinForm(onSuccess) {
     }
     if (err) err.textContent = "";
     const status = await unlockSettingsPin(pin);
+    if (status === "offline") {
+      if (err) err.textContent = "Could not reach Slate. Keep this page open and try again.";
+      return;
+    }
     if (status === "slow") {
       if (err) err.textContent = "Wait a moment and try again.";
       return;
@@ -185,3 +313,24 @@ if (document.documentElement.classList.contains("page-settings")) {
   document.body.classList.add("has-mouse");
 }
 bootPointerSetting();
+
+function refreshHomeRouting() {
+  const bridge = window.SlateTV;
+  const panel = document.getElementById("home-routing-panel");
+  if (!panel || !bridge || typeof bridge.homeRoutingStatus !== "function") return;
+  panel.hidden = false;
+  const status = bridge.homeRoutingStatus();
+  document.getElementById("home-routing-toggle").checked = status === "active";
+  document.getElementById("home-routing-status").textContent = {
+    active: "Home returns to Slate. The Google TV tile still opens Google TV.",
+    off: "Off. The Home button can open Google TV.",
+    "permission-needed": "Enable Slate Home button in Accessibility settings to route Home to Slate.",
+  }[status] || "Home button helper unavailable.";
+}
+document.getElementById("home-routing-toggle")?.addEventListener("change", event => {
+  window.SlateTV.setHomeRoutingEnabled(event.target.checked);
+  setTimeout(refreshHomeRouting, 250);
+});
+document.getElementById("home-routing-manage")?.addEventListener("click", () => window.SlateTV.openHomeRoutingSettings());
+addEventListener("focus", refreshHomeRouting);
+refreshHomeRouting();

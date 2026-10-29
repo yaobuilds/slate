@@ -36,8 +36,10 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="ambient.css">
+  <link rel="stylesheet" href="tv-appearance.css">
 </head>
 <body class="page-home">
+  <div class="tv-backdrop" id="tv-backdrop" aria-hidden="true"></div>
   <div id="stage" class="stage">
     <section class="hero" aria-label="Clock">
       <p class="clock">
@@ -56,6 +58,7 @@
     </aside>
 
     <nav class="tiles" id="tiles" aria-label="Apps"></nav>
+    <p class="dock-pagination" id="dock-pagination" aria-live="polite" hidden></p>
     <footer class="foot">
       <div class="hints">
         <span class="hint hint-keys"><span class="cap">← →</span>Move</span>
@@ -71,7 +74,16 @@
       </div>
     </footer>
   </div>
+  <section class="tv-app-fallback" id="tv-app-fallback" role="alertdialog" aria-modal="true" aria-labelledby="tv-app-fallback-title" hidden>
+    <h1 id="tv-app-fallback-title">App unavailable</h1>
+    <p id="tv-app-fallback-message"></p>
+    <div class="tv-app-fallback-actions">
+      <button type="button" id="tv-app-open-web">Open web version</button>
+      <button type="button" id="tv-app-go-back">Back</button>
+    </div>
+  </section>
   <script src="main.js"></script>
   <script src="ambient.js"></script>
+  <script src="tv-appearance.js"></script>
 </body>
 </html>

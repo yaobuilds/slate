@@ -16,10 +16,20 @@
       <a class="settings-back" href="settings.html">Back</a>
     </header>
     <section class="settings-panel">
-      <p class="settings-count" id="apps-count">0 of 5</p>
+      <p class="settings-count" id="apps-count">0 selected</p>
+      <div class="settings-tile-layout">
+        <div>
+          <h2 class="settings-subtitle">Tile sizing</h2>
+          <p class="settings-lan-copy">Home adjusts the grid to fit your selected apps. Large keeps fewer, wider tiles when there’s room.</p>
+        </div>
+        <select class="settings-field" id="tile-size" aria-label="Tile sizing">
+          <option value="auto">Auto fit</option>
+          <option value="large">Large tiles</option>
+        </select>
+      </div>
       <div class="settings-order-block" id="apps-order-block">
         <h2>Your tiles</h2>
-        <p class="settings-order-empty" id="apps-order-empty" hidden>No apps selected yet. Pick up to five below.</p>
+        <p class="settings-order-empty" id="apps-order-empty" hidden>No apps selected yet. Pick from the catalog below.</p>
         <ol class="settings-order-list" id="apps-order-list"></ol>
       </div>
       <h2 class="settings-subtitle">Catalog</h2>

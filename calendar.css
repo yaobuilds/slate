@@ -1,0 +1,30 @@
+.page-calendar { margin:0; min-height:100vh; overflow:hidden; background:#10141a; color:var(--sl-text); font-family:var(--sl-font); }
+.calendar-shell { box-sizing:border-box; width:100vw; height:100vh; padding:54px 96px; display:grid; grid-template-rows:auto auto minmax(0,1fr) auto; gap:24px; }
+.calendar-head { display:grid; grid-template-columns:220px 1fr 360px; align-items:center; gap:32px; }
+.calendar-head h1 { margin:4px 0 0; font-size:56px; line-height:1; }
+.calendar-eyebrow { margin:0; color:var(--sl-text-2); font:500 22px/1.2 var(--sl-mono); letter-spacing:.1em; text-transform:uppercase; }
+.calendar-back,.calendar-tabs button,.calendar-foot button,.event-detail button { min-height:72px; border:1px solid var(--sl-line); border-radius:999px; padding:0 28px; display:inline-flex; align-items:center; justify-content:center; background:var(--sl-panel); color:var(--sl-text); font:600 28px/1 var(--sl-font); text-decoration:none; }
+.calendar-sync { margin:0; color:var(--sl-text-2); text-align:right; font-size:24px; }
+.calendar-tabs { display:flex; gap:16px; }
+.calendar-tabs button[aria-pressed="true"] { background:var(--sl-text); color:var(--sl-ink); }
+.calendar-tabs #calendar-guest { margin-left:auto; }
+.calendar-content { min-height:0; overflow:hidden; }
+.agenda { display:grid; gap:14px; align-content:start; }
+.agenda-item { width:100%; min-height:92px; border:1px solid var(--sl-line); border-radius:24px; background:var(--sl-panel); color:var(--sl-text); padding:18px 26px; display:grid; grid-template-columns:220px 1fr; gap:28px; align-items:center; text-align:left; font:inherit; }
+.agenda-item.tall { min-height:126px; }
+.agenda-time { color:var(--sl-text-2); font-size:26px; }.agenda-title { font-size:34px; line-height:1.18; font-weight:560; }
+.week-grid { display:grid; grid-template-columns:repeat(7,1fr); height:100%; gap:12px; }
+.week-day { border:1px solid var(--sl-line); border-radius:24px; background:var(--sl-panel); padding:18px; overflow:hidden; }
+.week-day h2 { margin:0 0 16px; font-size:24px; color:var(--sl-text-2); }.week-day.today { border-color:var(--sl-ice); }
+.week-event { display:block; width:100%; margin:0 0 10px; padding:10px 12px; border:0; border-radius:12px; background:var(--sl-panel-2); color:var(--sl-text); text-align:left; font:500 24px/1.25 var(--sl-font); }
+.week-more { margin:0; font-size:22px; color:var(--sl-text-2); }
+.month-grid { display:grid; grid-template-columns:repeat(7,1fr); grid-template-rows:repeat(6,1fr); height:100%; gap:8px; }
+.month-day { border:1px solid var(--sl-line); border-radius:16px; background:var(--sl-panel); color:var(--sl-text); padding:12px; text-align:left; font:600 22px/1 var(--sl-font); overflow:hidden; }
+.month-day.outside { opacity:.35; }.month-day.has-events::after { content:''; display:block; width:10px; height:10px; border-radius:50%; background:var(--sl-ice); margin-top:12px; }
+.calendar-empty { height:100%; display:grid; place-items:center; color:var(--sl-text-2); font-size:36px; }
+.calendar-foot { display:grid; grid-template-columns:220px 1fr 220px; align-items:center; gap:24px; }.calendar-foot p { text-align:center; color:var(--sl-text-2); font-size:24px; }
+[data-cal-focus]:focus { outline:6px solid var(--sl-ice); outline-offset:5px; }
+.event-detail { position:fixed; inset:0; z-index:9; display:grid; place-items:center; background:rgba(8,10,14,.88); }
+.event-detail[hidden] { display:none; }.event-detail-card { width:min(920px,78vw); max-height:72vh; overflow:hidden; border:1px solid var(--sl-line); border-radius:36px; padding:46px; background:#161b22; }
+.event-detail h2 { margin:14px 0 22px; font-size:48px; }.event-detail p:not(.calendar-eyebrow) { color:var(--sl-text-2); font-size:28px; line-height:1.45; white-space:pre-wrap; }
+@media(max-width:900px), (max-height:620px) { .calendar-shell{padding:27px 48px;gap:12px}.calendar-head{grid-template-columns:130px 1fr 220px}.calendar-head h1{font-size:34px}.calendar-back,.calendar-tabs button,.calendar-foot button{min-height:46px;font-size:17px;padding:0 18px}.agenda-item{min-height:58px;padding:10px 18px;grid-template-columns:130px}.agenda-title{font-size:23px}.agenda-time{font-size:18px}.week-event{font-size:18px}.calendar-eyebrow,.calendar-sync{font-size:15px}.calendar-foot{grid-template-columns:140px 1fr 140px}}

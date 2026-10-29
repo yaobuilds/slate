@@ -1,0 +1,10 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10141A"><title>Weather</title><link rel="stylesheet" href="tokens.css"><link rel="stylesheet" href="style.css"><link rel="stylesheet" href="weather.css"></head>
+<body class="page-weather"><main class="weather-shell">
+  <header class="weather-head"><a href="index.html" class="weather-back" data-wx-focus>Home</a><div><p class="weather-eyebrow" id="weather-place">Weather</p><h1 id="weather-title">Seven days</h1></div><p id="weather-updated"></p></header>
+  <nav class="day-strip" id="day-strip" aria-label="Forecast days"></nav>
+  <section class="weather-detail">
+    <div class="hourly-panel"><div class="weather-section-head"><h2>Hourly</h2><p id="rain-summary"></p></div><div class="hourly-list" id="hourly-list"></div></div>
+    <aside class="radar-panel"><div class="weather-section-head"><div><h2>Recent radar</h2><p id="radar-time">Loading latest image</p></div><div class="radar-actions"><button id="radar-play" data-wx-focus>Play</button><button id="radar-zoom" data-wx-focus>Wide</button></div></div><div class="radar-map"><div class="radar-grid"></div><img id="radar-image" alt="Recent precipitation radar around the saved location"><i class="radar-home" aria-hidden="true"></i></div></aside>
+  </section>
+  <section class="rain-panel" id="rain-panel"><div class="weather-section-head"><h2>Next hours</h2><p>15-minute precipitation</p></div><div class="rain-chart" id="rain-chart"></div></section>
+</main><script src="weather.js"></script></body></html>

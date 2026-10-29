@@ -52,32 +52,34 @@
       <p class="data-stale" id="data-stale" hidden></p>
     </header>
 
-    <section class="panel box panel-today" id="panel-today" aria-labelledby="today-label">
-      <h2 class="kicker" id="today-label">Today</h2>
+    <a class="panel box panel-today calendar-panel-link" id="panel-today" href="calendar.html" aria-labelledby="today-label" data-focus>
+      <div class="panel-heading-row">
+        <h2 class="kicker" id="today-label">Now / Next</h2>
+        <span class="panel-open">Open calendar</span>
+      </div>
       <p class="guest-pill" id="guest-pill" hidden>
         <span class="guest-pill-icon" id="guest-pill-icon" aria-hidden="true"></span>
         <span>Guest mode</span>
       </p>
       <ul class="rows" id="today-list"></ul>
-    </section>
+    </a>
 
-    <section class="panel box panel-deadlines" id="panel-deadlines" aria-labelledby="deadlines-label" hidden>
-      <h2 class="kicker" id="deadlines-label">Deadlines</h2>
-      <ul class="rows" id="deadlines-list"></ul>
-    </section>
-
-    <section class="panel box panel-money" id="panel-money" aria-labelledby="money-label" hidden>
-      <h2 class="kicker" id="money-label">Money</h2>
-      <p class="money-note" id="money-note"></p>
-    </section>
+    <a class="panel box panel-upcoming calendar-panel-link" id="panel-upcoming" href="calendar.html#week" aria-labelledby="upcoming-label" data-focus>
+      <div class="panel-heading-row">
+        <h2 class="kicker" id="upcoming-label">Upcoming</h2>
+        <span class="panel-open">Week view</span>
+      </div>
+      <ul class="rows" id="upcoming-list"></ul>
+    </a>
 
     <footer class="foot dash-foot">
       <div class="hints">
-        <span class="hint hint-keys"><span class="cap">Enter</span>Home</span>
+        <span class="hint hint-keys"><span class="cap">Enter</span>Open</span>
         <span class="hint hint-keys"><span class="cap">G</span><span id="guest-hint">Show all</span></span>
         <button type="button" class="guest-toggle" id="guest-toggle" aria-pressed="false">Show all</button>
       </div>
       <div class="foot-end">
+        <a class="foot-link" href="network.html">Wi-Fi / LAN</a>
         <a class="foot-link" href="settings.html">Settings</a>
         <p class="signature">
           <img src="assets/shift-a-slate-dim.svg" width="31" height="20" alt="">

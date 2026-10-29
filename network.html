@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="en" class="page-network">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141A">
+  <title>Server &amp; network</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="network.css">
+</head>
+<body class="page-network">
+  <main class="network-page">
+    <header class="network-head">
+      <a class="network-back" href="dashboard.html">Back to Dashboard</a>
+      <div>
+        <h1>Server &amp; network</h1>
+        <p>Slate server, internet, and devices on this Mac’s Wi-Fi network.</p>
+      </div>
+      <button class="network-button" id="network-refresh" type="button">Refresh status</button>
+    </header>
+
+    <section class="network-status-grid" aria-label="Connection status">
+      <article class="network-card">
+        <h2>Slate server</h2>
+        <p class="network-state" id="server-state">Checking…</p>
+        <p class="network-detail" id="server-detail"></p>
+      </article>
+      <article class="network-card">
+        <h2>Internet</h2>
+        <p class="network-state" id="internet-state">Checking…</p>
+        <p class="network-detail" id="internet-detail">Checks the weather service Slate already uses.</p>
+      </article>
+      <article class="network-card">
+        <h2>Wi-Fi / LAN</h2>
+        <p class="network-state" id="lan-state">Loading…</p>
+        <p class="network-detail" id="lan-detail"></p>
+      </article>
+    </section>
+
+    <section class="network-devices" aria-labelledby="devices-title">
+      <div class="network-devices-head">
+        <div>
+          <h2 id="devices-title">Devices</h2>
+          <p id="devices-help">Scan the current private Wi-Fi subnet. Devices that block ping may not appear.</p>
+        </div>
+        <button class="network-button network-scan" id="network-scan" type="button">Scan Wi-Fi</button>
+      </div>
+      <p class="network-message" id="network-message" role="status" aria-live="polite"></p>
+      <ul class="network-device-list" id="network-device-list" aria-label="Devices found on Wi-Fi" tabindex="0"></ul>
+    </section>
+  </main>
+  <script src="network.js"></script>
+</body>
+</html>

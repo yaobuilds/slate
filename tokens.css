@@ -3,9 +3,9 @@
    proportional on any screen (1280x720, 1920x1080, 3840x2160).
    Font URLs point to assets/fonts/; fix them if you copy this file elsewhere. */
 
-@font-face { font-family: "Inter"; src: url("assets/fonts/inter-450.ttf") format("truetype"); font-weight: 450; font-display: block; }
-@font-face { font-family: "Inter"; src: url("assets/fonts/inter-600.ttf") format("truetype"); font-weight: 600; font-display: block; }
-@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains-mono-500.ttf") format("truetype"); font-weight: 500; font-display: block; }
+@font-face { font-family: "Inter"; src: url("assets/fonts/inter-450.ttf") format("truetype"); font-weight: 450; font-display: swap; }
+@font-face { font-family: "Inter"; src: url("assets/fonts/inter-600.ttf") format("truetype"); font-weight: 600; font-display: swap; }
+@font-face { font-family: "JetBrains Mono"; src: url("assets/fonts/jetbrains-mono-500.ttf") format("truetype"); font-weight: 500; font-display: swap; }
 
 :root {
   /* ---- scale: 1 design px at 1920x1080 ---- */

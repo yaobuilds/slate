@@ -16,33 +16,16 @@
       <a class="settings-back" href="settings.html">Back</a>
     </header>
     <section class="settings-panel">
-      <h2 class="settings-subtitle">Today</h2>
-      <div class="settings-editor" id="today-editor"></div>
-      <button type="button" class="settings-add" id="today-add">Add</button>
-
-      <h2 class="settings-subtitle" style="margin-top:28px">Deadlines</h2>
-      <p class="settings-lan-copy">Use a calendar date. Dashboard shows the weekday and a countdown.</p>
-      <div class="settings-editor" id="deadline-editor"></div>
-      <button type="button" class="settings-add" id="deadline-add">Add</button>
-
-      <h2 class="settings-subtitle" style="margin-top:28px">Money</h2>
-      <p class="settings-lan-copy">Status words only. No dollar amounts.</p>
-      <textarea class="settings-field note" id="money-note" maxlength="200" rows="3"></textarea>
-
+      <p class="settings-lan-copy" style="margin-top:0">Slate reads a dedicated Google Calendar on this Mac. Edit events in Google Calendar or through Grokbot. Dashboard and the calendar views refresh about every two minutes.</p>
+      <p class="settings-lan-copy">Guest mode shows <strong>Busy</strong> instead of titles. Choose <strong>Show all</strong> on Dashboard or the calendar page to see private details. On Wi‑Fi, that needs the PIN once per session.</p>
+      <p class="settings-lan-copy">To connect: add <code>calendarId</code> to <code>settings.local.json</code> on this Mac, and store Google OAuth values in Keychain under the service <code>Slate Calendar</code> (<code>client-id</code>, <code>client-secret</code>, <code>refresh-token</code>). Until then, Dashboard shows a connection reminder.</p>
+      <p class="settings-lan-copy">Earlier Today, Deadlines, and Money entries may still exist in <code>data.local.json</code> as an unused backup. Slate does not edit them here anymore.</p>
       <div class="settings-actions">
-        <button type="button" id="schedule-save">Save</button>
+        <a class="settings-back" href="dashboard.html">Open Dashboard</a>
+        <a class="settings-back" href="calendar.html">Open calendar</a>
       </div>
-      <p class="settings-msg" id="schedule-msg" role="status"></p>
     </section>
   </div>
-  <form id="settings-pin-form" class="settings-pin-form" hidden autocomplete="off">
-    <p class="pin-title">Enter the PIN from this Mac</p>
-    <label class="pin-label" for="settings-pin-input">PIN</label>
-    <input id="settings-pin-input" type="password" inputmode="numeric" maxlength="8" autocomplete="off">
-    <button type="submit">Unlock</button>
-    <p id="settings-pin-error" class="pin-error" role="status"></p>
-  </form>
   <script src="settings.js"></script>
-  <script src="settings-schedule.js"></script>
 </body>
 </html>

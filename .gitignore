@@ -1,6 +1,7 @@
 data.local.json
 data.json
 settings.local.json
+calendar-cache.local.json
 pin.local
 __pycache__/
 .DS_Store

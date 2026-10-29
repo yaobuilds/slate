@@ -1,31 +1,40 @@
 #!/usr/bin/env python3
 """Serve the TV dashboard and publish data.local.json as data.json."""
 
+from __future__ import annotations
+
 import argparse
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
 import hmac
+import ipaddress
 import json
 import os
 import re
 import secrets
 import socket
+import shutil
+import subprocess
 import sys
 import threading
 import time
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import parse_qs, unquote, urlsplit
+from urllib.error import HTTPError
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parent
 PORT = 8000
+DISCOVERY_PORT = 8001
 LOCAL = ROOT / "data.local.json"
 PUBLIC = ROOT / "data.json"
 SETTINGS_LOCAL = ROOT / "settings.local.json"
 APPS_PUBLIC = ROOT / "apps.json"
 CATALOG = ROOT / "apps-catalog.json"
 AMBIENT = ROOT / "ambient.json"
+CALENDAR_CACHE_LOCAL = ROOT / "calendar-cache.local.json"
 DEFAULT_HOME_APPS = ["netflix", "hulu", "hbo", "youtube", "youtube-music"]
 DEFAULT_AMBIENT_PRESET = "aurora"
 DEFAULT_LOCATION = {
@@ -35,12 +44,22 @@ DEFAULT_LOCATION = {
     "timezone": "America/New_York",
     "locked": False,
 }
-MAX_HOME_APPS = 5
 PIN_PATH = ROOT / "pin.local"
 PIN_RE = re.compile(r"^[0-9]{4,8}$")
 FAIL_LIMIT = 5
 LOCKOUT_S = 60
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60
+NETWORK_SCAN_CACHE = None
+NETWORK_SCAN_AT = 0.0
+NETWORK_SCAN_LOCK = threading.Lock()
+CALENDAR_LOCK = threading.Lock()
+CALENDAR_CACHE = None
+CALENDAR_FETCHED_AT = 0.0
+CALENDAR_REFRESH_S = 120
+CALENDAR_PREFETCH_BACK_DAYS = 1
+CALENDAR_PREFETCH_FORWARD_DAYS = 45
+RADAR_LOCK = threading.Lock()
+RADAR_CACHE = {}
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
     "today": [
@@ -66,6 +85,11 @@ SETTINGS_STATE = {
     "ambientPreset": DEFAULT_AMBIENT_PRESET,
     "location": dict(DEFAULT_LOCATION),
     "hidePointer": False,
+    "tileSize": "auto",
+    "tvAppearance": "sculptural",
+    "tvBackdrop": "ambient",
+    "tvMotion": "drift",
+    "tvIntensity": "balanced",
 }
 CATALOG_IDS = set()
 AMBIENT_PRESETS = set()
@@ -168,9 +192,11 @@ def normalize_home_apps(values) -> list:
             continue
         seen.add(item)
         out.append(item)
-        if len(out) >= MAX_HOME_APPS:
-            break
     return out
+
+
+def normalize_tile_size(value) -> str:
+    return value if isinstance(value, str) and value in {"auto", "large"} else "auto"
 
 
 def normalize_ambient_preset(value) -> str:
@@ -279,7 +305,14 @@ def read_settings_local() -> dict:
 
 
 def write_settings_local(data: dict) -> None:
-    text = json.dumps(data, indent=2) + "\n"
+    local = read_settings_local()
+    payload = dict(data)
+    calendar_id = local.get("calendarId")
+    if isinstance(calendar_id, str) and calendar_id.strip():
+        payload["calendarId"] = calendar_id.strip()
+    else:
+        payload.pop("calendarId", None)
+    text = json.dumps(payload, indent=2) + "\n"
     SETTINGS_LOCAL.write_text(text, encoding="utf-8")
     protect_local_file(SETTINGS_LOCAL)
 
@@ -301,13 +334,302 @@ def publish_settings() -> None:
         preset = normalize_ambient_preset(local.get("ambientPreset"))
         location = normalize_location(local.get("location"))
         hide_pointer = local.get("hidePointer") is True
+        tile_size = normalize_tile_size(local.get("tileSize"))
         SETTINGS_STATE = {
             "homeApps": home,
             "ambientPreset": preset,
             "location": location,
             "hidePointer": hide_pointer,
+            "tileSize": tile_size,
+            **normalize_tv_appearance(local),
         }
         publish_apps(home)
+
+
+def normalize_tv_appearance(source: dict) -> dict:
+    choices = {
+        "tvAppearance": ("sculptural", "aqua"),
+        "tvBackdrop": ("ambient", "landscape", "aqua", "flurry", "orbit"),
+        "tvMotion": ("drift", "still", "reactive"),
+        "tvIntensity": ("balanced", "soft", "vivid"),
+    }
+    return {key: source.get(key) if source.get(key) in values else values[0]
+            for key, values in choices.items()}
+
+
+def keychain_value(account: str) -> str:
+    """Read a Slate secret from macOS Keychain without putting it in repo files."""
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", "Slate Calendar", "-a", account, "-w"],
+            capture_output=True, text=True, timeout=3, check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def calendar_credentials() -> tuple[str, str, str, str]:
+    settings = read_settings_local()
+    calendar_id = settings.get("calendarId") if isinstance(settings.get("calendarId"), str) else ""
+    return (
+        calendar_id.strip(),
+        keychain_value("client-id"),
+        keychain_value("client-secret"),
+        keychain_value("refresh-token"),
+    )
+
+
+def google_access_token(client_id: str, client_secret: str, refresh_token: str) -> str:
+    body = urlencode({
+        "client_id": client_id,
+        "client_secret": client_secret,
+        "refresh_token": refresh_token,
+        "grant_type": "refresh_token",
+    }).encode("utf-8")
+    request = Request(
+        "https://oauth2.googleapis.com/token", data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded", "Accept": "application/json"},
+        method="POST",
+    )
+    with urlopen(request, timeout=12) as response:
+        payload = json.loads(response.read().decode("utf-8"))
+    return payload.get("access_token", "") if isinstance(payload, dict) else ""
+
+
+def parse_google_event(item: dict) -> dict | None:
+    start = item.get("start") if isinstance(item.get("start"), dict) else {}
+    end = item.get("end") if isinstance(item.get("end"), dict) else {}
+    all_day = isinstance(start.get("date"), str)
+    start_value = start.get("date") if all_day else start.get("dateTime")
+    end_value = end.get("date") if all_day else end.get("dateTime")
+    if not isinstance(start_value, str) or not start_value:
+        return None
+    return {
+        "id": clip_text(item.get("id"), 256),
+        "title": clip_text(item.get("summary"), 160) or "Untitled event",
+        "start": start_value,
+        "end": end_value if isinstance(end_value, str) else "",
+        "allDay": all_day,
+        "location": clip_text(item.get("location"), 180),
+        "notes": clip_text(item.get("description"), 600),
+        "status": clip_text(item.get("status"), 24),
+    }
+
+
+def write_calendar_cache(payload: dict) -> None:
+    try:
+        CALENDAR_CACHE_LOCAL.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        protect_local_file(CALENDAR_CACHE_LOCAL)
+    except OSError:
+        pass
+
+
+def read_calendar_cache() -> dict | None:
+    try:
+        payload = json.loads(CALENDAR_CACHE_LOCAL.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def fetch_google_calendar(start: str, end: str) -> dict:
+    calendar_id, client_id, client_secret, refresh_token = calendar_credentials()
+    if not all((calendar_id, client_id, client_secret, refresh_token)):
+        return {"configured": False, "stale": False, "syncedAt": "", "events": []}
+    token = google_access_token(client_id, client_secret, refresh_token)
+    if not token:
+        raise OSError("Google did not return an access token")
+    params = urlencode({
+        "timeMin": start,
+        "timeMax": end,
+        "singleEvents": "true",
+        "orderBy": "startTime",
+        "maxResults": "2500",
+        "timeZone": SETTINGS_STATE.get("location", {}).get("timezone", "America/New_York"),
+    })
+    url = (
+        "https://www.googleapis.com/calendar/v3/calendars/"
+        + quote(calendar_id, safe="")
+        + "/events?"
+        + params
+    )
+    request = Request(url, headers={"Authorization": f"Bearer {token}", "Accept": "application/json"})
+    with urlopen(request, timeout=15) as response:
+        raw = json.loads(response.read().decode("utf-8"))
+    events = []
+    for item in raw.get("items", []) if isinstance(raw, dict) else []:
+        if not isinstance(item, dict) or item.get("status") == "cancelled":
+            continue
+        event = parse_google_event(item)
+        if event:
+            events.append(event)
+    return {"configured": True, "stale": False, "syncedAt": local_iso_now(), "events": events}
+
+
+def parse_iso_datetime(value: str) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def calendar_prefetch_bounds(now: datetime | None = None) -> tuple[str, str]:
+    anchor = (now or datetime.now(timezone.utc)).replace(minute=0, second=0, microsecond=0)
+    start = anchor - timedelta(days=CALENDAR_PREFETCH_BACK_DAYS)
+    end = anchor + timedelta(days=CALENDAR_PREFETCH_FORWARD_DAYS)
+    return start.isoformat(), end.isoformat()
+
+
+def event_window(event: dict) -> tuple[datetime | None, datetime | None]:
+    if not isinstance(event, dict):
+        return None, None
+    if event.get("allDay") is True:
+        start = parse_iso_datetime(f"{event.get('start', '')}T00:00:00")
+        end_raw = event.get("end") or event.get("start")
+        end = parse_iso_datetime(f"{end_raw}T00:00:00") if isinstance(end_raw, str) else None
+        if start and end and end > start:
+            end = end - timedelta(seconds=1)
+        elif start and not end:
+            end = start + timedelta(hours=23, minutes=59, seconds=59)
+        return start, end
+    start = parse_iso_datetime(event.get("start", ""))
+    end = parse_iso_datetime(event.get("end") or event.get("start", ""))
+    return start, end
+
+
+def events_in_range(events: list, start_iso: str, end_iso: str) -> list:
+    start_dt = parse_iso_datetime(start_iso)
+    end_dt = parse_iso_datetime(end_iso)
+    if start_dt is None or end_dt is None:
+        return []
+    filtered = []
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        ev_start, ev_end = event_window(event)
+        if ev_start is None:
+            continue
+        if ev_end is None:
+            ev_end = ev_start
+        if ev_start < end_dt and ev_end >= start_dt:
+            filtered.append(event)
+    filtered.sort(key=lambda item: item.get("start", ""))
+    return filtered
+
+
+def merge_calendar_events(existing: list, incoming: list) -> list:
+    merged = {}
+    for event in existing + incoming:
+        if isinstance(event, dict) and isinstance(event.get("id"), str):
+            merged[event["id"]] = event
+    out = list(merged.values())
+    out.sort(key=lambda item: item.get("start", ""))
+    return out
+
+
+def refresh_calendar_store(force: bool = False) -> None:
+    global CALENDAR_CACHE, CALENDAR_FETCHED_AT
+    now = time.monotonic()
+    prefetch_start, prefetch_end = calendar_prefetch_bounds()
+    with CALENDAR_LOCK:
+        if (
+            not force
+            and isinstance(CALENDAR_CACHE, dict)
+            and CALENDAR_CACHE.get("windowStart") == prefetch_start
+            and CALENDAR_CACHE.get("windowEnd") == prefetch_end
+            and now - CALENDAR_FETCHED_AT < CALENDAR_REFRESH_S
+        ):
+            return
+    try:
+        payload = fetch_google_calendar(prefetch_start, prefetch_end)
+        payload["windowStart"] = prefetch_start
+        payload["windowEnd"] = prefetch_end
+        with CALENDAR_LOCK:
+            CALENDAR_CACHE = payload
+            CALENDAR_FETCHED_AT = time.monotonic()
+        if payload.get("configured"):
+            write_calendar_cache(payload)
+    except (OSError, ValueError, json.JSONDecodeError, HTTPError):
+        with CALENDAR_LOCK:
+            fallback = CALENDAR_CACHE if isinstance(CALENDAR_CACHE, dict) else read_calendar_cache()
+            if isinstance(fallback, dict):
+                stale = dict(fallback)
+                stale["stale"] = True
+                CALENDAR_CACHE = stale
+
+
+def calendar_payload(start: str, end: str) -> dict:
+    refresh_calendar_store()
+    with CALENDAR_LOCK:
+        store = dict(CALENDAR_CACHE) if isinstance(CALENDAR_CACHE, dict) else {}
+    if not store:
+        disk = read_calendar_cache()
+        store = dict(disk) if isinstance(disk, dict) else {}
+    if not store.get("configured"):
+        return {"configured": False, "stale": False, "syncedAt": "", "events": []}
+
+    req_start = parse_iso_datetime(start)
+    req_end = parse_iso_datetime(end)
+    win_start = parse_iso_datetime(store.get("windowStart", ""))
+    win_end = parse_iso_datetime(store.get("windowEnd", ""))
+    stale = store.get("stale") is True
+    synced_at = store.get("syncedAt") if isinstance(store.get("syncedAt"), str) else ""
+    events = events_in_range(store.get("events") or [], start, end)
+
+    needs_fetch = (
+        req_start is not None
+        and req_end is not None
+        and win_start is not None
+        and win_end is not None
+        and (req_start < win_start or req_end > win_end)
+    )
+    if needs_fetch:
+        try:
+            fetched = fetch_google_calendar(start, end)
+            events = fetched.get("events") or []
+            stale = False
+            synced_at = fetched.get("syncedAt") if isinstance(fetched.get("syncedAt"), str) else synced_at
+            with CALENDAR_LOCK:
+                if isinstance(CALENDAR_CACHE, dict):
+                    merged = merge_calendar_events(CALENDAR_CACHE.get("events") or [], events)
+                    CALENDAR_CACHE["events"] = merged
+                    CALENDAR_CACHE["stale"] = False
+                    CALENDAR_CACHE["syncedAt"] = synced_at
+                    write_calendar_cache(CALENDAR_CACHE)
+        except (OSError, ValueError, json.JSONDecodeError, HTTPError):
+            stale = True
+            if req_start and req_end and win_start and win_end:
+                if req_end <= win_start or req_start >= win_end:
+                    events = []
+                else:
+                    events = events_in_range(store.get("events") or [], start, end)
+
+    return {
+        "configured": True,
+        "stale": stale,
+        "syncedAt": synced_at,
+        "events": events,
+    }
+
+
+def guest_calendar(payload: dict) -> dict:
+    body = {key: payload.get(key) for key in ("configured", "stale", "syncedAt")}
+    body["events"] = []
+    for event in payload.get("events", []):
+        if not isinstance(event, dict):
+            continue
+        body["events"].append({
+            "id": event.get("id", ""), "title": "Busy", "start": event.get("start", ""),
+            "end": event.get("end", ""), "allDay": event.get("allDay") is True,
+            "location": "", "notes": "", "status": event.get("status", ""),
+        })
+    return body
 
 
 def label_from_nominatim(payload: dict) -> str:
@@ -393,6 +715,9 @@ ALLOWED_FILES = {
     "/",
     "/index.html",
     "/dashboard.html",
+    "/calendar.html",
+    "/weather.html",
+    "/network.html",
     "/settings.html",
     "/settings-apps.html",
     "/settings-theme.html",
@@ -400,9 +725,15 @@ ALLOWED_FILES = {
     "/settings-schedule.html",
     "/style.css",
     "/settings.css",
+    "/network.css",
     "/tokens.css",
     "/main.js",
     "/dashboard.js",
+    "/calendar.js",
+    "/weather.js",
+    "/network.js",
+    "/calendar.css",
+    "/weather.css",
     "/settings.js",
     "/settings-apps.js",
     "/settings-theme.js",
@@ -416,6 +747,9 @@ ALLOWED_FILES = {
     "/ambient.js",
     "/ambient.css",
     "/ambient.json",
+    "/tv-appearance.css",
+    "/tv-appearance.js",
+    "/assets/wallpapers/alpine.jpg",
     "/manifest.webmanifest",
     "/favicon.ico",
     "/favicon.svg",
@@ -424,7 +758,7 @@ ALLOWED_FILES = {
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")
 APP_ICON = re.compile(r"^/assets/app/[a-z0-9][a-z0-9.-]*\.png$")
-BLOCKED_FILES = {"/data.local.json", "/server.py", "/pin.local"}
+BLOCKED_FILES = {"/data.local.json", "/calendar-cache.local.json", "/server.py", "/pin.local"}
 ROUTE_REDIRECTS = {
     "/settings": "/settings.html",
     "/settings/": "/settings.html",
@@ -554,6 +888,7 @@ def cookie_header(token: str, max_age: int) -> str:
 
 
 class Handler(SimpleHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
     extensions_map = {
         **SimpleHTTPRequestHandler.extensions_map,
         ".webmanifest": "application/manifest+json",
@@ -563,10 +898,25 @@ class Handler(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(ROOT), **kwargs)
 
+    def send_response(self, code, message=None):
+        self._response_code = code
+        super().send_response(code, message)
+
+    def end_headers(self):
+        self.send_header("X-Content-Type-Options", "nosniff")
+        path = public_path(self.path) or ""
+        if getattr(self, "_response_code", 0) in (200, 304):
+            if path.startswith("/assets/"):
+                self.send_header("Cache-Control", "public, max-age=3600")
+            elif path.endswith((".html", ".css", ".js")) or path == "/":
+                self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
+
     def redirect(self, target: str, code=302):
         self.send_response(code)
         self.send_header("Location", target)
         self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def reject(self, code=404):
@@ -588,6 +938,15 @@ class Handler(SimpleHTTPRequestHandler):
         self.send_header("Cache-Control", "no-store")
         for key, value in extra or ():
             self.send_header(key, value)
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(body)
+
+    def send_bytes(self, code, body: bytes, content_type: str):
+        self.send_response(code)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "private, max-age=120")
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -624,6 +983,73 @@ class Handler(SimpleHTTPRequestHandler):
             body = dict(SETTINGS_STATE)
         self.send_json(200, body)
 
+    def serve_calendar(self):
+        params = parse_qs(urlsplit(self.path).query)
+        now = datetime.now(timezone.utc)
+        start = params.get("start", [(now - timedelta(days=1)).isoformat()])[0]
+        end = params.get("end", [(now + timedelta(days=45)).isoformat()])[0]
+        try:
+            start_dt = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            if start_dt.tzinfo is None or end_dt.tzinfo is None or end_dt <= start_dt or end_dt - start_dt > timedelta(days=62):
+                raise ValueError
+        except (TypeError, ValueError):
+            self.send_json(400, {"error": "range"})
+            return
+        full = self.headers.get("X-Slate-Full", "") == "1"
+        if full and not self.pin_ok():
+            self.send_json(401, {"error": "pin"})
+            return
+        payload = calendar_payload(start_dt.isoformat(), end_dt.isoformat())
+        self.send_json(200, payload if full else guest_calendar(payload))
+
+    def serve_radar(self):
+        params = parse_qs(urlsplit(self.path).query)
+        zoom = params.get("zoom", ["near"])[0]
+        try:
+            frame = int(params.get("frame", ["0"])[0])
+        except ValueError:
+            frame = -1
+        if zoom not in {"near", "wide"} or frame < 0 or frame > 5:
+            self.send_json(400, {"error": "bad"})
+            return
+        with PUBLISH_LOCK:
+            location = dict(SETTINGS_STATE.get("location", DEFAULT_LOCATION))
+        lat, lon = float(location["lat"]), float(location["lon"])
+        span = 1.45 if zoom == "near" else 3.5
+        stamp = int(time.time() // 600 * 600) - frame * 600
+        key = (round(lat, 2), round(lon, 2), zoom, stamp)
+        with RADAR_LOCK:
+            cached = RADAR_CACHE.get(key)
+            if cached and time.monotonic() - cached[0] < 600:
+                self.send_bytes(200, cached[1], "image/png")
+                return
+        bbox = f"{lon-span},{lat-span*.58},{lon+span},{lat+span*.58}"
+        query = urlencode({
+            "bbox": bbox, "bboxSR": "4326", "imageSR": "4326", "size": "960,540",
+            "format": "png32", "transparent": "true", "f": "image",
+            "time": str(stamp * 1000),
+        })
+        request = Request(
+            "https://mapservices.weather.noaa.gov/eventdriven/rest/services/radar/radar_base_reflectivity_time/ImageServer/exportImage?" + query,
+            headers={"User-Agent": NOMINATIM_UA, "Accept": "image/png"},
+        )
+        try:
+            with urlopen(request, timeout=15) as response:
+                body = response.read(4 * 1024 * 1024)
+                content_type = response.headers.get_content_type()
+            if not body.startswith(b"\x89PNG"):
+                raise OSError("radar image unavailable")
+        except (OSError, HTTPError):
+            self.send_json(502, {"error": "radar"})
+            return
+        with RADAR_LOCK:
+            RADAR_CACHE[key] = (time.monotonic(), body)
+            if len(RADAR_CACHE) > 16:
+                oldest = min(RADAR_CACHE, key=lambda item: RADAR_CACHE[item][0])
+                RADAR_CACHE.pop(oldest, None)
+        self.send_bytes(200, body, content_type if content_type.startswith("image/") else "image/png")
+
     def serve_ambient(self):
         self.send_json(200, merge_ambient_payload())
 
@@ -656,7 +1082,7 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "bad"})
             return
         allowed = set(obj.keys())
-        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location", "hidePointer"}):
+        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location", "hidePointer", "tileSize", "tvAppearance", "tvBackdrop", "tvMotion", "tvIntensity"}):
             self.send_json(400, {"error": "bad"})
             return
         with PUBLISH_LOCK:
@@ -672,6 +1098,11 @@ class Handler(SimpleHTTPRequestHandler):
                 current["location"] = normalize_location(merged)
             if "hidePointer" in obj:
                 current["hidePointer"] = obj.get("hidePointer") is True
+            if "tileSize" in obj:
+                current["tileSize"] = normalize_tile_size(obj.get("tileSize"))
+            current.update(normalize_tv_appearance({**current, **{
+                key: value for key, value in obj.items() if key.startswith("tv")
+            }}))
             write_settings_local(current)
             publish_settings()
             body = dict(SETTINGS_STATE)
@@ -699,6 +1130,23 @@ class Handler(SimpleHTTPRequestHandler):
         if path is None:
             self.reject()
             return
+        if path == "/health":
+            self.send_json(200, {"ok": True, "service": "slate"})
+            return
+        if path == "/network.json":
+            query = parse_qs(urlsplit(self.path).query)
+            scan = query.get("scan", [""])[0] == "1"
+            if scan and not getattr(self.server, "lan_enabled", False):
+                self.send_json(403, {"error": "lan"})
+                return
+            self.send_json(200, network_snapshot(scan))
+            return
+        if path == "/calendar.json":
+            self.serve_calendar()
+            return
+        if path == "/radar.png":
+            self.serve_radar()
+            return
         if path in ROUTE_REDIRECTS:
             self.redirect(ROUTE_REDIRECTS[path])
             return
@@ -724,6 +1172,12 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_HEAD(self):
         path = public_path(self.path)
+        if path == "/health":
+            self.send_json(200, {"ok": True, "service": "slate"})
+            return
+        if path == "/calendar.json":
+            self.serve_calendar()
+            return
         if path is None or not path_allowed(path):
             self.reject()
             return
@@ -770,6 +1224,7 @@ class Handler(SimpleHTTPRequestHandler):
         path = public_path(self.path)
         if path == "/settings.json":
             if not self.settings_write_ok():
+                self.close_connection = True
                 self.send_json(401, {"error": "pin"})
                 return
             obj = self.read_object()
@@ -777,6 +1232,7 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/schedule.json":
             if not self.settings_write_ok():
+                self.close_connection = True
                 self.send_json(401, {"error": "pin"})
                 return
             obj = self.read_object()
@@ -821,12 +1277,6 @@ class Handler(SimpleHTTPRequestHandler):
         """Log the request line only. Never the body, the PIN, or the schedule."""
         sys.stderr.write("%s - %s\n" % (self.client_address[0], fmt % args))
 
-    def end_headers(self):
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        super().end_headers()
-
-
 class Server(ThreadingHTTPServer):
     allow_reuse_address = True
     daemon_threads = True
@@ -844,13 +1294,159 @@ def lan_address() -> str:
         sock.close()
 
 
-def listen(host, require_pin):
+def lan_network() -> tuple[str, str, ipaddress.IPv4Network] | None:
+    address = lan_address()
+    if not address:
+        return None
+    try:
+        result = subprocess.run(
+            ["ifconfig", "en0"], capture_output=True, text=True, timeout=2, check=False
+        )
+        match = re.search(r"\bnetmask\s+0x([0-9a-fA-F]{8})", result.stdout)
+        prefix = ipaddress.IPv4Address(int(match.group(1), 16)) if match else None
+        interface = ipaddress.IPv4Interface(f"{address}/{prefix or '24'}")
+    except (OSError, ValueError, subprocess.TimeoutExpired):
+        interface = ipaddress.IPv4Interface(f"{address}/24")
+    if not interface.ip.is_private:
+        return None
+    return "en0", address, interface.network
+
+
+def arp_devices(network: ipaddress.IPv4Network, local_ip: str) -> list[dict]:
+    found: dict[str, dict] = {}
+    try:
+        result = subprocess.run(
+            ["arp", "-an"], capture_output=True, text=True, timeout=3, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        result = None
+    if result and result.returncode == 0:
+        for line in result.stdout.splitlines():
+            match = re.search(r"^\s*(.*?)\s+\((\d{1,3}(?:\.\d{1,3}){3})\)\s+at\s+([^\s]+)", line)
+            if not match:
+                continue
+            name, address, hardware = match.groups()
+            try:
+                ip = ipaddress.IPv4Address(address)
+            except ipaddress.AddressValueError:
+                continue
+            if ip not in network or hardware.lower() == "(incomplete)":
+                continue
+            found[address] = {
+                "ip": address,
+                "name": "" if name.strip() in {"", "?"} else name.strip().rstrip("."),
+                "local": address == local_ip,
+            }
+    found.setdefault(local_ip, {"ip": local_ip, "name": "This Mac", "local": True})
+    return sorted(found.values(), key=lambda item: int(ipaddress.IPv4Address(item["ip"])))
+
+
+def network_snapshot(scan: bool) -> dict:
+    global NETWORK_SCAN_CACHE, NETWORK_SCAN_AT
+    info = lan_network()
+    if not info:
+        return {"ok": False, "error": "No private Wi-Fi address found.", "devices": []}
+    interface, local_ip, network = info
+    if scan:
+        with NETWORK_SCAN_LOCK:
+            now = time.monotonic()
+            if NETWORK_SCAN_CACHE and now - NETWORK_SCAN_AT < 30:
+                return dict(NETWORK_SCAN_CACHE, cached=True)
+            hosts = list(network.hosts())
+            if len(hosts) > 1022:
+                return {
+                    "ok": False,
+                    "error": "This Wi-Fi subnet is too large for a safe scan.",
+                    "interface": interface,
+                    "address": local_ip,
+                    "network": str(network),
+                    "devices": arp_devices(network, local_ip),
+                }
+            ping = shutil.which("ping") or "/sbin/ping"
+
+            def probe(host: ipaddress.IPv4Address) -> bool:
+                if str(host) == local_ip:
+                    return True
+                try:
+                    result = subprocess.run(
+                        [ping, "-n", "-c", "1", "-W", "350", str(host)],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=1.5,
+                        check=False,
+                    )
+                    return result.returncode == 0
+                except (OSError, subprocess.TimeoutExpired):
+                    return False
+
+            with ThreadPoolExecutor(max_workers=48) as pool:
+                list(as_completed([pool.submit(probe, host) for host in hosts]))
+            snapshot = {
+                "ok": True,
+                "interface": interface,
+                "address": local_ip,
+                "network": str(network),
+                "devices": arp_devices(network, local_ip),
+                "scannedAt": int(time.time()),
+                "cached": False,
+            }
+            NETWORK_SCAN_CACHE = snapshot
+            NETWORK_SCAN_AT = time.monotonic()
+            return snapshot
+    return {
+        "ok": True,
+        "interface": interface,
+        "address": local_ip,
+        "network": str(network),
+        "devices": arp_devices(network, local_ip),
+        "scannedAt": None,
+        "cached": False,
+    }
+
+
+def serve_discovery(stop_event: threading.Event) -> None:
+    """Answer a nonce challenge from a same-LAN client when --lan is active."""
+    request_prefix = "SLATE_DISCOVER_V1 "
+    response_prefix = "SLATE_FOUND_V1 "
+    sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind(("0.0.0.0", DISCOVERY_PORT))
+        sock.settimeout(0.5)
+        while not stop_event.is_set():
+            try:
+                raw, address = sock.recvfrom(128)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            try:
+                message = raw.decode("ascii").strip()
+                prefix, nonce = message.split(" ", 1)
+                if prefix != request_prefix.strip() or not re.fullmatch(r"[0-9a-f]{32}", nonce):
+                    continue
+                if not ipaddress.ip_address(address[0]).is_private:
+                    continue
+            except (UnicodeDecodeError, ValueError):
+                continue
+            try:
+                sock.sendto(f"{response_prefix}{nonce} {PORT}".encode("ascii"), address)
+            except OSError:
+                continue
+    except OSError as exc:
+        sys.stderr.write(f"Could not start Slate discovery on UDP {DISCOVERY_PORT}: {exc}\n")
+    finally:
+        sock.close()
+
+
+def listen(host, require_pin, lan_enabled):
     try:
         server = Server((host, PORT), Handler)
     except OSError as exc:
         print(f"Could not listen on {host}:{PORT}: {exc}", file=sys.stderr)
         return None
     server.require_pin = require_pin
+    server.lan_enabled = lan_enabled
     return server
 
 
@@ -875,7 +1471,7 @@ def main() -> None:
     publish_settings()
     publish_data()
 
-    local = listen("127.0.0.1", False)
+    local = listen("127.0.0.1", False, lan)
     if local is None:
         sys.exit(1)
     servers = [local]
@@ -887,7 +1483,7 @@ def main() -> None:
         if not ip or ip.startswith("127."):
             print("No Wi-Fi address found. The phone cannot connect until this Mac is on Wi-Fi.")
         else:
-            remote = listen(ip, True)
+            remote = listen(ip, True, lan)
             if remote is None:
                 for server in servers:
                     server.server_close()
@@ -905,19 +1501,33 @@ def main() -> None:
     print("Leave this Mac awake. If it sleeps, the page stops.")
 
     threads = []
+    discovery_stop = threading.Event()
     for server in servers:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         threads.append(thread)
+    if lan and len(servers) > 1:
+        discovery = threading.Thread(
+            target=serve_discovery,
+            args=(discovery_stop,),
+            name="slate-discovery",
+            daemon=True,
+        )
+        discovery.start()
+        threads.append(discovery)
     try:
         while True:
             time.sleep(3600)
     except KeyboardInterrupt:
         print("\nStopped")
     finally:
+        discovery_stop.set()
         for server in servers:
             server.shutdown()
             server.server_close()
+        for thread in threads:
+            if thread.name == "slate-discovery":
+                thread.join(timeout=1)
 
 
 if __name__ == "__main__":

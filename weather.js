@@ -293,8 +293,13 @@ function setRadarPlaying(on) {
   clearInterval(radarTimer);
   radarPlay.textContent = on ? "Pause" : "Play";
   if (on) {
+    // Frame numbers are age offsets: 5 is oldest and 0 is newest.
+    if (radarFrame === 0) {
+      radarFrame = 5;
+      updateRadarImage();
+    }
     radarTimer = setInterval(() => {
-      radarFrame = (radarFrame + 1) % 6;
+      radarFrame = radarFrame === 0 ? 5 : radarFrame - 1;
       updateRadarImage();
     }, 900);
   }

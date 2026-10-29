@@ -1,4 +1,4 @@
-"""Browser regressions for calendar layout, Home navigation, and saver motion.
+"""Browser regressions for layout, navigation, radar playback, and saver motion.
 
 The local fixture serves sample settings and calendar entries without reading or
 writing the host's private settings, PIN, calendar cache, or app selection.
@@ -40,6 +40,8 @@ class ThemeBrowserTests(unittest.TestCase):
                     self.send_json(200, [{"id": value} for value in fixture["settings"]["homeApps"]])
                 elif path == "/ambient.json":
                     self.send_json(200, json.loads(server.AMBIENT.read_text()))
+                elif path == "/radar.png":
+                    self.send_bytes(200, (ROOT / "assets/app/favicon-32.png").read_bytes(), "image/png")
                 elif path == "/calendar.json":
                     now = datetime.now(timezone.utc)
                     payload = {
@@ -225,6 +227,36 @@ class ThemeBrowserTests(unittest.TestCase):
         for link in links:
             self.assertGreaterEqual(link["left"], 0)
             self.assertLessEqual(link["right"], 390)
+
+    def test_radar_plays_oldest_to_newest_and_resumes(self):
+        self.surface(1366, 768)
+        self.open("weather.html", "!!document.getElementById('radar-play')")
+        self.cdp.eval("""(() => {
+          Date.now = () => 1793275200000;
+          document.getElementById('radar-zoom').click();
+          window.radarFramesSeen = [];
+          const image = document.getElementById('radar-image');
+          new MutationObserver(() => {
+            const url = new URL(image.src);
+            radarFramesSeen.push({frame: Number(url.searchParams.get('frame')), stamp: Number(url.searchParams.get('t'))});
+          }).observe(image, {attributes:true, attributeFilter:['src']});
+          document.getElementById('radar-play').click();
+        })()""")
+        wait_until(self.cdp, "radarFramesSeen.length >= 7", timeout=8)
+        self.cdp.eval("document.getElementById('radar-play').click()")
+        frames = self.cdp.eval("radarFramesSeen.slice(0, 7)")
+        self.assertEqual([f["frame"] for f in frames], [5, 4, 3, 2, 1, 0, 5])
+        self.assertEqual([frames[i + 1]["stamp"] - frames[i]["stamp"] for i in range(5)], [600] * 5)
+
+        self.cdp.eval("document.getElementById('radar-play').click()")
+        wait_until(self.cdp, "new URL(document.getElementById('radar-image').src).searchParams.get('frame') === '3'", timeout=4)
+        self.cdp.eval("document.getElementById('radar-play').click()")
+        paused = self.cdp.eval("document.getElementById('radar-image').src")
+        time.sleep(1)
+        self.assertEqual(self.cdp.eval("document.getElementById('radar-image').src"), paused)
+        self.cdp.eval("document.getElementById('radar-play').click()")
+        wait_until(self.cdp, "new URL(document.getElementById('radar-image').src).searchParams.get('frame') === '2'", timeout=2)
+        self.cdp.eval("document.getElementById('radar-play').click()")
 
     def test_saver_motion_preferences_and_lifecycle(self):
         self.surface(1366, 768)

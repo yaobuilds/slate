@@ -27,7 +27,7 @@ Leave the host computer awake while Slate is in use. If it sleeps, the page stop
 - **Home:** clock, weather, Dashboard, and apps you pick from the catalog.
 - **Dashboard:** guest mode by default. **Now / Next** and **Upcoming** come from Google Calendar when connected. **G** or **Show all** reveals real titles. On Wi‑Fi, that needs your PIN once per session. On the host (`127.0.0.1`), no PIN is required.
 - **Calendar:** Today, Week, and Month views from the same Google Calendar feed.
-- **Weather:** open weather from Home for seven days, hourly detail, a today rain chart, and recent radar (fetched by the server).
+- **Weather:** open weather from Home for seven days, hourly detail, a today rain chart, and recent radar (fetched by the server). Radar playback runs from oldest to newest, then repeats.
 - **Traffic:** open **Traffic** from Home for a map centered on your saved place and nearby live incidents when a public feed covers that area.
 - **Settings:** home apps, appearance, location, PIN, calendar connect, and optional credit link.
 

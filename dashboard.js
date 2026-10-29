@@ -1,4 +1,5 @@
 const CALENDAR_REFRESH_MS = 2 * 60 * 1000;
+const HEADLINES_REFRESH_MS = 2 * 60 * 1000;
 const GUEST_IDLE_MS = 30 * 60 * 1000;
 const TODAY_CAP = 4;
 
@@ -11,9 +12,12 @@ const pinError = document.getElementById("pin-error");
 const todayList = document.getElementById("today-list");
 const upcomingList = document.getElementById("upcoming-list");
 const staleEl = document.getElementById("data-stale");
+const headlinesSection = document.getElementById("headlines");
+const headlineList = document.getElementById("headline-list");
 
 let guestTimer = 0;
 let generation = 0;
+let lastHeadlinesText = "";
 
 function guestOn() {
   return document.body.classList.contains("guest");
@@ -238,6 +242,65 @@ if (typeof ensureIcon === "function") {
   ensureIcon("eyeoff").then((svg) => applyIcon(document.getElementById("guest-pill-icon"), "eyeoff", svg));
 }
 
+function headlineTimeLabel(iso) {
+  if (typeof iso !== "string" || !iso.trim()) return "";
+  const parsed = new Date(iso);
+  if (Number.isNaN(parsed.getTime())) return "";
+  return parsed.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+
+function headlineRow(item) {
+  const li = document.createElement("li");
+  const link = document.createElement("a");
+  link.className = "headline-item";
+  link.href = typeof item.url === "string" ? item.url : "#";
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  link.tabIndex = -1;
+  const title = document.createElement("span");
+  title.className = "headline-title";
+  title.textContent = typeof item.title === "string" ? item.title : "";
+  const meta = document.createElement("span");
+  meta.className = "headline-meta";
+  const source = document.createElement("span");
+  source.className = "headline-source";
+  source.textContent = typeof item.source === "string" ? item.source : "";
+  const time = document.createElement("span");
+  time.className = "headline-time";
+  time.textContent = headlineTimeLabel(item.time);
+  meta.append(source, document.createTextNode(" · "), time);
+  link.append(title, meta);
+  li.append(link);
+  return li;
+}
+
+function renderHeadlines(payload) {
+  const items = Array.isArray(payload?.items) ? payload.items : [];
+  if (!items.length) {
+    if (headlinesSection) headlinesSection.hidden = true;
+    if (headlineList) headlineList.replaceChildren();
+    return;
+  }
+  if (headlinesSection) headlinesSection.hidden = false;
+  if (!headlineList) return;
+  headlineList.replaceChildren(...items.slice(0, 4).map((item) => headlineRow(item)));
+}
+
+async function loadHeadlines() {
+  try {
+    const response = await fetch("headlines.json", { cache: "no-store" });
+    if (!response.ok) return;
+    const text = await response.text();
+    if (text === lastHeadlinesText) return;
+    lastHeadlinesText = text;
+    renderHeadlines(JSON.parse(text));
+  } catch (error) {
+    /* Keep the last good strip. */
+  }
+}
+
 setGuest(true);
 armGuest();
 setInterval(loadCalendar, CALENDAR_REFRESH_MS);
+loadHeadlines();
+setInterval(loadHeadlines, HEADLINES_REFRESH_MS);

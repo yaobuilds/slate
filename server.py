@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import email.utils
 import hashlib
+import html
 import hmac
 import ipaddress
 import json
@@ -18,6 +20,7 @@ import subprocess
 import sys
 import threading
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -56,6 +59,16 @@ CALENDAR_LOCK = threading.Lock()
 CALENDAR_CACHE = None
 CALENDAR_FETCHED_AT = 0.0
 CALENDAR_REFRESH_S = 120
+HEADLINES_LOCK = threading.Lock()
+HEADLINES_CACHE = {"updated": "", "items": []}
+HEADLINES_REFRESH_S = 15 * 60
+HEADLINES_READ_LIMIT = 300 * 1024
+HEADLINES_FEEDS = (
+    ("NPR", "https://feeds.npr.org/1001/rss.xml"),
+    ("BBC", "https://feeds.bbci.co.uk/news/rss.xml"),
+    ("NYT", "https://rss.nytimes.com/services/xml/rss/nyt/HomePage.xml"),
+)
+HEADLINES_UA = "Slate/1.0 (local TV dashboard)"
 CALENDAR_PREFETCH_BACK_DAYS = 1
 CALENDAR_PREFETCH_FORWARD_DAYS = 45
 RADAR_LOCK = threading.Lock()
@@ -214,6 +227,205 @@ def clip_text(value, limit: int) -> str:
     if not isinstance(value, str):
         return ""
     return value.strip().replace("\n", " ")[:limit]
+
+
+def collapse_ws(value: str) -> str:
+    return re.sub(r"\s+", " ", value).strip()
+
+
+def xml_local_tag(tag: str) -> str:
+    if not isinstance(tag, str):
+        return ""
+    return tag.rsplit("}", 1)[-1] if "}" in tag else tag
+
+
+def normalize_headline_title(raw) -> str:
+    if not isinstance(raw, str):
+        return ""
+    text = html.unescape(raw)
+    text = collapse_ws(text)
+    if len(text) > 120:
+        text = text[:119].rstrip() + "…"
+    return text
+
+
+def valid_headline_link(raw) -> str:
+    if not isinstance(raw, str):
+        return ""
+    link = raw.strip()
+    if link.startswith("https://") or link.startswith("http://"):
+        return link
+    return ""
+
+
+def parse_rss_pubdate(raw) -> tuple[str, float]:
+    if not isinstance(raw, str) or not raw.strip():
+        return "", 0.0
+    try:
+        parsed = email.utils.parsedate_to_datetime(raw.strip())
+    except (TypeError, ValueError, OverflowError):
+        return "", 0.0
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed.astimezone().isoformat(timespec="seconds"), parsed.timestamp()
+
+
+def rss_xml_root(xml_bytes: bytes):
+    text = xml_bytes.decode("utf-8", errors="replace")
+    if "content:" in text and "xmlns:content" not in text:
+        text = re.sub(
+            r"<rss\b",
+            '<rss xmlns:content="http://purl.org/rss/1.0/modules/content/"',
+            text,
+            count=1,
+        )
+    if "media:" in text and "xmlns:media" not in text:
+        text = re.sub(
+            r"<rss\b",
+            '<rss xmlns:media="http://search.yahoo.com/mrss/"',
+            text,
+            count=1,
+        )
+    return ET.fromstring(text.encode("utf-8"))
+
+
+def parse_rss_items(xml_bytes: bytes, source: str) -> list:
+    """Parse RSS 2.0 channel items. Returns title, source, time, url, and _ts for sorting."""
+    try:
+        root = rss_xml_root(xml_bytes)
+    except ET.ParseError:
+        return []
+    channel = None
+    if xml_local_tag(root.tag) == "rss":
+        for child in root:
+            if xml_local_tag(child.tag) == "channel":
+                channel = child
+                break
+    elif xml_local_tag(root.tag) == "channel":
+        channel = root
+    if channel is None:
+        return []
+    items = []
+    for element in channel:
+        if xml_local_tag(element.tag) != "item":
+            continue
+        title_raw = link_raw = pub_raw = ""
+        for field in element:
+            name = xml_local_tag(field.tag)
+            if name == "title":
+                title_raw = field.text or ""
+            elif name == "link":
+                link_raw = (field.text or "").strip()
+            elif name == "pubDate":
+                pub_raw = field.text or ""
+        title = normalize_headline_title(title_raw)
+        url = valid_headline_link(link_raw)
+        if not title or not url:
+            continue
+        time_iso, sort_ts = parse_rss_pubdate(pub_raw)
+        items.append({
+            "title": title,
+            "source": source,
+            "time": time_iso,
+            "url": url,
+            "_ts": sort_ts,
+        })
+    items.sort(key=lambda item: item["_ts"], reverse=True)
+    return items
+
+
+def fetch_rss_bytes(url: str) -> bytes:
+    request = Request(
+        url,
+        headers={
+            "User-Agent": HEADLINES_UA,
+            "Accept": "application/rss+xml, application/xml, text/xml, */*",
+        },
+    )
+    with urlopen(request, timeout=8) as response:
+        chunks = []
+        total = 0
+        while total < HEADLINES_READ_LIMIT:
+            piece = response.read(min(65536, HEADLINES_READ_LIMIT - total))
+            if not piece:
+                break
+            chunks.append(piece)
+            total += len(piece)
+        return b"".join(chunks)
+
+
+def merge_headline_round_robin(per_source: dict) -> list:
+    pools = {label: list(items) for label, items in per_source.items() if items}
+    picked = []
+    while len(picked) < 4:
+        added = False
+        for label, _url in HEADLINES_FEEDS:
+            pool = pools.get(label)
+            if not pool:
+                continue
+            picked.append(pool.pop(0))
+            added = True
+            if len(picked) >= 4:
+                break
+        if not added:
+            break
+    picked.sort(key=lambda item: item.get("_ts", 0.0), reverse=True)
+    return [
+        {
+            "title": item["title"],
+            "source": item["source"],
+            "time": item["time"],
+            "url": item["url"],
+        }
+        for item in picked[:4]
+    ]
+
+
+def refresh_headlines_store() -> None:
+    global HEADLINES_CACHE
+    per_source = {}
+    any_ok = False
+    for label, url in HEADLINES_FEEDS:
+        try:
+            raw = fetch_rss_bytes(url)
+            parsed = parse_rss_items(raw, label)
+            if parsed:
+                per_source[label] = parsed[:5]
+                any_ok = True
+        except (OSError, HTTPError, ValueError, ET.ParseError):
+            continue
+    if not any_ok:
+        return
+    payload = {"updated": local_iso_now(), "items": merge_headline_round_robin(per_source)}
+    with HEADLINES_LOCK:
+        HEADLINES_CACHE = payload
+
+
+def headlines_payload() -> dict:
+    with HEADLINES_LOCK:
+        store = HEADLINES_CACHE if isinstance(HEADLINES_CACHE, dict) else {"updated": "", "items": []}
+        items = store.get("items") if isinstance(store.get("items"), list) else []
+        updated = store.get("updated") if isinstance(store.get("updated"), str) else ""
+    clean = []
+    for item in items[:4]:
+        if not isinstance(item, dict):
+            continue
+        title = item.get("title") if isinstance(item.get("title"), str) else ""
+        source = item.get("source") if isinstance(item.get("source"), str) else ""
+        url = item.get("url") if isinstance(item.get("url"), str) else ""
+        time_val = item.get("time") if isinstance(item.get("time"), str) else ""
+        if not title or not valid_headline_link(url):
+            continue
+        clean.append({"title": title, "source": source, "time": time_val, "url": url})
+    return {"updated": updated, "items": clean}
+
+
+def headlines_refresh_loop(stop_event: threading.Event) -> None:
+    refresh_headlines_store()
+    while not stop_event.is_set():
+        if stop_event.wait(HEADLINES_REFRESH_S):
+            break
+        refresh_headlines_store()
 
 
 def valid_iso_date(value) -> bool:
@@ -989,6 +1201,9 @@ class Handler(SimpleHTTPRequestHandler):
             body = dict(SETTINGS_STATE)
         self.send_json(200, body)
 
+    def serve_headlines(self):
+        self.send_json(200, headlines_payload())
+
     def serve_calendar(self):
         params = parse_qs(urlsplit(self.path).query)
         now = datetime.now(timezone.utc)
@@ -1150,6 +1365,9 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/calendar.json":
             self.serve_calendar()
             return
+        if path == "/headlines.json":
+            self.serve_headlines()
+            return
         if path == "/radar.png":
             self.serve_radar()
             return
@@ -1183,6 +1401,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/calendar.json":
             self.serve_calendar()
+            return
+        if path == "/headlines.json":
+            self.serve_headlines()
             return
         if path is None or not path_allowed(path):
             self.reject()
@@ -1508,6 +1729,15 @@ def main() -> None:
 
     threads = []
     discovery_stop = threading.Event()
+    headlines_stop = threading.Event()
+    headlines_thread = threading.Thread(
+        target=headlines_refresh_loop,
+        args=(headlines_stop,),
+        name="slate-headlines",
+        daemon=True,
+    )
+    headlines_thread.start()
+    threads.append(headlines_thread)
     for server in servers:
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -1528,6 +1758,7 @@ def main() -> None:
         print("\nStopped")
     finally:
         discovery_stop.set()
+        headlines_stop.set()
         for server in servers:
             server.shutdown()
             server.server_close()

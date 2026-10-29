@@ -81,10 +81,11 @@ html.night .weather {
 
 .page-dashboard .stage {
   grid-template-columns: 1fr 1fr;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto;
   grid-template-areas:
     "header header"
     "today upcoming"
+    "news news"
     "foot foot";
 }
 
@@ -643,6 +644,63 @@ body.show-focus .panel:focus-visible {
 .panel-today { grid-area: today; }
 .panel-upcoming { grid-area: upcoming; }
 
+.headlines {
+  grid-area: news;
+  min-width: 0;
+  min-height: 0;
+  max-height: 120px;
+  overflow: hidden;
+  padding: 20px 28px;
+  border-radius: 32px;
+  background: var(--panel);
+  box-shadow: inset 0 0 0 2px var(--line);
+}
+
+.headline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 24px;
+  height: 100%;
+  align-items: stretch;
+}
+
+.headline-item {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 8px;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.headline-title {
+  font-size: 28px;
+  line-height: 1.2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headline-meta {
+  font-size: 24px;
+  color: var(--sl-text-2);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headline-source {
+  color: var(--sl-text-2);
+}
+
+.headline-time {
+  color: var(--sl-text-2);
+}
+
 .panel-heading-row {
   display: flex;
   align-items: baseline;
@@ -1180,6 +1238,7 @@ body.hide-pointer * {
         "header"
         "today"
         "upcoming"
+        "news"
         "foot";
       align-content: start;
     }
@@ -1213,6 +1272,16 @@ body.hide-pointer * {
 
     .panel-today { grid-area: today; }
     .panel-upcoming { grid-area: upcoming; }
+
+    .headlines {
+      grid-area: news;
+      max-height: none;
+    }
+
+    .headline-list {
+      grid-template-columns: minmax(0, 1fr);
+      gap: 16px;
+    }
 
     .hint-keys {
       display: flex;
@@ -1318,6 +1387,7 @@ body.hide-pointer * {
         "header"
         "today"
         "upcoming"
+        "news"
         "foot";
     }
 
@@ -1327,6 +1397,8 @@ body.hide-pointer * {
     .weather { grid-area: weather; align-items: flex-end; }
     .tiles { grid-area: apps; }
     .foot { grid-area: foot; }
+    .headlines { grid-area: news; max-height: none; }
+    .headline-list { grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
     .nav-link {
       min-height: 44px;

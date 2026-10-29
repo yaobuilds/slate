@@ -72,7 +72,7 @@ Enable the Google Calendar API for the project.
 
 ## Home appearance
 
-**Settings → Appearance** offers **Sculptural Light** (deep ink and luminous forms), **Aqua** (flowing ribbons), and **Flurry** (colored light streaks around a bright core). All three show on Home for the TV, Mac, and phone. The TV keeps its frame. Aqua and Flurry on the TV use a six-app dock. The Mac keeps the fluid grid. The phone keeps the stacked layout. Still, Drift, and Reactive stay, with Soft, Balanced, and Vivid intensity and a live thumbnail. Drift and Reactive lean the background as focus or the pointer moves, and a press flashes briefly. Still and reduced motion stop that. Select weather on Home to open the forecast page.
+**Settings → Appearance** offers **Sculptural Light** (deep ink and luminous forms), **Aqua** (flowing ribbons), and **Flurry** (colored light streaks around a bright core). Panels, text, and focus rings stay on the shared Slate palette on every page; only the decorative backdrop changes with the look. **Aqua** and **Flurry** each have six color sets (defaults **Tide** and **Spectrum**): Aqua — Tide, Glacier, Lagoon, Dusk, Moss, Ember; Flurry — Spectrum, Ice, Aurora, Ember, Lagoon, Bloom. Sculptural Light can follow any of nine ambient presets. All three show on Home for the TV, Mac, and phone. The TV keeps its frame. Aqua and Flurry on the TV use a six-app dock. The Mac keeps the fluid grid. The phone keeps the stacked layout. Still, Drift, and Reactive stay, with Soft, Balanced, and Vivid intensity and a live preview. Drift and Reactive lean the background as focus or the pointer moves, and a press flashes briefly. Still and reduced motion stop that. Select weather on Home to open the forecast page.
 
 ## TV (optional)
 

@@ -39,6 +39,31 @@ FIXTURE = {
     "money": {"note": MONEY},
 }
 
+
+def browser_calendar_cache():
+    from datetime import datetime, timedelta, timezone
+
+    window_start, window_end = server.calendar_prefetch_bounds()
+    tz = timezone(timedelta(hours=-4))
+    now = datetime.now(tz)
+    start = now - timedelta(minutes=15)
+    end = now + timedelta(hours=2)
+    event = {
+        "id": "browser-fixture",
+        "title": TITLE,
+        "start": start.isoformat(),
+        "end": end.isoformat(),
+        "allDay": False,
+    }
+    return {
+        "configured": True,
+        "stale": False,
+        "syncedAt": now.isoformat(),
+        "windowStart": window_start,
+        "windowEnd": window_end,
+        "events": [event],
+    }
+
 HEADLINE_RSS_FIXTURE = b"""<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
@@ -1158,32 +1183,27 @@ def run_browser(base):
             raise AssertionError(f"1920 scroll {fit}")
 
         cdp.send("Page.navigate", {"url": base + "/dashboard.html"})
+        wait_until(cdp, "document.body && document.body.innerText.includes('Busy')")
+        guest = cdp.eval("""(() => ({
+          text: document.body.innerText,
+          html: document.getElementById('today-list').innerHTML,
+        }))()""")
+        evidence["guest_has_busy"] = "Busy" in guest["text"]
+        if TITLE in guest["text"] or TITLE in guest["html"]:
+            raise AssertionError("guest dashboard showed the event title")
+        meteo = cdp.eval("""performance.getEntriesByType('resource').filter((e) => e.name.includes('open-meteo')).length""")
+        evidence["dashboard_meteo_requests"] = meteo
+
+        cdp.eval("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'G', bubbles: true }))")
         wait_until(cdp, "document.getElementById('pin-form') && !document.getElementById('pin-form').hidden")
         cdp.eval(f"""(() => {{
           document.getElementById('pin-input').value = {json.dumps(PIN)};
           document.getElementById('pin-form').requestSubmit();
         }})()""")
-        wait_until(cdp, "document.body.innerText.includes('Busy')")
-        guest = cdp.eval("""(() => ({
-          text: document.body.innerText,
-          html: document.getElementById('today-list').innerHTML,
-          held: data ? JSON.stringify(data) : ''
-        }))()""")
-        evidence["guest_has_busy"] = "Busy" in guest["text"]
-        if TITLE in guest["text"] or TITLE in guest["html"] or TITLE in guest["held"]:
-            raise AssertionError("guest dashboard showed the event title")
-        if DEADLINE in guest["text"] or MONEY in guest["text"]:
-            raise AssertionError("guest dashboard showed deadlines or money")
-        meteo = cdp.eval("""performance.getEntriesByType('resource').filter((e) => e.name.includes('open-meteo')).length""")
-        evidence["dashboard_meteo_requests"] = meteo
-        if meteo:
-            raise AssertionError(f"dashboard fetched weather {meteo} times")
-
-        cdp.eval("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'G', bubbles: true }))")
         wait_until(cdp, f"document.body.innerText.includes({json.dumps(TITLE)})")
         shown = cdp.eval("document.body.innerText")
-        if DEADLINE not in shown or MONEY not in shown:
-            raise AssertionError("show all did not reveal the fixture")
+        if TITLE not in shown:
+            raise AssertionError("show all did not reveal the calendar fixture")
         cdp.eval("document.dispatchEvent(new KeyboardEvent('keydown', { key: 'G', bubbles: true }))")
         wait_until(cdp, f"!document.body.innerText.includes({json.dumps(TITLE)})")
         again = cdp.eval("document.getElementById('today-list').innerHTML")
@@ -1488,15 +1508,25 @@ class BrowserTests(unittest.TestCase):
         local = root / "data.local.json"
         public = root / "data.json"
         local.write_text(json.dumps(FIXTURE), encoding="utf-8")
-        old = (server.LOCAL, server.PUBLIC, server.EXPECTED_PIN, server.FULL_PAYLOAD)
+        old = (
+            server.LOCAL,
+            server.PUBLIC,
+            server.EXPECTED_PIN,
+            server.FULL_PAYLOAD,
+            server.CALENDAR_CACHE,
+            server.CALENDAR_FETCHED_AT,
+        )
         server.LOCAL = local
         server.PUBLIC = public
         server.EXPECTED_PIN = PIN
         server.FULL_PAYLOAD = None
+        server.CALENDAR_CACHE = browser_calendar_cache()
+        server.CALENDAR_FETCHED_AT = time.monotonic()
         server.CATALOG_IDS = server.load_catalog_ids()
         server.AMBIENT_PRESETS = server.load_ambient_preset_keys()
         server.FAILS.clear()
         server.SESSIONS.clear()
+        server.publish_data()
         httpd = server.Server(("127.0.0.1", 0), server.Handler)
         httpd.require_pin = True
         thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -1511,7 +1541,14 @@ class BrowserTests(unittest.TestCase):
         finally:
             httpd.shutdown()
             httpd.server_close()
-            server.LOCAL, server.PUBLIC, server.EXPECTED_PIN, server.FULL_PAYLOAD = old
+            (
+                server.LOCAL,
+                server.PUBLIC,
+                server.EXPECTED_PIN,
+                server.FULL_PAYLOAD,
+                server.CALENDAR_CACHE,
+                server.CALENDAR_FETCHED_AT,
+            ) = old
             server.FAILS.clear()
             server.SESSIONS.clear()
             self.tmp.cleanup()

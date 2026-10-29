@@ -234,7 +234,7 @@ function homeTiles() {
 
 function homeFocusables() {
   const list = homeTiles();
-  document.querySelectorAll(".foot-link[href='settings.html']").forEach((el) => {
+  document.querySelectorAll(".foot-end .foot-link").forEach((el) => {
     if (!list.includes(el)) list.push(el);
   });
   const weather = document.getElementById("wx");

@@ -39,6 +39,22 @@ FIXTURE = {
     "money": {"note": MONEY},
 }
 
+TINY_JPEG = (
+    b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00"
+    b"\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.\x27 ,#\x1c\x1c(7),01444\x1f\x27=9=82<.342"
+    b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x14\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+    b"\xff\xda\x00\x08\x01\x01\x00\x00?\x00\x7f\xff\xd9"
+)
+
+
+def gallery_multipart(data: bytes, boundary="----slategallery"):
+    body = (
+        f"--{boundary}\r\n"
+        'Content-Disposition: form-data; name="file"; filename="x"\r\n'
+        "Content-Type: image/jpeg\r\n\r\n"
+    ).encode("latin-1") + data + f"\r\n--{boundary}--\r\n".encode("latin-1")
+    return body, f"multipart/form-data; boundary={boundary}"
+
 
 def png_pixels(data):
     """Return (width, height, rows of RGBA) for an 8-bit PNG."""
@@ -1018,6 +1034,236 @@ def run_browser(base):
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
             proc.kill()
+
+
+class GalleryTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.old_gallery = server.GALLERY_DIR
+        self.old_max_count = server.GALLERY_MAX_COUNT
+        self.old_pin = server.EXPECTED_PIN
+        server.GALLERY_DIR = Path(self.tmp.name) / "gallery.local"
+        server.EXPECTED_PIN = PIN
+        server.SESSIONS.clear()
+        server.FAILS.clear()
+        self.httpd = server.Server(("127.0.0.1", 0), server.Handler)
+        self.httpd.require_pin = True
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+        self.base = f"http://127.0.0.1:{self.httpd.server_address[1]}"
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        server.GALLERY_DIR = self.old_gallery
+        server.GALLERY_MAX_COUNT = self.old_max_count
+        server.EXPECTED_PIN = self.old_pin
+        self.tmp.cleanup()
+        self.assertFalse((ROOT / "gallery.local").exists())
+
+    def _raw(self, method, path, body=None, headers=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+        try:
+            conn.request(method, path, body=body, headers=headers or {})
+            resp = conn.getresponse()
+            return resp.status, resp.read(), {k.lower(): v for k, v in resp.getheaders()}
+        finally:
+            conn.close()
+
+    def _unlock(self):
+        status, body, headers = self._raw(
+            "POST",
+            "/unlock",
+            body=json.dumps({"pin": PIN}).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        self.assertEqual(status, 200, body)
+        cookie = headers.get("set-cookie", "")
+        token = cookie.split("slate=", 1)[1].split(";", 1)[0]
+        return token
+
+    def _post_photo(self, token=None, data=TINY_JPEG):
+        body, ctype = gallery_multipart(data)
+        headers = {"Content-Type": ctype, "Content-Length": str(len(body))}
+        if token:
+            headers["Cookie"] = f"slate={token}"
+        return self._raw("POST", "/gallery", body=body, headers=headers)
+
+    def test_sniff_and_orientation_helpers(self):
+        self.assertEqual(server.sniff_media(TINY_JPEG), "jpeg")
+        self.assertEqual(server.sniff_media(b"\x89PNG\r\n\x1a\n" + b"\x00" * 20), "png")
+        self.assertEqual(server.sniff_media(b"GIF89a" + b"\x00" * 20), "gif")
+        webp = b"RIFF" + b"\x00" * 4 + b"WEBP" + b"\x00" * 8
+        self.assertEqual(server.sniff_media(webp), "webp")
+        heic = b"\x00" * 4 + b"ftypheic" + b"\x00" * 8
+        self.assertEqual(server.sniff_media(heic), "heif")
+        self.assertEqual(server.sniff_media(b"\x00" * 4 + b"ftypheif" + b"\x00" * 8), "heif")
+        self.assertEqual(server.sniff_media(b"\x00" * 4 + b"ftypmif1" + b"\x00" * 8), "heif")
+        self.assertEqual(server.sniff_media(b"<svg xmlns"), "svg")
+        self.assertEqual(server.sniff_media(b"<!DOCTYPE html>"), "html")
+        self.assertEqual(server.sniff_media(b"\x00" * 4 + b"ftypavif" + b"\x00" * 8), "avif")
+        self.assertEqual(server.sniff_media(b"II*\x00" + b"\x00" * 20), "tiff")
+        self.assertEqual(server.orientation_sips_flags(6), ["-r", "90"])
+        self.assertEqual(server.orientation_sips_flags(1), [])
+        self.assertEqual(server.orientation_sips_flags(9), [])
+        exif_payload = (
+            b"Exif\x00\x00MM\x00*\x00\x00\x00\x08\x00\x01\x01\x12\x00\x03\x00\x00\x00\x01\x00\x06\x00\x00\x00\x00\x00"
+        )
+        exif_app1 = (
+            b"\xff\xd8\xff\xe1"
+            + struct.pack(">H", len(exif_payload) + 2)
+            + exif_payload
+            + b"\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xda\x00\x08\x01\x01\x00\x00?\x00\x7f\xff\xd9"
+        )
+        stripped = server.strip_jpeg_app1_metadata(exif_app1)
+        self.assertNotIn(b"Exif", stripped)
+        self.assertIn(b"\xff\xc0", stripped)
+
+    def test_sips_missing_does_not_run_subprocess(self):
+        src = server.GALLERY_DIR / ".probe.jpg"
+        server.GALLERY_DIR.mkdir(parents=True, exist_ok=True)
+        src.write_bytes(TINY_JPEG)
+        with mock.patch("server.shutil.which", return_value=None):
+            with mock.patch("server.subprocess.run") as run:
+                with self.assertRaises(server.GalleryError):
+                    server.gallery_convert(src, TINY_JPEG, "jpeg")
+                run.assert_not_called()
+
+    def test_gitignore_and_blocked_gallery_local(self):
+        text = (ROOT / ".gitignore").read_text(encoding="utf-8")
+        self.assertIn("gallery.local/", text)
+        self.assertIn("/gallery.local", server.BLOCKED_FILES)
+
+    def test_lan_gallery_flow(self):
+        status, _body, _headers = self._post_photo()
+        self.assertEqual(status, 401)
+        token = self._unlock()
+        with mock.patch("server.gallery_convert", return_value=(TINY_JPEG, 1, 1)):
+            status, body, _headers = self._post_photo(token)
+        self.assertEqual(status, 201, body)
+        payload = json.loads(body.decode())
+        photo_id = payload["id"]
+        path = server.GALLERY_DIR / f"{photo_id}.jpg"
+        self.assertTrue(path.is_file())
+        self.assertEqual(oct(path.stat().st_mode & 0o777), oct(0o600))
+        status, body, _headers = self._raw("GET", "/gallery.json", headers={"Cookie": f"slate={token}"})
+        self.assertEqual(status, 200, body)
+        guest = json.loads(body.decode())
+        self.assertEqual(guest, {"photos": []})
+        status, body, _headers = self._raw(
+            "GET",
+            "/gallery.json",
+            headers={"Cookie": f"slate={token}", "X-Slate-Full": "1"},
+        )
+        listed = json.loads(body.decode())
+        self.assertEqual(len(listed["photos"]), 1)
+        self.assertEqual(listed["photos"][0]["id"], photo_id)
+        if server.PUBLIC.exists():
+            disk = server.PUBLIC.read_text(encoding="utf-8")
+            self.assertNotIn(photo_id, disk)
+        status, body, headers = self._raw(
+            "GET",
+            f"/gallery/{photo_id}.jpg",
+            headers={"Cookie": f"slate={token}"},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn("image/jpeg", headers.get("content-type", ""))
+        status, _body, _headers = self._raw("GET", f"/gallery/{photo_id}.jpg")
+        self.assertEqual(status, 401)
+        for blocked in ("/gallery.local", f"/gallery.local/{photo_id}.jpg"):
+            status, _body, _headers = self._raw("GET", blocked)
+            self.assertEqual(status, 404, blocked)
+
+    def test_reject_bad_uploads(self):
+        token = self._unlock()
+        with mock.patch("server.gallery_convert") as convert:
+            for payload in (b"<svg x", b"<!DOCTYPE html>", b"random"):
+                body, ctype = gallery_multipart(payload)
+                status, _body, _headers = self._raw(
+                    "POST",
+                    "/gallery",
+                    body=body,
+                    headers={
+                        "Content-Type": ctype,
+                        "Content-Length": str(len(body)),
+                        "Cookie": f"slate={token}",
+                    },
+                )
+                self.assertEqual(status, 415, payload[:20])
+            convert.assert_not_called()
+
+    def test_upload_too_large_declared(self):
+        token = self._unlock()
+        body, ctype = gallery_multipart(TINY_JPEG)
+        status, _body, _headers = self._raw(
+            "POST",
+            "/gallery",
+            body=body,
+            headers={
+                "Content-Type": ctype,
+                "Content-Length": str(server.GALLERY_MAX_UPLOAD + 1),
+                "Cookie": f"slate={token}",
+            },
+        )
+        self.assertEqual(status, 413)
+
+    def test_count_cap(self):
+        token = self._unlock()
+        server.GALLERY_MAX_COUNT = 1
+        with mock.patch("server.gallery_convert", return_value=(TINY_JPEG, 1, 1)):
+            status, _body, _headers = self._post_photo(token)
+            self.assertEqual(status, 201)
+            status, body, _headers = self._post_photo(token)
+            self.assertEqual(status, 507, body)
+            self.assertIn(b"full", body)
+
+    def test_long_edge_rejected(self):
+        token = self._unlock()
+
+        def fail_validate(*_args, **_kwargs):
+            raise server.GalleryError("validate")
+
+        with mock.patch("server.gallery_convert", side_effect=fail_validate):
+            status, _body, _headers = self._post_photo(token)
+        self.assertEqual(status, 415)
+        self.assertFalse(any(server.GALLERY_DIR.glob("*.jpg")))
+
+    def test_localhost_gallery(self):
+        self.httpd.require_pin = False
+        with mock.patch("server.gallery_convert", return_value=(TINY_JPEG, 1, 1)):
+            status, body, _headers = self._post_photo()
+        self.assertEqual(status, 201, body)
+        photo_id = json.loads(body.decode())["id"]
+        status, body, _headers = self._raw("GET", "/gallery.json")
+        self.assertEqual(json.loads(body.decode()), {"photos": []})
+        status, body, _headers = self._raw("GET", "/gallery.json", headers={"X-Slate-Full": "1"})
+        listed = json.loads(body.decode())
+        self.assertEqual(listed["photos"][0]["id"], photo_id)
+
+    def test_resize_command_aspect(self):
+        src = server.gallery_temp_path()
+        src.write_bytes(TINY_JPEG)
+        out_seen = []
+
+        def fake_run(cmd, **kwargs):
+            out_path = Path(cmd[cmd.index("--out") + 1])
+            out_path.write_bytes(TINY_JPEG)
+            out_seen.append(cmd)
+            return subprocess.CompletedProcess(cmd, 0)
+
+        with mock.patch("server.shutil.which", return_value="/usr/bin/sips"):
+            with mock.patch("server.sips_measure", return_value=(4000, 3000)):
+                with mock.patch("server.subprocess.run", side_effect=fake_run):
+                    cleaned, w, h = server.gallery_convert(src, TINY_JPEG, "jpeg")
+        self.assertEqual((w, h), (1, 1))
+        self.assertIn("-Z", out_seen[0])
+        self.assertIn("1920", out_seen[0])
+        out_seen.clear()
+        with mock.patch("server.shutil.which", return_value="/usr/bin/sips"):
+            with mock.patch("server.sips_measure", return_value=(800, 600)):
+                with mock.patch("server.subprocess.run", side_effect=fake_run):
+                    server.gallery_convert(src, TINY_JPEG, "jpeg")
+        self.assertNotIn("-Z", out_seen[0])
 
 
 class BrowserTests(unittest.TestCase):

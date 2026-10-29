@@ -14,6 +14,7 @@ import re
 import secrets
 import socket
 import shutil
+import struct
 import subprocess
 import sys
 import threading
@@ -96,6 +97,19 @@ AMBIENT_PRESETS = set()
 NOMINATIM_UA = "SlateDashboard/1.0 (local personal dashboard)"
 PLACE_LAST_CALL = 0.0
 PLACE_LOCK = threading.Lock()
+
+GALLERY_DIR = ROOT / "gallery.local"
+GALLERY_MAX_UPLOAD = 40 * 1024 * 1024
+GALLERY_MAX_COUNT = 200
+GALLERY_MAX_TOTAL = 500 * 1024 * 1024
+GALLERY_MAX_EDGE = 1920
+GALLERY_ID_RE = re.compile(r"^[0-9a-f]{32}$")
+GALLERY_IMAGE_RE = re.compile(r"^/gallery/([0-9a-f]{32})\.jpg$")
+GALLERY_LOCK = threading.Lock()
+
+
+class GalleryError(Exception):
+    pass
 
 
 def write_public(text: str) -> None:
@@ -717,6 +731,478 @@ def pin_matches(offered) -> bool:
     return bool(PIN_RE.fullmatch(raw)) and same
 
 
+def _gallery_path_inside(path: Path) -> bool:
+    try:
+        path.resolve().relative_to(GALLERY_DIR.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
+
+
+def gallery_ensure_dir() -> None:
+    GALLERY_DIR.mkdir(mode=0o700, exist_ok=True)
+    try:
+        os.chmod(GALLERY_DIR, 0o700)
+    except OSError:
+        pass
+
+
+def gallery_temp_path() -> Path:
+    gallery_ensure_dir()
+    while True:
+        name = f".{secrets.token_hex(16)}.tmp"
+        path = GALLERY_DIR / name
+        if not path.exists():
+            return path
+
+
+def gallery_delete_temps(*paths: Path) -> None:
+    for path in paths:
+        if not path:
+            continue
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+
+
+def sniff_media(data: bytes) -> str | None:
+    if len(data) < 4:
+        return None
+    head = data[:512].lstrip()
+    lower = head.lower()
+    if lower.startswith(b"<!doctype") or lower.startswith(b"<html") or lower.startswith(b"<script"):
+        return "html"
+    if b"<svg" in lower[:256]:
+        return "svg"
+    if b"<script" in lower[:256]:
+        return "script"
+    if len(data) < 12:
+        return None
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpeg"
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "png"
+    if data[:6] in (b"GIF87a", b"GIF89a"):
+        return "gif"
+    if data[:4] == b"RIFF" and len(data) >= 12:
+        kind = data[8:12]
+        if kind == b"WEBP":
+            return "webp"
+        if kind == b"AVI ":
+            return "video"
+    if data[4:8] == b"ftyp" and len(data) >= 12:
+        brand = data[8:12]
+        if brand == b"avif":
+            return "avif"
+        if brand in (b"heic", b"heif", b"mif1"):
+            return "heif"
+    if data[:4] in (b"II*\x00", b"MM\x00*"):
+        return "tiff"
+    if data[:4] == b"%PDF":
+        return "pdf"
+    return None
+
+
+def sniff_accepts_still(data: bytes) -> bool:
+    kind = sniff_media(data)
+    return kind in {"jpeg", "png", "gif", "webp", "heif"}
+
+
+def orientation_sips_flags(exif_value: int | None) -> list[str]:
+    if exif_value is None or exif_value == 1 or exif_value < 2 or exif_value > 8:
+        return []
+    table = {
+        2: ["-f", "horizontal"],
+        3: ["-r", "180"],
+        4: ["-f", "vertical"],
+        5: ["-f", "horizontal", "-r", "90"],
+        6: ["-r", "90"],
+        7: ["-f", "horizontal", "-r", "270"],
+        8: ["-r", "270"],
+    }
+    return list(table.get(exif_value, []))
+
+
+def irot_sips_flags(quarters: int) -> list[str]:
+    table = {1: ["-r", "270"], 2: ["-r", "180"], 3: ["-r", "90"]}
+    return list(table.get(quarters, []))
+
+
+def _tiff_short_at(value_field: int, little: bool) -> int:
+    if little:
+        return value_field & 0xFFFF
+    return (value_field >> 16) & 0xFFFF
+
+
+def _exif_orientation_from_tiff(tiff: bytes) -> int | None:
+    if len(tiff) < 8:
+        return None
+    if tiff[:2] == b"II":
+        little = True
+    elif tiff[:2] == b"MM":
+        little = False
+    else:
+        return None
+    u16 = lambda off: int.from_bytes(tiff[off:off + 2], "little" if little else "big")
+    u32 = lambda off: int.from_bytes(tiff[off:off + 4], "little" if little else "big")
+    if u16(2) != 0x002A:
+        return None
+    ifd0 = u32(4)
+    if ifd0 + 2 > len(tiff):
+        return None
+    count = u16(ifd0)
+    pos = ifd0 + 2
+    for _ in range(count):
+        if pos + 12 > len(tiff):
+            break
+        tag = u16(pos)
+        field_type = u16(pos + 2)
+        count_val = u32(pos + 4)
+        value_field = u32(pos + 8)
+        if tag == 0x0112 and field_type == 3 and count_val == 1:
+            return _tiff_short_at(value_field, little)
+        pos += 12
+    return None
+
+
+def jpeg_exif_orientation(data: bytes) -> int | None:
+    if not data.startswith(b"\xff\xd8"):
+        return None
+    i = 2
+    while i + 4 <= len(data):
+        if data[i] != 0xFF:
+            return None
+        marker = data[i + 1]
+        i += 2
+        if marker in (0xD8, 0x01):
+            continue
+        if marker == 0xD9:
+            break
+        if i + 2 > len(data):
+            break
+        seglen = int.from_bytes(data[i:i + 2], "big")
+        if seglen < 2 or i + seglen > len(data):
+            break
+        if marker == 0xE1:
+            payload = data[i + 2:i + seglen]
+            if payload.startswith(b"Exif\x00\x00"):
+                return _exif_orientation_from_tiff(payload[6:])
+        i += seglen
+    return None
+
+
+def webp_exif_orientation(data: bytes) -> int | None:
+    if len(data) < 12 or data[:4] != b"RIFF" or data[8:12] != b"WEBP":
+        return None
+    pos = 12
+    while pos + 8 <= len(data):
+        size = int.from_bytes(data[pos + 4:pos + 8], "little")
+        chunk = data[pos:pos + 8]
+        if chunk[:4] == b"EXIF":
+            payload = data[pos + 8:pos + 8 + size]
+            if payload.startswith(b"Exif\x00\x00"):
+                return _exif_orientation_from_tiff(payload[6:])
+            return _exif_orientation_from_tiff(payload)
+        pos += 8 + size + (size & 1)
+    return None
+
+
+def _heif_box_iter(data: bytes, start: int, end: int):
+    pos = start
+    while pos + 8 <= end:
+        size = int.from_bytes(data[pos:pos + 4], "big")
+        kind = data[pos + 4:pos + 8]
+        if size == 0:
+            size = end - pos
+        elif size == 1 and pos + 16 <= end:
+            size = int.from_bytes(data[pos + 8:pos + 16], "big")
+            header = 16
+        else:
+            header = 8
+        if size < header or pos + size > end:
+            break
+        yield kind, pos + header, pos + size, size
+        pos += size
+
+
+def heif_exif_orientation(data: bytes) -> int | None:
+    idx = 0
+    while True:
+        idx = data.find(b"Exif\x00\x00", idx)
+        if idx < 0:
+            return None
+        value = _exif_orientation_from_tiff(data[idx + 6:])
+        if value is not None:
+            return value
+        idx += 6
+
+
+def heif_irot_quarters(data: bytes) -> int | None:
+    if sniff_media(data) != "heif":
+        return None
+    for kind, start, end, _size in _heif_box_iter(data, 0, len(data)):
+        if kind != b"meta":
+            continue
+        for sub, s, e, _ in _heif_box_iter(data, start, end):
+            if sub != b"iprp":
+                continue
+            for sub2, s2, e2, _ in _heif_box_iter(data, s, e):
+                if sub2 != b"ipco":
+                    continue
+                for sub3, s3, e3, _ in _heif_box_iter(data, s2, e2):
+                    if sub3 == b"irot" and e3 - s3 >= 2:
+                        return data[s3 + 1] & 3
+    return None
+
+
+def media_orientation_flags(data: bytes, kind: str) -> list[str]:
+    if kind in {"png", "gif"}:
+        return []
+    exif = None
+    if kind == "jpeg":
+        exif = jpeg_exif_orientation(data)
+    elif kind == "webp":
+        exif = webp_exif_orientation(data)
+    elif kind == "heif":
+        exif = heif_exif_orientation(data)
+    if exif is not None and 2 <= exif <= 8:
+        return orientation_sips_flags(exif)
+    if kind == "heif":
+        irot = heif_irot_quarters(data)
+        if irot:
+            return irot_sips_flags(irot)
+    return []
+
+
+def sips_measure(path: Path) -> tuple[int, int]:
+    proc = subprocess.run(
+        ["sips", "-g", "pixelWidth", "-g", "pixelHeight", str(path)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise GalleryError("measure")
+    width = height = 0
+    for line in proc.stdout.splitlines():
+        if "pixelWidth:" in line:
+            width = int(line.rsplit(":", 1)[-1].strip())
+        if "pixelHeight:" in line:
+            height = int(line.rsplit(":", 1)[-1].strip())
+    if width < 1 or height < 1:
+        raise GalleryError("measure")
+    return width, height
+
+
+def strip_jpeg_app1_metadata(data: bytes) -> bytes:
+    if not data.startswith(b"\xff\xd8"):
+        raise GalleryError("strip")
+    out = bytearray()
+    out.extend(data[:2])
+    i = 2
+    while i + 2 <= len(data):
+        if data[i] != 0xFF:
+            raise GalleryError("strip")
+        marker = data[i + 1]
+        if marker == 0xD9:
+            out.extend(data[i:])
+            break
+        if marker == 0xDA:
+            out.extend(data[i:])
+            break
+        if i + 4 > len(data):
+            raise GalleryError("strip")
+        seglen = int.from_bytes(data[i + 2:i + 4], "big")
+        if seglen < 2 or i + 2 + seglen > len(data):
+            raise GalleryError("strip")
+        segment = data[i:i + 2 + seglen]
+        if marker == 0xE1:
+            payload = data[i + 4:i + 2 + seglen]
+            if payload.startswith(b"Exif\x00\x00") or payload.startswith(
+                b"http://ns.adobe.com/xap/1.0/\x00"
+            ) or payload.startswith(b"http://ns.adobe.com/xmp/extension/\x00"):
+                i += 2 + seglen
+                continue
+        out.extend(segment)
+        i += 2 + seglen
+    else:
+        raise GalleryError("strip")
+    return bytes(out)
+
+
+def jpeg_sof_size(data: bytes) -> tuple[int, int]:
+    i = 2
+    while i + 4 <= len(data):
+        if data[i] != 0xFF:
+            break
+        marker = data[i + 1]
+        i += 2
+        if marker in (0xD8, 0x01):
+            continue
+        if marker == 0xD9:
+            break
+        if i + 2 > len(data):
+            break
+        seglen = int.from_bytes(data[i:i + 2], "big")
+        if marker == 0xC0 and seglen >= 7 and i + 7 <= len(data):
+            height = int.from_bytes(data[i + 3:i + 5], "big")
+            width = int.from_bytes(data[i + 5:i + 7], "big")
+            return width, height
+        i += seglen
+    return 0, 0
+
+
+def validate_gallery_jpeg(data: bytes) -> tuple[int, int]:
+    if not data.startswith(b"\xff\xd8\xff"):
+        raise GalleryError("validate")
+    i = 2
+    saw_baseline = False
+    while i + 4 <= len(data):
+        if data[i] != 0xFF:
+            raise GalleryError("validate")
+        marker = data[i + 1]
+        i += 2
+        if marker == 0xC0:
+            saw_baseline = True
+            break
+        if marker in (0xD8, 0x01):
+            continue
+        if marker == 0xD9:
+            break
+        if i + 2 > len(data):
+            break
+        seglen = int.from_bytes(data[i:i + 2], "big")
+        i += seglen
+    if not saw_baseline:
+        raise GalleryError("validate")
+    width, height = jpeg_sof_size(data)
+    if width < 1 or height < 1:
+        raise GalleryError("validate")
+    if max(width, height) > GALLERY_MAX_EDGE:
+        raise GalleryError("validate")
+    return width, height
+
+
+def gallery_convert(src: Path, header_data: bytes, kind: str) -> tuple[bytes, int, int]:
+    if not shutil.which("sips"):
+        raise GalleryError("sips")
+    orient = media_orientation_flags(header_data, kind)
+    width, height = sips_measure(src)
+    out_temp = gallery_temp_path()
+    cmd = ["sips"]
+    cmd.extend(orient)
+    if max(width, height) > GALLERY_MAX_EDGE:
+        cmd.extend(["-Z", str(GALLERY_MAX_EDGE)])
+    cmd.extend(["-s", "format", "jpeg", "-s", "formatOptions", "80", "--out", str(out_temp), str(src)])
+    proc = subprocess.run(cmd, capture_output=True, check=False)
+    if proc.returncode != 0:
+        gallery_delete_temps(out_temp)
+        raise GalleryError("convert")
+    try:
+        raw = out_temp.read_bytes()
+        cleaned = strip_jpeg_app1_metadata(raw)
+        width, height = validate_gallery_jpeg(cleaned)
+    except GalleryError:
+        gallery_delete_temps(out_temp)
+        raise
+    finally:
+        gallery_delete_temps(out_temp)
+    return cleaned, width, height
+
+
+def gallery_usage() -> tuple[int, int]:
+    if not GALLERY_DIR.is_dir():
+        return 0, 0
+    count = 0
+    total = 0
+    for entry in GALLERY_DIR.iterdir():
+        if entry.name.startswith(".") or entry.is_symlink():
+            continue
+        if not entry.is_file() or entry.suffix.lower() != ".jpg":
+            continue
+        if not GALLERY_ID_RE.fullmatch(entry.stem):
+            continue
+        count += 1
+        try:
+            total += entry.stat().st_size
+        except OSError:
+            pass
+    return count, total
+
+
+def gallery_list_payload(full: bool) -> dict:
+    if not full:
+        return {"photos": []}
+    photos = []
+    if GALLERY_DIR.is_dir():
+        items = []
+        for entry in GALLERY_DIR.iterdir():
+            if entry.name.startswith(".") or entry.is_symlink():
+                continue
+            if not entry.is_file() or entry.suffix.lower() != ".jpg":
+                continue
+            if not GALLERY_ID_RE.fullmatch(entry.stem):
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+                data = entry.read_bytes()
+                width, height = jpeg_sof_size(data)
+            except OSError:
+                continue
+            if width < 1 or height < 1:
+                continue
+            photo_id = entry.stem
+            items.append((mtime, photo_id, width, height))
+        items.sort(key=lambda row: row[0], reverse=True)
+        for _mtime, photo_id, width, height in items:
+            photos.append(
+                {
+                    "id": photo_id,
+                    "w": width,
+                    "h": height,
+                    "src": f"/gallery/{photo_id}.jpg",
+                }
+            )
+    return {"photos": photos}
+
+
+def parse_multipart_file(body: bytes, content_type: str) -> tuple[str, bytes | None]:
+    """Return ('ok', data), ('many', None), or ('bad', None)."""
+    if not content_type.startswith("multipart/form-data"):
+        return "bad", None
+    match = re.search(r'boundary=(?:"([^"]+)"|([^;\s]+))', content_type)
+    if not match:
+        return "bad", None
+    boundary = (match.group(1) or match.group(2)).encode("latin-1")
+    delimiter = b"--" + boundary
+    parts = body.split(delimiter)
+    file_parts = []
+    for part in parts:
+        part = part.strip(b"\r\n")
+        if not part or part == b"--":
+            continue
+        if part.endswith(b"--"):
+            part = part[:-2]
+        header_blob, _, payload = part.partition(b"\r\n\r\n")
+        if not header_blob:
+            continue
+        headers = header_blob.decode("latin-1", errors="replace").split("\r\n")
+        disp = ""
+        for line in headers:
+            if line.lower().startswith("content-disposition:"):
+                disp = line
+                break
+        if 'name="file"' not in disp and "name=file" not in disp:
+            continue
+        file_parts.append(payload.rstrip(b"\r\n"))
+    if len(file_parts) > 1:
+        return "many", None
+    if len(file_parts) != 1:
+        return "bad", None
+    return "ok", file_parts[0]
+
+
 ALLOWED_FILES = {
     "/",
     "/index.html",
@@ -760,11 +1246,21 @@ ALLOWED_FILES = {
     "/favicon.ico",
     "/favicon.svg",
     "/assets/shift-a-slate-dim.svg",
+    "/gallery.html",
+    "/gallery.css",
+    "/gallery.js",
+    "/slate-surface.js",
 }
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")
 APP_ICON = re.compile(r"^/assets/app/[a-z0-9][a-z0-9.-]*\.png$")
-BLOCKED_FILES = {"/data.local.json", "/calendar-cache.local.json", "/server.py", "/pin.local"}
+BLOCKED_FILES = {
+    "/data.local.json",
+    "/calendar-cache.local.json",
+    "/server.py",
+    "/pin.local",
+    "/gallery.local",
+}
 ROUTE_REDIRECTS = {
     "/settings": "/settings.html",
     "/settings/": "/settings.html",
@@ -785,6 +1281,8 @@ def path_blocked(path):
     """Never serve code, local files, git, or the private schedule file."""
     lowered = path.lower()
     if path in BLOCKED_FILES:
+        return True
+    if path == "/gallery.local" or path.startswith("/gallery.local/"):
         return True
     if lowered.endswith(".py") or lowered.endswith(".local"):
         return True
@@ -948,11 +1446,11 @@ class Handler(SimpleHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def send_bytes(self, code, body: bytes, content_type: str):
+    def send_bytes(self, code, body: bytes, content_type: str, cache_control="private, max-age=120"):
         self.send_response(code)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "private, max-age=120")
+        self.send_header("Cache-Control", cache_control)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(body)
@@ -982,6 +1480,130 @@ class Handler(SimpleHTTPRequestHandler):
             full = self.headers.get("X-Slate-Full", "") == "1"
             body = payload if full else guest_schedule(payload)
         self.send_json(200, body)
+
+    def serve_gallery_list(self):
+        if not self.pin_ok():
+            self.send_json(401, {"error": "pin"})
+            return
+        full = self.headers.get("X-Slate-Full", "") == "1"
+        self.send_json(200, gallery_list_payload(full))
+
+    def serve_gallery_image(self, photo_id: str):
+        if not self.pin_ok():
+            self.send_json(401, {"error": "pin"})
+            return
+        path = GALLERY_DIR / f"{photo_id}.jpg"
+        if not _gallery_path_inside(path) or not path.is_file() or path.is_symlink():
+            self.reject()
+            return
+        try:
+            body = path.read_bytes()
+        except OSError:
+            self.reject()
+            return
+        self.send_bytes(200, body, "image/jpeg", cache_control="private, no-store")
+
+    def read_upload_body(self, max_len: int) -> bytes | None:
+        raw_len = self.headers.get("Content-Length", "")
+        if not raw_len.isdigit():
+            self.close_connection = True
+            return None
+        length = int(raw_len)
+        if length > max_len:
+            return None
+        if length == 0:
+            return b""
+        try:
+            return self.rfile.read(length)
+        except OSError:
+            self.close_connection = True
+            return None
+
+    def save_gallery_upload(self):
+        if not self.settings_write_ok():
+            self.close_connection = True
+            self.send_json(401, {"error": "pin"})
+            return
+        ctype = self.headers.get("Content-Type", "")
+        if not ctype.startswith("multipart/form-data"):
+            self.send_json(415, {"error": "type"})
+            return
+        raw_len = self.headers.get("Content-Length", "")
+        if not raw_len.isdigit():
+            self.close_connection = True
+            self.send_json(400, {"error": "bad"})
+            return
+        length = int(raw_len)
+        if length > GALLERY_MAX_UPLOAD:
+            self.close_connection = True
+            self.send_json(413, {"error": "large"})
+            return
+        if length == 0:
+            self.send_json(400, {"error": "bad"})
+            return
+        body = self.read_upload_body(GALLERY_MAX_UPLOAD)
+        if body is None:
+            self.send_json(400, {"error": "bad"})
+            return
+        if len(body) != length:
+            self.send_json(400, {"error": "bad"})
+            return
+        parse_kind, file_data = parse_multipart_file(body, ctype)
+        if parse_kind == "many":
+            self.send_json(400, {"error": "bad"})
+            return
+        if parse_kind != "ok" or not file_data:
+            self.send_json(400, {"error": "bad"})
+            return
+        kind = sniff_media(file_data)
+        if kind is None or kind not in {"jpeg", "png", "gif", "webp", "heif"}:
+            self.send_json(415, {"error": "type"})
+            return
+        src_temp = gallery_temp_path()
+        out_temp = gallery_temp_path()
+        try:
+            src_temp.write_bytes(file_data)
+            cleaned, width, height = gallery_convert(src_temp, file_data, kind)
+        except GalleryError:
+            gallery_delete_temps(src_temp, out_temp)
+            self.send_json(415, {"error": "type"})
+            return
+        finally:
+            gallery_delete_temps(src_temp)
+        photo_id = secrets.token_hex(16)
+        final_path = GALLERY_DIR / f"{photo_id}.jpg"
+        try:
+            out_temp.write_bytes(cleaned)
+        except OSError:
+            gallery_delete_temps(out_temp)
+            self.send_json(415, {"error": "type"})
+            return
+        gallery_ensure_dir()
+        with GALLERY_LOCK:
+            count, total = gallery_usage()
+            if count >= GALLERY_MAX_COUNT or total + len(cleaned) > GALLERY_MAX_TOTAL:
+                gallery_delete_temps(out_temp)
+                self.send_json(507, {"error": "full"})
+                return
+            if not _gallery_path_inside(final_path):
+                gallery_delete_temps(out_temp)
+                self.send_json(415, {"error": "type"})
+                return
+            try:
+                os.replace(out_temp, final_path)
+                os.chmod(final_path, 0o600)
+            except OSError:
+                gallery_delete_temps(out_temp)
+                self.send_json(415, {"error": "type"})
+                return
+        payload = {
+            "ok": True,
+            "id": photo_id,
+            "w": width,
+            "h": height,
+            "src": f"/gallery/{photo_id}.jpg",
+        }
+        self.send_json(201, payload)
 
     def serve_settings_get(self):
         with PUBLISH_LOCK:
@@ -1150,6 +1772,13 @@ class Handler(SimpleHTTPRequestHandler):
         if path == "/calendar.json":
             self.serve_calendar()
             return
+        if path == "/gallery.json":
+            self.serve_gallery_list()
+            return
+        image_match = GALLERY_IMAGE_RE.match(path or "")
+        if image_match:
+            self.serve_gallery_image(image_match.group(1))
+            return
         if path == "/radar.png":
             self.serve_radar()
             return
@@ -1183,6 +1812,13 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/calendar.json":
             self.serve_calendar()
+            return
+        if path == "/gallery.json":
+            self.serve_gallery_list()
+            return
+        image_match = GALLERY_IMAGE_RE.match(path or "")
+        if image_match:
+            self.serve_gallery_image(image_match.group(1))
             return
         if path is None or not path_allowed(path):
             self.reject()
@@ -1228,6 +1864,9 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = public_path(self.path)
+        if path == "/gallery":
+            self.save_gallery_upload()
+            return
         if path == "/settings.json":
             if not self.settings_write_ok():
                 self.close_connection = True

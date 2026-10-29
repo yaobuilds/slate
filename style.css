@@ -1595,18 +1595,37 @@ body.hide-pointer * {
     justify-self: end;
     align-self: start;
     align-items: flex-end;
-    padding: 12px 16px;
-    border-radius: 20px;
-    background: rgba(16, 20, 26, 0.55);
-    border: 1px solid rgba(230, 225, 215, 0.12);
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    border: none;
+  }
+
+  html:not([data-slate-surface='tv']) .page-home .wx-hours {
+    border-top: none;
+    padding-top: 18px;
+  }
+
+  html:not([data-slate-surface='tv']) .page-home .tile {
+    border: none;
+    border-radius: 16px;
+    background: var(--sl-panel);
+  }
+
+  html:not([data-slate-surface='tv']) .page-home .tile .i {
+    color: var(--sl-text);
+  }
+
+  html:not([data-slate-surface='tv']) .page-home .tile .nm {
+    color: var(--sl-text);
+    font-weight: 600;
   }
 
   html:not([data-slate-surface='tv']) .page-home .foot {
     grid-area: foot;
-    position: sticky;
-    bottom: 0;
-    padding-top: 8px;
-    background: linear-gradient(180deg, transparent, rgba(16, 20, 26, 0.92) 28%);
+    position: static;
+    padding-top: 0;
+    background: transparent;
   }
 
   html:not([data-slate-surface='tv']) .page-dashboard .stage,

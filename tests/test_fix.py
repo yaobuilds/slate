@@ -616,6 +616,94 @@ class FixTests(unittest.TestCase):
             open_server.shutdown()
             open_server.server_close()
 
+    def test_tv_palette_settings(self):
+        self.assertEqual(server.normalize_tv_appearance({})["tvAquaPalette"], "tide")
+        self.assertEqual(server.normalize_tv_appearance({})["tvFlurryPalette"], "spectrum")
+        for key in ("glacier", "lagoon", "dusk", "moss", "ember"):
+            self.assertEqual(
+                server.normalize_tv_appearance({"tvAquaPalette": key})["tvAquaPalette"],
+                key,
+            )
+        for key in ("ice", "aurora", "ember", "lagoon", "bloom"):
+            self.assertEqual(
+                server.normalize_tv_appearance({"tvFlurryPalette": key})["tvFlurryPalette"],
+                key,
+            )
+        self.assertEqual(server.normalize_tv_appearance({"tvAquaPalette": "nope"})["tvAquaPalette"], "tide")
+        self.assertEqual(server.normalize_tv_appearance({"tvFlurryPalette": "bad"})["tvFlurryPalette"], "spectrum")
+
+        open_server = server.Server(("127.0.0.1", 0), server.Handler)
+        open_server.require_pin = False
+        thread = threading.Thread(target=open_server.serve_forever, daemon=True)
+        thread.start()
+        base = f"http://127.0.0.1:{open_server.server_address[1]}"
+        old_settings = server.SETTINGS_LOCAL
+        old_apps = server.APPS_PUBLIC
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                root = Path(tmp)
+                server.SETTINGS_LOCAL = root / "settings.local.json"
+                server.APPS_PUBLIC = root / "apps.json"
+                server.CATALOG_IDS = server.load_catalog_ids()
+                server.AMBIENT_PRESETS = server.load_ambient_preset_keys()
+                server.publish_settings()
+                with urllib.request.urlopen(base + "/settings.json", timeout=5) as resp:
+                    data = json.loads(resp.read().decode())
+                self.assertEqual(data.get("tvAquaPalette"), "tide")
+                self.assertEqual(data.get("tvFlurryPalette"), "spectrum")
+
+                req = urllib.request.Request(
+                    base + "/settings.json",
+                    data=json.dumps({"tvAquaPalette": "dusk", "hdmiInput": "2"}).encode(),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req, timeout=5) as resp:
+                    saved = json.loads(resp.read().decode())
+                self.assertEqual(saved["tvAquaPalette"], "dusk")
+                self.assertEqual(saved["tvFlurryPalette"], "spectrum")
+                self.assertEqual(saved["hdmiInput"], "2")
+
+                req2 = urllib.request.Request(
+                    base + "/settings.json",
+                    data=json.dumps({"tvFlurryPalette": "nope"}).encode(),
+                    method="POST",
+                    headers={"Content-Type": "application/json"},
+                )
+                with urllib.request.urlopen(req2, timeout=5) as resp:
+                    saved2 = json.loads(resp.read().decode())
+                self.assertEqual(saved2["tvFlurryPalette"], "spectrum")
+                self.assertEqual(saved2["tvAquaPalette"], "dusk")
+
+                stored = json.loads(server.SETTINGS_LOCAL.read_text(encoding="utf-8"))
+                self.assertEqual(stored["tvAquaPalette"], "dusk")
+                self.assertEqual(stored["hdmiInput"], "2")
+        finally:
+            server.SETTINGS_LOCAL = old_settings
+            server.APPS_PUBLIC = old_apps
+            open_server.shutdown()
+            open_server.server_close()
+
+        lan_server = server.Server(("127.0.0.1", 0), server.Handler)
+        lan_server.require_pin = True
+        lan_server.lan_enabled = False
+        thread = threading.Thread(target=lan_server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", lan_server.server_address[1], timeout=5)
+            conn.request(
+                "POST",
+                "/settings.json",
+                body=json.dumps({"tvAquaPalette": "moss"}).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            resp = conn.getresponse()
+            self.assertEqual(resp.status, 401)
+            conn.close()
+        finally:
+            lan_server.shutdown()
+            lan_server.server_close()
+
     def test_schedule_post_normalizes_and_stays_private(self):
         title = "Recital EXAMPLE"
         before = self.local.read_text(encoding="utf-8")

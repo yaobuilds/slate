@@ -235,6 +235,8 @@ SETTINGS_STATE = {
     "tvBackdrop": "ambient",
     "tvMotion": "drift",
     "tvIntensity": "balanced",
+    "tvAquaPalette": "tide",
+    "tvFlurryPalette": "spectrum",
     "remoteEnabled": True,
     "headlines": headlines_for_client({}),
 }
@@ -783,6 +785,8 @@ def normalize_tv_appearance(source: dict) -> dict:
         "tvBackdrop": ("ambient", "landscape", "aqua", "flurry", "orbit"),
         "tvMotion": ("drift", "still", "reactive"),
         "tvIntensity": ("balanced", "soft", "vivid"),
+        "tvAquaPalette": ("tide", "glacier", "lagoon", "dusk", "moss", "ember"),
+        "tvFlurryPalette": ("spectrum", "ice", "aurora", "ember", "lagoon", "bloom"),
     }
     normalized = {key: source.get(key) if source.get(key) in values else values[0]
                   for key, values in choices.items()}
@@ -3108,6 +3112,8 @@ class Handler(SimpleHTTPRequestHandler):
             "tvBackdrop",
             "tvMotion",
             "tvIntensity",
+            "tvAquaPalette",
+            "tvFlurryPalette",
             "remoteEnabled",
             "headlines",
         }):

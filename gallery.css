@@ -1,0 +1,187 @@
+.page-gallery {
+  background: var(--sl-ink, #10141a);
+  color: var(--sl-text, #e6e1d7);
+  overflow: hidden;
+}
+
+.page-gallery .gallery-shell {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-shell {
+  left: 50%;
+  top: 50%;
+  width: 1920px;
+  height: 1080px;
+  transform: translate(-50%, -50%);
+  transform-origin: center center;
+  padding: 54px 96px;
+  box-sizing: border-box;
+}
+
+.page-gallery:not([data-slate-surface="tv"]) .gallery-shell {
+  width: 100%;
+  height: 100dvh;
+  padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+.gallery-photo-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--sl-ink, #10141a);
+}
+
+.gallery-photo {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  object-position: center;
+}
+
+.gallery-empty {
+  margin: 0;
+  font: 450 28px/1.4 var(--sl-font, ui-sans-serif, system-ui, sans-serif);
+  color: var(--sl-text-2, #aba69d);
+}
+
+.gallery-edge {
+  display: none;
+}
+
+.page-gallery:not([data-slate-surface="tv"]) .gallery-edge {
+  display: block;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 22%;
+  max-width: 120px;
+  border: 0;
+  background: transparent;
+  color: transparent;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.page-gallery:not([data-slate-surface="tv"]) .gallery-prev { left: 0; }
+.page-gallery:not([data-slate-surface="tv"]) .gallery-next { right: 0; }
+
+.gallery-bar {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-bar {
+  margin-top: 8px;
+}
+
+.gallery-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+}
+
+.page-gallery:not([data-slate-surface="tv"]) .gallery-controls {
+  display: none;
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-nav,
+.page-gallery[data-slate-surface="tv"] .gallery-home,
+.page-gallery[data-slate-surface="tv"] .gallery-add {
+  min-height: 88px;
+  padding: 0 28px;
+  border-radius: 999px;
+  border: 1px solid var(--sl-line, rgba(230, 225, 215, 0.2));
+  background: rgba(16, 20, 26, 0.45);
+  color: var(--sl-text, #e6e1d7);
+  font: 450 28px/1 var(--sl-font, ui-sans-serif, system-ui, sans-serif);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-nav:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-hints {
+  display: flex;
+  gap: 24px;
+  font: 450 24px/1 var(--sl-font, ui-sans-serif, system-ui, sans-serif);
+  color: var(--sl-text-2, #aba69d);
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-hints .cap {
+  color: var(--sl-text, #e6e1d7);
+}
+
+.page-gallery:not([data-slate-surface="tv"]) .gallery-hints {
+  display: none;
+}
+
+.page-gallery[data-slate-surface="tv"] .gallery-upload {
+  display: none !important;
+}
+
+.gallery-upload {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.page-gallery:not([data-slate-surface="tv"]) .gallery-add {
+  min-height: 44px;
+  padding: 0 20px;
+  border-radius: 999px;
+  border: 1px solid var(--sl-line, rgba(230, 225, 215, 0.2));
+  background: rgba(16, 20, 26, 0.45);
+  color: var(--sl-text, #e6e1d7);
+  font: 450 18px/1 var(--sl-font, ui-sans-serif, system-ui, sans-serif);
+}
+
+.page-gallery:not([data-slate-surface="tv"]) #gallery-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.gallery-upload-msg {
+  margin: 0;
+  font: 450 16px/1.4 var(--sl-font, ui-sans-serif, system-ui, sans-serif);
+  color: var(--sl-text-2, #aba69d);
+}
+
+body.show-focus .focusable:focus {
+  outline: 3px solid var(--sl-ice, #a9c2da);
+  outline-offset: 4px;
+}
+
+@media (pointer: coarse), (hover: none) {
+  .page-gallery:not([data-slate-surface="tv"]) .gallery-upload {
+    display: flex;
+  }
+}
+
+@media (pointer: fine) and (hover: hover) {
+  .page-gallery:not([data-slate-surface="tv"]) .gallery-upload {
+    display: flex;
+  }
+}

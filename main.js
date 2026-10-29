@@ -244,7 +244,11 @@ function homeFocusable(el) {
 
 function homeFocusables() {
   const list = homeTiles();
+<<<<<<< HEAD
   document.querySelectorAll(".foot-link").forEach((el) => {
+=======
+  document.querySelectorAll(".foot-end .foot-link").forEach((el) => {
+>>>>>>> origin/cursor/slate-gallery-0581
     if (!list.includes(el)) list.push(el);
   });
   const credit = document.getElementById("site-credit");

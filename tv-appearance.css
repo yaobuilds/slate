@@ -117,8 +117,11 @@ html[data-tv-appearance] body.page-screensaver {
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']).show-focus .tile:focus { background: rgba(230,225,215,.13); transform: translateY(-4px); }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .tile-empty { display: none; }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .foot { position: static; }
+  html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .foot-end {
+    position: absolute; top: 66px; right: 96px; min-height: 88px; display: flex; align-items: center; gap: 16px;
+  }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .foot-link {
-    position: absolute; top: 66px; right: 96px; min-height: 88px; display: flex; align-items: center;
+    position: static; min-height: 88px; display: flex; align-items: center;
     padding: 0 24px; border: 1px solid rgba(230,225,215,.2); background: rgba(16,20,26,.3); border-radius: 999px; font-size: 28px;
   }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .signature { position: absolute; right: 96px; bottom: 54px; }

@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <script>
+    (function () {
+      try {
+        var parts = new Intl.DateTimeFormat("en-US", {
+          timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+          hourCycle: "h23",
+          hour: "2-digit"
+        }).formatToParts(new Date());
+        var hour = 0;
+        for (var i = 0; i < parts.length; i += 1) {
+          if (parts[i].type === "hour") hour = Number(parts[i].value);
+        }
+        if (hour === 24) hour = 0;
+        if (hour < 6) document.documentElement.classList.add("night");
+      } catch (err) {
+        /* The clock script applies the same window once it loads. */
+      }
+    })();
+  </script>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141A">
+  <title>Gallery</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="gallery.css">
+</head>
+<body class="page-gallery">
+  <div class="gallery-shell" id="gallery-frame">
+    <div class="gallery-photo-wrap">
+      <p class="gallery-empty" id="gallery-empty" hidden>No photos</p>
+      <img class="gallery-photo" id="gallery-photo" alt="" hidden>
+    </div>
+    <button type="button" class="gallery-edge gallery-prev focusable" id="gallery-prev" disabled>Previous</button>
+    <button type="button" class="gallery-edge gallery-next focusable" id="gallery-next" disabled>Next</button>
+    <div class="gallery-bar">
+      <div class="gallery-upload" id="gallery-upload" hidden>
+        <button type="button" class="gallery-add focusable" id="gallery-add">Add photo</button>
+        <input type="file" id="gallery-file" accept="image/*" tabindex="-1">
+        <p class="gallery-upload-msg" id="gallery-upload-msg" hidden></p>
+      </div>
+      <div class="gallery-controls">
+        <button type="button" class="gallery-nav focusable" id="gallery-prev-bar" disabled>Previous</button>
+        <button type="button" class="gallery-nav focusable" id="gallery-next-bar" disabled>Next</button>
+        <a class="gallery-home focusable" href="index.html" id="gallery-home">Home</a>
+      </div>
+      <div class="gallery-hints" aria-hidden="true">
+        <span class="hint hint-keys"><span class="cap">← →</span>Photo</span>
+        <span class="hint hint-keys"><span class="cap">Esc</span>Home</span>
+      </div>
+    </div>
+  </div>
+  <script src="slate-surface.js"></script>
+  <script src="gallery.js"></script>
+</body>
+</html>

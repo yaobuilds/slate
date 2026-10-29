@@ -123,18 +123,35 @@ function layoutMap(lat, lon, incidents, segments) {
 
   if (speedsEl) {
     speedsEl.innerHTML = "";
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "traffic-speed-svg");
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    svg.setAttribute("width", String(width));
+    svg.setAttribute("height", String(height));
     const speedRows = Array.isArray(segments) ? segments : [];
     for (const item of speedRows) {
-      if (!Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
       const level = item.level;
       if (level !== "green" && level !== "yellow" && level !== "red") continue;
-      const point = project(item.lat, item.lon, MAP_ZOOM);
-      const mark = document.createElement("span");
-      mark.className = `traffic-speed-mark level-${level}`;
-      mark.style.left = `${width / 2 + (point.x - centerPx.x)}px`;
-      mark.style.top = `${height / 2 + (point.y - centerPx.y)}px`;
-      speedsEl.appendChild(mark);
+      const points = Array.isArray(item.points) ? item.points : [];
+      if (points.length < 2) continue;
+      const line = document.createElementNS("http://www.w3.org/2000/svg", "polyline");
+      line.setAttribute("class", `speed-line level-${level}`);
+      line.setAttribute(
+        "points",
+        points
+          .map((pair) => {
+            const lat = Number(pair[0]);
+            const lon = Number(pair[1]);
+            if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+            const xy = project(lat, lon, MAP_ZOOM);
+            return `${width / 2 + (xy.x - centerPx.x)},${height / 2 + (xy.y - centerPx.y)}`;
+          })
+          .filter(Boolean)
+          .join(" "),
+      );
+      svg.appendChild(line);
     }
+    speedsEl.appendChild(svg);
   }
 
   markersEl.innerHTML = "";

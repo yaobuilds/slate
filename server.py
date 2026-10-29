@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from zoneinfo import ZoneInfo
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -1536,29 +1537,130 @@ def parse_openconditions_speed_body(body: str) -> list[dict]:
     return marks
 
 
-def fetch_openconditions_speeds(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
-    """Return segment marks, feedOk, speedsAvailable."""
-    west, south, east, north = traffic_speed_bbox(lat, lon)
-    bbox = f"{west},{south},{east},{north}"
-    paths = (
-        f"/segments.geojson?bbox={quote(bbox, safe=',')}",
-        f"/observations.geojson?bbox={quote(bbox, safe=',')}&domain=roads",
-        f"/observations/latest?bbox={quote(bbox, safe=',')}&property=traffic.speed&limit=500",
-    )
-    feed_ok = False
-    for path in paths:
-        url = f"{OPENCONDITIONS_EMITTER}{path}"
+NYC_SPEEDS_URL = (
+    "https://data.cityofnewyork.us/resource/i4gi-tjb9.json"
+    "?$select=speed,status,data_as_of,encoded_poly_line&$where=status=%270%27&$limit=5000"
+)
+NYC_SPEED_MAX_AGE = timedelta(hours=8)
+
+
+def in_new_york_city(lat: float, lon: float) -> bool:
+    return 40.49 <= lat <= 40.92 and -74.26 <= lon <= -73.70
+
+
+def nyc_speed_level(mph: float) -> str:
+    if mph >= 40:
+        return "green"
+    if mph >= 20:
+        return "yellow"
+    return "red"
+
+
+def decode_polyline(raw: str) -> list[list[float]]:
+    """Google encoded polyline. A cut-off string keeps only complete points."""
+    if not isinstance(raw, str) or not raw:
+        return []
+    index = 0
+    lat = 0
+    lon = 0
+    points: list[list[float]] = []
+    length = len(raw)
+    while index < length:
+        for axis in (0, 1):
+            shift = 0
+            result = 0
+            while True:
+                if index >= length:
+                    return points
+                byte = ord(raw[index]) - 63
+                index += 1
+                result |= (byte & 0x1F) << shift
+                shift += 5
+                if byte < 0x20:
+                    break
+            delta = ~(result >> 1) if result & 1 else (result >> 1)
+            if axis == 0:
+                lat += delta
+            else:
+                lon += delta
+        points.append([round(lat / 1e5, 5), round(lon / 1e5, 5)])
+    return points
+
+
+def nyc_line_points(raw: str) -> list[list[float]]:
+    """Stop a road before a broken point. The plain point list is clipped at 255 characters."""
+    kept: list[list[float]] = []
+    for lat, lon in decode_polyline(raw):
+        if not (40.40 <= lat <= 41.05 and -74.40 <= lon <= -73.50):
+            break
+        if kept and (abs(lat - kept[-1][0]) > 0.02 or abs(lon - kept[-1][1]) > 0.03):
+            break
+        kept.append([lat, lon])
+    return kept if len(kept) >= 2 else []
+
+
+def nyc_speed_time(raw: str) -> datetime | None:
+    """NYC open data stamps are local time without a zone."""
+    if not raw:
+        return None
+    text = raw.strip().replace("Z", "")
+    if "." in text:
+        text = text.split(".", 1)[0]
+    try:
+        parsed = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=ZoneInfo("America/New_York"))
+    return parsed.astimezone(timezone.utc)
+
+
+def fetch_nyc_speed_segments(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
+    """NYC DOT live speeds. No key. Roads are green, yellow, or red by measured mph."""
+    if not in_new_york_city(lat, lon):
+        return [], False, False
+    west, south, east, north = traffic_speed_bbox(lat, lon, radius_km=18)
+    try:
+        body, content_type = fetch_http_text(NYC_SPEEDS_URL, accept="application/json", timeout=20)
+    except (OSError, HTTPError, ValueError):
+        return [], False, False
+    if "json" not in content_type and not body.lstrip().startswith("["):
+        return [], False, False
+    try:
+        rows = json.loads(body)
+    except json.JSONDecodeError:
+        return [], False, False
+    if not isinstance(rows, list) or not rows:
+        return [], True, False
+    newest = None
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        when = nyc_speed_time(str(row.get("data_as_of") or ""))
+        if when is not None and (newest is None or when > newest):
+            newest = when
+    if newest is None or newest < datetime.now(timezone.utc) - NYC_SPEED_MAX_AGE:
+        return [], True, False
+    segments = []
+    for row in rows:
+        if not isinstance(row, dict) or str(row.get("status")) != "0":
+            continue
         try:
-            body, content_type = fetch_http_text(url, accept="application/json, application/geo+json")
-        except (OSError, HTTPError, ValueError):
+            mph = float(row.get("speed"))
+        except (TypeError, ValueError):
             continue
-        if "html" in content_type and not body.lstrip().startswith(("{", "[")):
+        if mph <= 1:
             continue
-        feed_ok = True
-        marks = parse_openconditions_speed_body(body)
-        if marks:
-            return marks[:SPEED_SEGMENT_LIMIT], True, True
-    return [], feed_ok, False
+        points = nyc_line_points(str(row.get("encoded_poly_line") or ""))
+        if len(points) < 2:
+            continue
+        mid_lat, mid_lon = points[len(points) // 2]
+        if not (south <= mid_lat <= north and west <= mid_lon <= east):
+            continue
+        segments.append({"level": nyc_speed_level(mph), "points": points})
+        if len(segments) >= SPEED_SEGMENT_LIMIT:
+            break
+    return segments, True, bool(segments)
 
 
 def traffic_speed_segments_for(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
@@ -1570,7 +1672,7 @@ def traffic_speed_segments_for(lat: float, lon: float) -> tuple[list[dict], bool
             cached_key, segments, feed_ok, speeds_ok = SPEED_CACHE
             if cached_key == key:
                 return segments, feed_ok, speeds_ok
-    segments, feed_ok, speeds_ok = fetch_openconditions_speeds(lat, lon)
+    segments, feed_ok, speeds_ok = fetch_nyc_speed_segments(lat, lon)
     with SPEED_LOCK:
         SPEED_CACHE = (key, segments, feed_ok, speeds_ok)
         SPEED_CACHE_AT = now

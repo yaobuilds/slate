@@ -87,8 +87,17 @@ TRAFFIC_LOCK = threading.Lock()
 TRAFFIC_CACHE = None
 TRAFFIC_CACHE_AT = 0.0
 TRAFFIC_CACHE_TTL = 180
+TRAFFIC_INCIDENT_MAX_AGE = timedelta(hours=36)
+TRAFFIC_INCIDENT_MAX_KM = 160.0
 TRAFFIC_EVENTS_JSON = "https://511ny.org/api/getevents?format=json"
 TRAFFIC_RSS = "https://511nj.org/client/rest/rss/RSSActiveIncidents"
+SPEED_LOCK = threading.Lock()
+SPEED_CACHE = None
+SPEED_CACHE_AT = 0.0
+SPEED_CACHE_TTL = 240
+SPEED_SEGMENT_LIMIT = 250
+# Public OpenConditions emitter (README: GET /observations.geojson and /segments.geojson, bbox-filterable).
+OPENCONDITIONS_EMITTER = os.environ.get("SLATE_OPENCONDITIONS_URL", "https://ingest.openconditions.org").rstrip("/")
 NY_STATE_BOUNDS = (40.49, 45.12, -79.76, -71.85)
 GEORSS_NS = {"g": "http://www.georss.org/georss"}
 PLACEHOLDER = {
@@ -1202,6 +1211,18 @@ def load_ny_incidents() -> tuple[list[dict], str]:
     return [], ""
 
 
+def incident_datetime(when: str) -> datetime | None:
+    if not isinstance(when, str) or not when.strip():
+        return None
+    parsed = parse_iso_datetime(when)
+    if parsed is not None:
+        return parsed.astimezone(timezone.utc)
+    try:
+        return parsedate_to_datetime(when).astimezone(timezone.utc)
+    except (TypeError, ValueError, IndexError):
+        return None
+
+
 def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str]:
     if not in_new_york_state(lat, lon):
         return [], False, ""
@@ -1215,28 +1236,207 @@ def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str
             TRAFFIC_CACHE = (cached_rows, feed)
             TRAFFIC_CACHE_AT = now
     if not cached_rows:
-        return [], False, feed
+        return [], bool(feed), feed
+    cutoff = datetime.now(timezone.utc) - TRAFFIC_INCIDENT_MAX_AGE
     ranked = []
     for row in cached_rows:
         item = dict(row)
+        when = incident_datetime(item.get("time", ""))
+        if when is None or when < cutoff:
+            continue
         if isinstance(item.get("lat"), float) and isinstance(item.get("lon"), float):
-            item["distanceKm"] = round(haversine_km(lat, lon, item["lat"], item["lon"]), 1)
+            dist = haversine_km(lat, lon, item["lat"], item["lon"])
+            if dist > TRAFFIC_INCIDENT_MAX_KM:
+                continue
+            item["distanceKm"] = round(dist, 1)
         else:
             item["distanceKm"] = 9999.0
+        item["_whenTs"] = when.timestamp()
         ranked.append(item)
-    ranked.sort(key=lambda row: row.get("distanceKm", 9999.0))
+    ranked.sort(key=lambda row: (-row.get("_whenTs", 0.0), row.get("distanceKm", 9999.0)))
     picked = []
     for row in ranked:
-        if row.get("distanceKm", 9999.0) > 160:
-            continue
-        out = {k: v for k, v in row.items() if k != "distanceKm"}
+        out = {k: v for k, v in row.items() if k not in ("distanceKm", "_whenTs")}
         picked.append(out)
         if len(picked) >= 8:
             break
     return picked, True, feed
 
 
-def traffic_payload() -> dict:
+def traffic_speed_bbox(lat: float, lon: float, radius_km: float = 32.0) -> tuple[float, float, float, float]:
+    dlat = radius_km / 111.0
+    cos_lat = max(0.2, abs(math.cos(math.radians(lat))))
+    dlon = radius_km / (111.0 * cos_lat)
+    west = lon - dlon
+    east = lon + dlon
+    south = lat - dlat
+    north = lat + dlat
+    return west, south, east, north
+
+
+def congestion_level(ratio: float) -> str:
+    if ratio >= 0.8:
+        return "green"
+    if ratio >= 0.5:
+        return "yellow"
+    return "red"
+
+
+def speed_ratio_from_properties(props: dict) -> float | None:
+    ratio = props.get("speed_ratio")
+    if isinstance(ratio, (int, float)) and ratio > 0:
+        return float(ratio)
+    current = props.get("current_kph", props.get("speed", props.get("result")))
+    free_flow = props.get(
+        "free_flow_kph",
+        props.get("freeFlow", props.get("referenceSpeed", props.get("free_flow"))),
+    )
+    qualifiers = props.get("qualifiers")
+    if isinstance(qualifiers, dict):
+        free_flow = free_flow or qualifiers.get("freeFlow") or qualifiers.get("free_flow")
+    ref = props.get("reference")
+    if isinstance(ref, dict):
+        free_flow = free_flow or ref.get("freeFlow") or ref.get("speed")
+    if isinstance(current, str):
+        try:
+            current = float(current)
+        except ValueError:
+            current = None
+    if isinstance(free_flow, str):
+        try:
+            free_flow = float(free_flow)
+        except ValueError:
+            free_flow = None
+    if isinstance(current, (int, float)) and isinstance(free_flow, (int, float)) and free_flow > 0:
+        return float(current) / float(free_flow)
+    return None
+
+
+def line_midpoint(coords: list) -> tuple[float, float] | None:
+    if not coords:
+        return None
+    if len(coords) == 1 and isinstance(coords[0], (list, tuple)) and len(coords[0]) >= 2:
+        return float(coords[0][1]), float(coords[0][0])
+    mid = coords[len(coords) // 2]
+    if isinstance(mid, (list, tuple)) and len(mid) >= 2:
+        return float(mid[1]), float(mid[0])
+    return None
+
+
+def speed_mark_from_feature(feature: dict) -> dict | None:
+    if not isinstance(feature, dict):
+        return None
+    geom = feature.get("geometry")
+    props = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+    if isinstance(props.get("properties"), dict):
+        props = {**props, **props["properties"]}
+    ratio = speed_ratio_from_properties(props)
+    if ratio is None:
+        ratio = speed_ratio_from_properties(feature)
+    if ratio is None:
+        return None
+    lat = lon = None
+    if isinstance(geom, dict):
+        gtype = geom.get("type")
+        coords = geom.get("coordinates")
+        if gtype == "Point" and isinstance(coords, list) and len(coords) >= 2:
+            lon, lat = float(coords[0]), float(coords[1])
+        elif gtype == "LineString" and isinstance(coords, list):
+            mid = line_midpoint(coords)
+            if mid:
+                lat, lon = mid
+        elif gtype == "MultiLineString" and isinstance(coords, list) and coords:
+            first = coords[0]
+            if isinstance(first, list):
+                mid = line_midpoint(first)
+                if mid:
+                    lat, lon = mid
+    loc = props.get("location")
+    if (lat is None or lon is None) and isinstance(loc, dict):
+        loc_geom = loc.get("geometry")
+        if isinstance(loc_geom, dict):
+            return speed_mark_from_feature({"geometry": loc_geom, "properties": props})
+    if lat is None or lon is None:
+        return None
+    return {"lat": lat, "lon": lon, "level": congestion_level(ratio)}
+
+
+def parse_openconditions_speed_body(body: str) -> list[dict]:
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    marks: list[dict] = []
+    if isinstance(data, dict) and isinstance(data.get("features"), list):
+        for feature in data["features"]:
+            mark = speed_mark_from_feature(feature if isinstance(feature, dict) else {})
+            if mark:
+                marks.append(mark)
+        return marks
+    records = None
+    if isinstance(data, dict):
+        records = data.get("records")
+        if records is None and isinstance(data.get("observations"), list):
+            records = data["observations"]
+    if isinstance(records, list):
+        for record in records:
+            if not isinstance(record, dict):
+                continue
+            mark = speed_mark_from_feature({"geometry": None, "properties": record})
+            if not mark and isinstance(record.get("location"), dict):
+                mark = speed_mark_from_feature(
+                    {
+                        "geometry": record["location"].get("geometry"),
+                        "properties": record,
+                    }
+                )
+            if mark:
+                marks.append(mark)
+    return marks
+
+
+def fetch_openconditions_speeds(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
+    """Return segment marks, feedOk, speedsAvailable."""
+    west, south, east, north = traffic_speed_bbox(lat, lon)
+    bbox = f"{west},{south},{east},{north}"
+    paths = (
+        f"/segments.geojson?bbox={quote(bbox, safe=',')}",
+        f"/observations.geojson?bbox={quote(bbox, safe=',')}&domain=roads",
+        f"/observations/latest?bbox={quote(bbox, safe=',')}&property=traffic.speed&limit=500",
+    )
+    feed_ok = False
+    for path in paths:
+        url = f"{OPENCONDITIONS_EMITTER}{path}"
+        try:
+            body, content_type = fetch_http_text(url, accept="application/json, application/geo+json")
+        except (OSError, HTTPError, ValueError):
+            continue
+        if "html" in content_type and not body.lstrip().startswith(("{", "[")):
+            continue
+        feed_ok = True
+        marks = parse_openconditions_speed_body(body)
+        if marks:
+            return marks[:SPEED_SEGMENT_LIMIT], True, True
+    return [], feed_ok, False
+
+
+def traffic_speed_segments_for(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
+    now = time.monotonic()
+    key = (round(lat, 2), round(lon, 2))
+    global SPEED_CACHE, SPEED_CACHE_AT
+    with SPEED_LOCK:
+        if SPEED_CACHE and now - SPEED_CACHE_AT < SPEED_CACHE_TTL:
+            cached_key, segments, feed_ok, speeds_ok = SPEED_CACHE
+            if cached_key == key:
+                return segments, feed_ok, speeds_ok
+    segments, feed_ok, speeds_ok = fetch_openconditions_speeds(lat, lon)
+    with SPEED_LOCK:
+        SPEED_CACHE = (key, segments, feed_ok, speeds_ok)
+        SPEED_CACHE_AT = now
+    return segments, feed_ok, speeds_ok
+
+
+def traffic_payload(center_lat: float | None = None, center_lon: float | None = None) -> dict:
     updated = datetime.now(timezone.utc).isoformat()
     place = slate_settings_place()
     if place is None:
@@ -1244,10 +1444,16 @@ def traffic_payload() -> dict:
             "hasPlace": False,
             "incidentsAvailable": False,
             "incidents": [],
+            "speedsAvailable": False,
+            "segments": [],
             "updated": updated,
         }
     lat, lon = float(place["lat"]), float(place["lon"])
+    if isinstance(center_lat, (int, float)) and isinstance(center_lon, (int, float)):
+        if -90 <= center_lat <= 90 and -180 <= center_lon <= 180:
+            lat, lon = float(center_lat), float(center_lon)
     incidents, available, feed = traffic_incidents_for(lat, lon)
+    segments, _speed_feed_ok, speeds_ok = traffic_speed_segments_for(lat, lon)
     body = {
         "hasPlace": True,
         "place": {
@@ -1258,6 +1464,8 @@ def traffic_payload() -> dict:
         },
         "incidentsAvailable": available,
         "incidents": incidents,
+        "speedsAvailable": speeds_ok,
+        "segments": segments,
         "updated": updated,
     }
     if feed:
@@ -2879,7 +3087,16 @@ class Handler(SimpleHTTPRequestHandler):
             self.serve_radar()
             return
         if path == "/traffic.json":
-            self.send_json(200, traffic_payload())
+            params = parse_qs(urlsplit(self.path).query)
+            center_lat = center_lon = None
+            try:
+                if params.get("lat"):
+                    center_lat = float(params["lat"][0])
+                if params.get("lon"):
+                    center_lon = float(params["lon"][0])
+            except (TypeError, ValueError):
+                center_lat = center_lon = None
+            self.send_json(200, traffic_payload(center_lat, center_lon))
             return
         if path in ROUTE_REDIRECTS:
             self.redirect(ROUTE_REDIRECTS[path])

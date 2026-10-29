@@ -176,6 +176,35 @@ html[data-slate-surface="tv"] .traffic-map {
   pointer-events: none;
 }
 
+.traffic-speeds {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.traffic-speed-mark {
+  position: absolute;
+  width: 18px;
+  height: 6px;
+  margin: -3px 0 0 -9px;
+  border-radius: 2px;
+  opacity: 0.92;
+  box-shadow: 0 0 0 1px rgba(16, 20, 26, 0.65);
+}
+
+.traffic-speed-mark.level-green {
+  background: #5a9e6e;
+}
+
+.traffic-speed-mark.level-yellow {
+  background: #c4a035;
+}
+
+.traffic-speed-mark.level-red {
+  background: #b85c55;
+}
+
 .traffic-marker {
   position: absolute;
   width: 14px;

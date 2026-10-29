@@ -12,12 +12,15 @@ const mapEl = document.getElementById("traffic-map");
 const tilesEl = document.getElementById("traffic-tiles");
 const centerEl = document.getElementById("traffic-center");
 const markersEl = document.getElementById("traffic-markers");
+const speedsEl = document.getElementById("traffic-speeds");
 const listEl = document.getElementById("traffic-incident-list");
 const noteEl = document.getElementById("traffic-incidents-note");
+const speedsNoteEl = document.getElementById("traffic-speeds-note");
 const shellEl = document.getElementById("traffic-shell");
 
 let mapCenter = null;
 let lastIncidents = [];
+let lastSegments = [];
 let refreshTimer = 0;
 let driftTimer = 0;
 let driftIndex = 0;
@@ -58,7 +61,7 @@ function renderIncidents(incidents, available) {
   const rows = Array.isArray(incidents) ? incidents.slice(0, 5) : [];
   if (!rows.length) {
     const empty = document.createElement("li");
-    empty.textContent = "No active incidents reported nearby.";
+    empty.textContent = "No recent incidents reported nearby.";
     listEl.appendChild(empty);
     return;
   }
@@ -78,7 +81,18 @@ function renderIncidents(incidents, available) {
   }
 }
 
-function layoutMap(lat, lon, incidents) {
+function renderSpeedsNote(speedsAvailable) {
+  if (!speedsNoteEl) return;
+  if (speedsAvailable) {
+    speedsNoteEl.hidden = true;
+    speedsNoteEl.textContent = "";
+    return;
+  }
+  speedsNoteEl.hidden = false;
+  speedsNoteEl.textContent = "Live speeds are not available here.";
+}
+
+function layoutMap(lat, lon, incidents, segments) {
   if (!mapEl || !tilesEl || !centerEl) return;
   const width = mapEl.clientWidth;
   const height = mapEl.clientHeight;
@@ -104,6 +118,22 @@ function layoutMap(lat, lon, incidents) {
       img.style.left = `${width / 2 + (x * TILE_SIZE - centerPx.x)}px`;
       img.style.top = `${height / 2 + (y * TILE_SIZE - centerPx.y)}px`;
       tilesEl.appendChild(img);
+    }
+  }
+
+  if (speedsEl) {
+    speedsEl.innerHTML = "";
+    const speedRows = Array.isArray(segments) ? segments : [];
+    for (const item of speedRows) {
+      if (!Number.isFinite(item.lat) || !Number.isFinite(item.lon)) continue;
+      const level = item.level;
+      if (level !== "green" && level !== "yellow" && level !== "red") continue;
+      const point = project(item.lat, item.lon, MAP_ZOOM);
+      const mark = document.createElement("span");
+      mark.className = `traffic-speed-mark level-${level}`;
+      mark.style.left = `${width / 2 + (point.x - centerPx.x)}px`;
+      mark.style.top = `${height / 2 + (point.y - centerPx.y)}px`;
+      speedsEl.appendChild(mark);
     }
   }
 
@@ -154,8 +184,10 @@ async function refreshTraffic() {
     updatedEl.textContent = data.updated ? `Updated ${formatIncidentTime(data.updated)}` : "";
     mapCenter = { lat: place.lat, lon: place.lon };
     lastIncidents = Array.isArray(data.incidents) ? data.incidents : [];
+    lastSegments = Array.isArray(data.segments) ? data.segments : [];
     renderIncidents(lastIncidents, data.incidentsAvailable !== false);
-    requestAnimationFrame(() => layoutMap(place.lat, place.lon, lastIncidents));
+    renderSpeedsNote(data.speedsAvailable === true);
+    requestAnimationFrame(() => layoutMap(place.lat, place.lon, lastIncidents, lastSegments));
   } catch (error) {
     if (!mapCenter) {
       showNoPlace();
@@ -184,7 +216,7 @@ function installBackKeys() {
 }
 
 window.addEventListener("resize", () => {
-  if (mapCenter) layoutMap(mapCenter.lat, mapCenter.lon, lastIncidents);
+  if (mapCenter) layoutMap(mapCenter.lat, mapCenter.lon, lastIncidents, lastSegments);
 });
 
 installBackKeys();

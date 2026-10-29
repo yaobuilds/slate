@@ -14,20 +14,23 @@
   min-height: 100vh;
   padding: 96px;
   display: grid;
-  align-content: center;
-  gap: 20px;
+  align-content: end;
+  gap: 16px;
+  padding-bottom: 120px;
 }
 
 .page-screensaver .saver-clock {
   margin: 0;
   font-size: clamp(96px, 14vw, 184px);
-  font-weight: 560;
+  font-weight: 450;
+  font-variant-numeric: tabular-nums;
+  color: rgba(230, 225, 215, 0.9); /* a touch under Linen: the clock sits for hours */
   line-height: 1;
   letter-spacing: -0.04em;
 }
 
 .page-screensaver .saver-date {
-  margin: 0;
+  margin: 8px 0 0;
   font-size: clamp(28px, 3vw, 40px);
   color: var(--sl-text-2);
 }
@@ -39,3 +42,11 @@
   color: var(--sl-text-2);
   max-width: 70ch;
 }
+
+.page-screensaver .saver-weather::before,
+.page-screensaver .saver-event::before {
+  content: ""; display: inline-block; width: 10px; height: 10px; margin: 0 16px 0.18em 2px;
+  border-radius: 50%; background: var(--sl-line); vertical-align: middle;
+}
+.page-screensaver .saver-weather:empty::before,
+.page-screensaver .saver-event:empty::before { display: none; }

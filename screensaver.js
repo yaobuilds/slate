@@ -38,11 +38,17 @@ async function loadSettings() {
     document.body.dataset.tvAppearance = settings.tvAppearance || "sculptural";
     document.body.dataset.tvMotion = "still";
     if (window.SlateLooks && settings.tvAppearance) {
+      const look = settings.tvAppearance;
+      if (look === "sculptural") await window.SlateLooks.loadAmbient();
+      const colors = look === "sculptural" ? window.SlateLooks.ambientColorsFor(settings.ambientPreset) : undefined;
+      const key = look === "aqua" ? settings.tvAquaPalette : look === "flurry" ? settings.tvFlurryPalette : "";
       window.SlateLooks.decorate(
         document.getElementById("tv-backdrop"),
-        settings.tvAppearance,
+        look,
         "still",
-        settings.tvIntensity || "balanced",
+        "soft",
+        colors,
+        key,
       );
     }
   } catch (error) {
@@ -92,7 +98,7 @@ async function loadNextEvent() {
     const when = next.allDay
       ? "All day"
       : new Date(next.start).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-    eventEl.textContent = `${when} · ${next.title || "Busy"}`;
+    eventEl.textContent = `${when} · Busy`;
   } catch (error) {
     eventEl.textContent = "Calendar unavailable";
   }

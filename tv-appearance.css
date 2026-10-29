@@ -209,4 +209,5 @@
 .page-screensaver .tv-backdrop { display: block; position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; background: var(--sl-ink); opacity: .38; }
 .page-screensaver .tv-backdrop > :not(.look-grain) { animation: saver-drift 120s cubic-bezier(.45,.05,.55,.95) infinite alternate; }
 @keyframes saver-drift { from { transform: translate(-18px, 8px) scale(1.06); } to { transform: translate(18px, -10px) scale(1.08); } }
+.page-screensaver[data-tv-motion="still"] .tv-backdrop > :not(.look-grain) { animation: none !important; }
 @media (prefers-reduced-motion: reduce) { .page-screensaver .tv-backdrop > * { animation: none !important; } }

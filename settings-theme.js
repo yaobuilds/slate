@@ -5,7 +5,7 @@ let clearPreview = () => {};
 let ambientPresets = {};
 let ambientPalettes = {};
 const groups = [
-  ['appearance-styles', 'tvAppearance', [['sculptural', 'Sculptural Light'], ['flurry', 'Flurry']]],
+  ['appearance-styles', 'tvAppearance', [['sculptural', 'Sculptural Light'], ['aqua', 'Aqua'], ['flurry', 'Flurry']]],
   ['appearance-motion', 'tvMotion', [['still', 'Still'], ['drift', 'Drift'], ['reactive', 'Reactive']]],
   ['appearance-intensity', 'tvIntensity', [['soft', 'Soft'], ['balanced', 'Balanced'], ['vivid', 'Vivid']]],
 ];
@@ -34,22 +34,31 @@ function updatePreview() {
   for (const [id, key] of groups) {
     document.getElementById(id).querySelectorAll('button').forEach(button => button.setAttribute('aria-checked', String(button.dataset.value === picked[key])));
   }
+  const profile = window.SlateLooks.normalizeAppearance(picked);
+  window.SlateLooks.applyTheme(picked);
   const preview = document.getElementById('appearance-preview');
-  preview.dataset.style = picked.tvAppearance === 'aqua' ? 'flurry' : picked.tvAppearance;
+  preview.dataset.style = profile.tvAppearance;
   clearPreview();
   const preset = ambientPresets[picked.ambientPreset] || {};
   const colors = preset.enabled === false ? [] : ambientPalettes[preset.palette]?.colors;
-  const look = picked.tvAppearance === 'flurry' || picked.tvAppearance === 'aqua' ? 'flurry' : 'sculptural';
-  clearPreview = window.SlateLooks.decorate(document.getElementById('preview-backdrop'), look, picked.tvMotion, picked.tvIntensity, colors);
-  document.getElementById('appearance-description').textContent = look === 'flurry'
-    ? 'Colored light streaks meeting at a bright core.'
-    : 'Deep ink and luminous forms.';
+  clearPreview = window.SlateLooks.decorate(
+    document.getElementById('preview-backdrop'),
+    profile.tvAppearance,
+    picked.tvMotion,
+    picked.tvIntensity,
+    colors,
+  );
+  document.getElementById('appearance-description').textContent = {
+    sculptural: 'Deep ink and luminous forms.',
+    aqua: 'Water ribbons over deep ink.',
+    flurry: 'Colored light streaks meeting at a bright core.',
+  }[profile.tvAppearance];
   document.getElementById('motion-description').textContent = {
     still: 'A still composition, with no decorative animation.',
     drift: 'Slow movement. Focus leans the field and leaves a short streak.',
     reactive: 'Focus and the pointer pull the field. A press flashes the core.',
   }[picked.tvMotion];
-  document.getElementById('ambient-controls').hidden = look !== 'sculptural';
+  document.getElementById('ambient-controls').hidden = profile.tvAppearance !== 'sculptural';
   preview.classList.remove('menu-turn');
   void preview.offsetWidth;
   preview.classList.add('menu-turn');
@@ -74,9 +83,11 @@ async function init() {
     const [ambient, settings] = await Promise.all([readJson('ambient.json'), loadSettings()]);
     ambientPresets = ambient.presets || {};
     ambientPalettes = ambient.palettes || {};
-    for (const key of Object.keys(picked)) if (typeof settings[key] === 'string') picked[key] = settings[key];
-    if (picked.tvAppearance === 'aqua') picked.tvAppearance = 'flurry';
-    if (picked.tvAppearance !== 'flurry') picked.tvAppearance = 'sculptural';
+    const profile = window.SlateLooks.normalizeAppearance(settings);
+    picked.tvAppearance = profile.tvAppearance;
+    picked.tvMotion = profile.tvMotion;
+    picked.tvIntensity = profile.tvIntensity;
+    if (typeof settings.ambientPreset === 'string') picked.ambientPreset = settings.ambientPreset;
     const select = document.getElementById('ambient-preset');
     for (const [key, preset] of Object.entries(ambient.presets || {})) {
       const option = document.createElement('option');

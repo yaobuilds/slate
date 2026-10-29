@@ -1,0 +1,94 @@
+.page-remote {
+  background: var(--sl-ink, #10141a);
+  color: var(--sl-text, #e6e1d7);
+  min-height: 100vh;
+}
+
+.remote-stage {
+  max-width: 520px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+}
+
+.remote-title {
+  font-size: 28px;
+  margin: 0 0 8px;
+}
+
+.remote-copy {
+  color: var(--sl-text-2, #aba69d);
+  line-height: 1.45;
+  margin: 0 0 20px;
+}
+
+.remote-panel {
+  background: var(--sl-panel, #161b22);
+  border-radius: 12px;
+  padding: 16px 18px;
+  margin-bottom: 16px;
+}
+
+.remote-panel h2 {
+  font-size: 18px;
+  margin: 0 0 10px;
+}
+
+.remote-status {
+  margin: 0 0 12px;
+  color: var(--sl-text-2, #aba69d);
+}
+
+.remote-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  margin-top: 10px;
+}
+
+.remote-row button,
+.remote-row input {
+  font: inherit;
+}
+
+.remote-row input {
+  width: 8em;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid #3a424d;
+  background: #10141a;
+  color: inherit;
+}
+
+.remote-row button {
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: 1px solid #3a424d;
+  background: #10141a;
+  color: inherit;
+}
+
+.remote-row button:focus-visible,
+.remote-row input:focus-visible {
+  outline: 2px solid var(--sl-accent, #a9c2da);
+  outline-offset: 2px;
+}
+
+.remote-volume {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.remote-msg {
+  min-height: 1.2em;
+  color: var(--sl-text-2, #aba69d);
+  margin: 8px 0 0;
+}
+
+.remote-pair-block label {
+  display: block;
+  margin-bottom: 6px;
+}

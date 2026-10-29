@@ -252,6 +252,10 @@ class FixTests(unittest.TestCase):
         server.HEADLINES_CACHE = {"updated": "", "items": []}
         server.FAILS.clear()
         server.SESSIONS.clear()
+        server.REMOTE_EVENTS.clear()
+        server.REMOTE_SEQ = 0
+        server.REMOTE_SESSIONS.clear()
+        server.REMOTE_PAIRINGS.clear()
         self.logs = []
         self._log = server.Handler.log_message
 
@@ -274,6 +278,10 @@ class FixTests(unittest.TestCase):
         server.HEADLINES_CACHE = self._headlines_old
         server.FAILS.clear()
         server.SESSIONS.clear()
+        server.REMOTE_EVENTS.clear()
+        server.REMOTE_SEQ = 0
+        server.REMOTE_SESSIONS.clear()
+        server.REMOTE_PAIRINGS.clear()
         self.tmp.cleanup()
 
     def _body(self, path, headers=None, method="GET", data=None):
@@ -470,6 +478,37 @@ class FixTests(unittest.TestCase):
         self.assertEqual(status, 401, body)
         self.assertNotIn(TITLE, body)
 
+    def test_remote_arrow_down_queued_without_tv_session(self):
+        self.httpd.lan_enabled = True
+        status, body, _headers = self._raw("POST", "/remote/v1/pairing.json")
+        self.assertEqual(status, 200)
+        code = json.loads(body)["code"]
+        status, _body, headers = self._raw(
+            "POST",
+            "/remote/v1/pair.json",
+            json.dumps({"code": code}),
+            {"Content-Type": "application/json"},
+        )
+        self.assertEqual(status, 200)
+        cookie = headers.get("set-cookie", "")
+        status, body, _headers = self._raw(
+            "POST",
+            "/remote/v1/command.json",
+            json.dumps({"type": "key", "key": "ArrowDown"}),
+            {"Content-Type": "application/json", "Cookie": cookie.split(";")[0]},
+        )
+        self.assertEqual(status, 200)
+        self.assertIn('"path": "page"', body)
+        self.assertTrue(server.REMOTE_EVENTS)
+        self.httpd.lan_enabled = False
+        status, body, _headers = self._raw(
+            "POST",
+            "/remote/v1/command.json",
+            json.dumps({"type": "key", "key": "ArrowDown"}),
+            {"Content-Type": "application/json"},
+        )
+        self.assertEqual(status, 403)
+
     def test_file_allowlist_blocks_private_paths(self):
         blocked = [
             "/server.py",
@@ -488,6 +527,7 @@ class FixTests(unittest.TestCase):
             "/assets/icons/../../pin.local",
             "/foo.py",
             "/secret.local",
+            "/atv.local",
             "/lock",
             "/unlock",
         ]

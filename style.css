@@ -501,7 +501,7 @@ body.show-focus .foot-link:focus {
   gap: 12px;
   margin: 0;
   font-size: 24px;
-  color: var(--sl-dim);
+  color: #8C939C;
   text-decoration: none;
 }
 

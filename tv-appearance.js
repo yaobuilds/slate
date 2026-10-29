@@ -3,7 +3,7 @@
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const stops = ['#72c9d0', '#837ee0', '#db9cae', '#b7d2e4'];
   const sculpturalWarm = ['#E0D3BB', '#C4A574', '#8A6A4E'];
-  const themeInk = { sculptural: '#14110E', aqua: '#0C2233', flurry: '#000000' };
+  const THEME_COLOR = '#10141A';
   const aquaRibbons = '<svg class="aqua-ribbons" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="ribbon-slate" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#256a9d"/><stop offset=".48" stop-color="#79c3d4"/><stop offset="1" stop-color="#5a4788"/></linearGradient></defs><g fill="none" stroke="url(#ribbon-slate)"><path class="aqua-band" stroke-width="190" opacity=".28" d="M-400 1100C300-240 660 1360 1210 650S1860 180 2300 0"/><path class="aqua-band" stroke-width="88" opacity=".55" d="M-300 1060C390 20 630 1270 1180 660S1850 320 2300 90"/><path class="aqua-band" stroke-width="3" opacity=".8" d="M-300 1000C390 20 620 1190 1160 620S1850 320 2300 90"/><path class="aqua-band" stroke-width="40" opacity=".3" d="M-300 1180C300 90 800 1400 1340 700S2000 180 2300 200"/></g></svg>';
   const FLURRY_REST_NX = 0.62;
   const FLURRY_REST_NY = 0.42;
@@ -51,7 +51,7 @@
       el.dataset.tvIntensity = norm.tvIntensity;
     }
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute('content', themeInk[norm.tvAppearance] || themeInk.sculptural);
+    if (meta) meta.setAttribute('content', THEME_COLOR);
   }
 
   function flurryBrushScale(intensity) {

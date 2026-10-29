@@ -972,33 +972,134 @@ function detectDeviceLocation() {
   });
 }
 
+function isTvPlaceSurface() {
+  return onAndroidTv() || document.documentElement.dataset.slateSurface === "tv";
+}
+
+function isPortablePlaceSurface() {
+  const surface = document.documentElement.dataset.slateSurface;
+  return surface === "pointer" || surface === "touch";
+}
+
+let pendingPlacePrompt = null;
+
+function ensurePlacePromptBar() {
+  if (!document.body.classList.contains("page-home")) return null;
+  let bar = document.getElementById("place-prompt");
+  if (bar) return bar;
+  bar = document.createElement("div");
+  bar.id = "place-prompt";
+  bar.className = "place-prompt";
+  bar.hidden = true;
+  bar.setAttribute("role", "region");
+  bar.setAttribute("aria-label", "Nearby place");
+  const text = document.createElement("p");
+  text.id = "place-prompt-text";
+  const actions = document.createElement("div");
+  actions.className = "place-prompt-actions";
+  const useBtn = document.createElement("button");
+  useBtn.type = "button";
+  useBtn.id = "place-prompt-use";
+  useBtn.textContent = "Use";
+  const laterBtn = document.createElement("button");
+  laterBtn.type = "button";
+  laterBtn.id = "place-prompt-later";
+  laterBtn.textContent = "Not now";
+  actions.append(useBtn, laterBtn);
+  bar.append(text, actions);
+  document.body.append(bar);
+  useBtn.addEventListener("click", () => {
+    const pending = pendingPlacePrompt;
+    if (!pending || !window.SlatePlace) return;
+    window.SlatePlace.writeDevicePlace(pending);
+    applyLocation({ ...pending, locked: false });
+    pendingPlacePrompt = null;
+    bar.hidden = true;
+    updateWeatherPlace();
+    loadWeather();
+  });
+  laterBtn.addEventListener("click", () => {
+    const pending = pendingPlacePrompt;
+    if (pending && window.SlatePlace) {
+      window.SlatePlace.dismissPrompt(pending.lat, pending.lon, activeTimeZone);
+    }
+    pendingPlacePrompt = null;
+    bar.hidden = true;
+  });
+  return bar;
+}
+
+function showPlacePrompt(label, detected) {
+  const bar = ensurePlacePromptBar();
+  if (!bar) return;
+  const text = document.getElementById("place-prompt-text");
+  const near = typeof label === "string" && label.trim() ? label.trim() : "this area";
+  pendingPlacePrompt = { lat: detected.lat, lon: detected.lon, label: near };
+  if (text) text.textContent = `You're near ${near}. Use this place on this device?`;
+  bar.hidden = false;
+}
+
 async function resolveLocation() {
+  const slatePlace = window.SlatePlace;
+  let settingsLoc = null;
+  let locked = false;
   try {
     const settings = await homeSettings();
     const loc = settings.location;
     if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
+      settingsLoc = loc;
+      locked = loc.locked === true;
       let label = typeof loc.label === "string" ? loc.label.trim() : "";
-      applyLocation({ ...loc, label: label || activeLocation.label });
-      if (loc.locked === true || onAndroidTv()) {
-        if (!label || label.toLowerCase() === "near you") {
-          label = await reversePlaceLabel(loc.lat, loc.lon);
-          applyLocation({ ...loc, label });
-        }
-        return;
-      }
+      applyLocation({ ...loc, label: label || activeLocation.label, locked });
     }
   } catch (err) {
-    /* settings missing: still try geolocation */
+    /* settings missing: still try geolocation when allowed */
   }
+
+  if (!locked && slatePlace && typeof slatePlace.readDevicePlace === "function") {
+    const device = slatePlace.readDevicePlace();
+    if (device) applyLocation({ ...device, locked: false });
+  }
+
+  if (locked || isTvPlaceSurface()) {
+    if (settingsLoc) {
+      let label = typeof settingsLoc.label === "string" ? settingsLoc.label.trim() : "";
+      if (!label || label.toLowerCase() === "near you") {
+        label = await reversePlaceLabel(settingsLoc.lat, settingsLoc.lon);
+        applyLocation({ ...settingsLoc, label, locked: true });
+      }
+    }
+    return;
+  }
+
   const detected = await detectDeviceLocation();
-  if (detected) {
+  if (!detected) {
+    if (
+      !settingsLoc &&
+      activeLocation.lat === FALLBACK_LOCATION.lat &&
+      activeLocation.lon === FALLBACK_LOCATION.lon
+    ) {
+      applyLocation(FALLBACK_LOCATION);
+    }
+    return;
+  }
+
+  const promptKm = slatePlace && slatePlace.PROMPT_KM ? slatePlace.PROMPT_KM : 25;
+  const dist = slatePlace
+    ? slatePlace.haversineKm(activeLocation.lat, activeLocation.lon, detected.lat, detected.lon)
+    : promptKm + 1;
+
+  if (dist <= promptKm) {
     const label = await reversePlaceLabel(detected.lat, detected.lon);
     applyLocation({ ...detected, label, locked: false });
     return;
   }
-  if (activeLocation.lat === FALLBACK_LOCATION.lat && activeLocation.lon === FALLBACK_LOCATION.lon) {
-    applyLocation(FALLBACK_LOCATION);
-  }
+
+  if (!isPortablePlaceSurface()) return;
+  if (slatePlace && slatePlace.isPromptDismissed(detected.lat, detected.lon, activeTimeZone)) return;
+
+  const nearLabel = await reversePlaceLabel(detected.lat, detected.lon);
+  showPlacePrompt(nearLabel, detected);
 }
 
 function applyDash(iconName, svg, label) {
@@ -1104,11 +1205,17 @@ async function loadWeather() {
 
 function applySettingsLocation(settings) {
   const loc = settings && settings.location;
+  const locked = loc && loc.locked === true;
   if (loc && typeof loc.lat === "number" && typeof loc.lon === "number") {
     const label = typeof loc.label === "string" && loc.label.trim() ? loc.label.trim() : activeLocation.label;
-    applyLocation({ ...loc, label });
-    updateWeatherPlace();
+    applyLocation({ ...loc, label, locked });
   }
+  const slatePlace = window.SlatePlace;
+  if (!locked && !isTvPlaceSurface() && slatePlace && typeof slatePlace.readDevicePlace === "function") {
+    const device = slatePlace.readDevicePlace();
+    if (device) applyLocation({ ...device, locked: false });
+  }
+  updateWeatherPlace();
 }
 
 async function bootWeatherAndTiles() {

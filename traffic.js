@@ -169,7 +169,11 @@ function showNoPlace() {
 
 async function refreshTraffic() {
   try {
-    const response = await fetch("traffic.json", { cache: "no-store" });
+    const trafficUrl =
+      window.SlatePlace && typeof window.SlatePlace.trafficJsonUrl === "function"
+        ? window.SlatePlace.trafficJsonUrl()
+        : "traffic.json";
+    const response = await fetch(trafficUrl, { cache: "no-store" });
     if (!response.ok) throw new Error("traffic");
     const data = await response.json();
     if (!data.hasPlace) {
@@ -179,7 +183,12 @@ async function refreshTraffic() {
     quietEl.hidden = true;
     bodyEl.hidden = false;
     const place = data.place || {};
-    placeEl.textContent = place.label || "Saved place";
+    const device =
+      window.SlatePlace && typeof window.SlatePlace.readDevicePlace === "function"
+        ? window.SlatePlace.readDevicePlace()
+        : null;
+    placeEl.textContent =
+      (device && device.label) || place.label || "Saved place";
     headingEl.textContent = "Live map";
     updatedEl.textContent = data.updated ? `Updated ${formatIncidentTime(data.updated)}` : "";
     mapCenter = { lat: place.lat, lon: place.lon };

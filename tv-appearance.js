@@ -2,19 +2,57 @@
 (() => {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const stops = ['#72c9d0', '#837ee0', '#db9cae', '#b7d2e4'];
-  const sculpturalWarm = ['#E0D3BB', '#C4A574', '#8A6A4E'];
-  const THEME_COLOR = '#10141A';
-  const aquaRibbons = '<svg class="aqua-ribbons" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs><linearGradient id="ribbon-slate" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#256a9d"/><stop offset=".48" stop-color="#79c3d4"/><stop offset="1" stop-color="#5a4788"/></linearGradient></defs><g fill="none" stroke="url(#ribbon-slate)"><path class="aqua-band" stroke-width="190" opacity=".28" d="M-400 1100C300-240 660 1360 1210 650S1860 180 2300 0"/><path class="aqua-band" stroke-width="88" opacity=".55" d="M-300 1060C390 20 630 1270 1180 660S1850 320 2300 90"/><path class="aqua-band" stroke-width="3" opacity=".8" d="M-300 1000C390 20 620 1190 1160 620S1850 320 2300 90"/><path class="aqua-band" stroke-width="40" opacity=".3" d="M-300 1180C300 90 800 1400 1340 700S2000 180 2300 200"/></g></svg>';
-  const FLURRY_REST_NX = 0.62;
-  const FLURRY_REST_NY = 0.42;
-  const flurryStreams = [
-    { slot: 0.15, rgb: [196, 52, 128], len: 0.55, phase: 0.2 },
-    { slot: 1.35, rgb: [52, 92, 188], len: 0.75, phase: 1.1 },
-    { slot: 2.55, rgb: [40, 160, 176], len: 0.95, phase: 2.4 },
-    { slot: 3.85, rgb: [188, 156, 48], len: 0.70, phase: 3.6 },
-    { slot: 5.15, rgb: [40, 150, 88], len: 0.85, phase: 4.8 },
-  ];
-  const field = { nx: FLURRY_REST_NX, ny: FLURRY_REST_NY, targetNx: FLURRY_REST_NX, targetNy: FLURRY_REST_NY };
+  /* Curated color sets for the two looks that used to have one fixed colorway.
+     Keys are saved as tvAquaPalette / tvFlurryPalette. The first key is the default. */
+  const LOOK_PALETTES = {
+    aqua: {
+      tide:    { name: 'Tide',    base: '#0E2338', colors: ['#2F78B0', '#7CC4D6', '#6A57A0'] },
+      glacier: { name: 'Glacier', base: '#121C28', colors: ['#5E86AD', '#C9DCEA', '#A9C2DA'] },
+      lagoon:  { name: 'Lagoon',  base: '#0A2228', colors: ['#147C8C', '#4FD1C5', '#2C6DB5'] },
+      dusk:    { name: 'Dusk',    base: '#1B1428', colors: ['#7A52B8', '#E58FB2', '#F2B57E'] },
+      moss:    { name: 'Moss',    base: '#0E1D18', colors: ['#2F7D62', '#9CCB8B', '#D9C27A'] },
+      ember:   { name: 'Ember',   base: '#21120F', colors: ['#A8402C', '#F08A4B', '#F3C46B'] },
+    },
+    flurry: {
+      spectrum: { name: 'Spectrum', core: '#C9DCEA', colors: ['#E85BC8', '#8C63F0', '#4C7BEA', '#4CD3E8', '#E8CF5A', '#55D98A'] },
+      ice:      { name: 'Ice',      core: '#C9DCEA', colors: ['#A9C2DA', '#6F98C2', '#D3E0EC', '#5A7FA6', '#8FB0CF'] },
+      aurora:   { name: 'Aurora',   core: '#BFEFE6', colors: ['#19D3B5', '#9472FF', '#FF6F91', '#3FB8E0'] },
+      ember:    { name: 'Ember',    core: '#F6D9B0', colors: ['#FFA51F', '#F0453A', '#D8337A', '#FFC93C'] },
+      lagoon:   { name: 'Lagoon',   core: '#BFE9F5', colors: ['#1FC8F0', '#3A6BFF', '#2ED585', '#7BDFF2'] },
+      bloom:    { name: 'Bloom',    core: '#F8D7E6', colors: ['#D946EF', '#FF7A30', '#FFC93C', '#F06AA8'] },
+    },
+  };
+  const paletteFor = (look, key) => {
+    const set = LOOK_PALETTES[look];
+    if (!set) return null;
+    return set[key] || set[Object.keys(set)[0]];
+  };
+  const rgba = (hex, a) => {
+    const n = parseInt(String(hex).replace('#', ''), 16);
+    return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
+  };
+  const GRAIN = "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 .9 0 0 0 0 .88 0 0 0 0 .84 0 0 0 .55 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E\")";
+  let ambientConfig = null;
+  let ambientLoad = null;
+  function loadAmbient() {
+    if (!ambientLoad) {
+      ambientLoad = fetch('ambient.json', { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : {}))
+        .catch(() => ({}))
+        .then(cfg => { ambientConfig = cfg || {}; return ambientConfig; });
+    }
+    return ambientLoad;
+  }
+  /* Sculptural Light takes its colors from the chosen ambient preset, the same way the Appearance preview does. */
+  function ambientColorsFor(presetKey) {
+    const cfg = ambientConfig || {};
+    const preset = (cfg.presets || {})[presetKey] || {};
+    if (preset.enabled === false) return stops;
+    const pal = (cfg.palettes || {})[preset.palette || cfg.palette];
+    return pal && Array.isArray(pal.colors) && pal.colors.length ? pal.colors : stops;
+  }
+  const flurryState = { hues: LOOK_PALETTES.flurry.spectrum.colors, core: LOOK_PALETTES.flurry.spectrum.core, still: false };
+  const field = { nx: 0.68, ny: 0.42 };
   let stopBackdrop = () => {};
   let config = {};
   let page = 0;
@@ -30,6 +68,7 @@
   };
   const profileDock = () => isHome() && androidTv() && tvFrame() && dockProfile();
   const motionLive = () => !reducedMotion.matches && config.tvMotion !== 'still';
+  const THEME_COLOR = '#10141A';
 
   function normalizeAppearance(raw = {}) {
     let tvAppearance = raw.tvAppearance;
@@ -38,11 +77,22 @@
     else if (tvAppearance !== 'sculptural' && tvAppearance !== 'aqua' && tvAppearance !== 'flurry') tvAppearance = 'sculptural';
     const tvMotion = ['still', 'drift', 'reactive'].includes(raw.tvMotion) ? raw.tvMotion : 'drift';
     const tvIntensity = ['soft', 'balanced', 'vivid'].includes(raw.tvIntensity) ? raw.tvIntensity : 'balanced';
-    return { tvAppearance, tvMotion, tvIntensity };
+    const aquaKeys = Object.keys(LOOK_PALETTES.aqua);
+    const flurryKeys = Object.keys(LOOK_PALETTES.flurry);
+    const tvAquaPalette = aquaKeys.includes(raw.tvAquaPalette) ? raw.tvAquaPalette : 'tide';
+    const tvFlurryPalette = flurryKeys.includes(raw.tvFlurryPalette) ? raw.tvFlurryPalette : 'spectrum';
+    return {
+      tvAppearance,
+      tvMotion,
+      tvIntensity,
+      tvAquaPalette,
+      tvFlurryPalette,
+      ambientPreset: raw.ambientPreset,
+    };
   }
 
   function applyTheme(settings) {
-    const norm = normalizeAppearance(settings);
+    const norm = normalizeAppearance(settings || {});
     let motion = norm.tvMotion;
     if (reducedMotion.matches || document.body.classList.contains('page-screensaver')) motion = 'still';
     for (const el of [document.documentElement, document.body]) {
@@ -54,105 +104,50 @@
     if (meta) meta.setAttribute('content', THEME_COLOR);
   }
 
-  function flurryBrushScale(intensity) {
-    if (intensity === 'soft') return 0.9;
-    if (intensity === 'vivid') return 1.12;
-    return 1;
-  }
-
-  function buildFlurryBrushes() {
-    const makeColor = (r, g, b) => {
-      const brush = document.createElement('canvas');
-      brush.width = 96;
-      brush.height = 96;
-      const bctx = brush.getContext('2d');
-      if (!bctx) return brush;
-      const grad = bctx.createRadialGradient(48, 48, 0, 48, 48, 48);
-      grad.addColorStop(0, `rgba(${r},${g},${b},0.55)`);
-      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      bctx.fillStyle = grad;
-      bctx.fillRect(0, 0, 96, 96);
-      return brush;
-    };
-    const white = makeColor(255, 255, 255);
-    return { colors: flurryStreams.map(s => makeColor(...s.rgb)), white };
-  }
-
-  function clampFlurryCore() {
-    field.nx = Math.max(0.5, Math.min(0.76, field.nx));
-    field.ny = Math.max(0.3, Math.min(0.56, field.ny));
-  }
-
-  function flurryAim(motion, frameCount) {
-    const driftT = frameCount * 0.05 * (Math.PI * 2 / 40);
-    const ellipseNx = FLURRY_REST_NX + Math.sin(driftT) * 0.02;
-    const ellipseNy = FLURRY_REST_NY + Math.cos(driftT) * 0.015;
-    if (motion === 'still') return { nx: ellipseNx, ny: ellipseNy };
-    return {
-      nx: ellipseNx * 0.5 + field.targetNx * 0.5,
-      ny: ellipseNy * 0.5 + field.targetNy * 0.5,
-    };
-  }
-
-  function drawFlurry(ctx, state) {
-    const { spin, brushes, brushScale, motion, frameCount, firstFrame } = state;
-    const aim = flurryAim(motion, frameCount);
-    field.nx += (aim.nx - field.nx) * 0.08;
-    field.ny += (aim.ny - field.ny) * 0.08;
-    clampFlurryCore();
-    const coreX = 960 * field.nx;
-    const coreY = 540 * field.ny;
-    ctx.globalCompositeOperation = 'source-over';
+  function drawFlurry(ctx, tick) {
+    /* The core wanders on a small loop so no bright spot sits still. */
+    const coreX = 960 * (field.nx + Math.sin(tick * 0.045) * 0.035);
+    const coreY = 540 * (field.ny + Math.cos(tick * 0.037) * 0.04);
     ctx.globalAlpha = 1;
-    ctx.fillStyle = firstFrame ? '#000' : 'rgba(0,0,0,0.08)';
+    ctx.fillStyle = 'rgba(11,14,19,0.2)';
     ctx.fillRect(0, 0, 960, 540);
-    state.firstFrame = false;
-    ctx.globalCompositeOperation = 'lighter';
-    const baseLen = 250;
-    for (let i = 0; i < flurryStreams.length; i += 1) {
-      const stream = flurryStreams[i];
-      const angle = stream.slot + spin + 0.45 * Math.sin(spin * 0.55 + stream.slot);
-      const length = baseLen * stream.len * (1 + 0.12 * Math.sin(spin * 0.3 + stream.phase));
-      const headX = coreX - Math.cos(angle) * length;
-      const headY = coreY - Math.sin(angle) * length;
-      const perpX = -Math.sin(angle);
-      const perpY = Math.cos(angle);
-      const brush = brushes.colors[i];
-      for (let s = 0; s < 6; s += 1) {
-        const t = s / 5;
-        const lx = headX + (coreX - headX) * t;
-        const ly = headY + (coreY - headY) * t;
-        const bend = Math.sin(t * Math.PI) * 50;
-        const px = lx + perpX * bend;
-        const py = ly + perpY * bend;
-        const w = (48 + Math.sin(t * Math.PI) * 88) * brushScale;
-        ctx.globalAlpha = 0.02 + Math.sin(t * Math.PI) * 0.03;
-        ctx.drawImage(brush, px - w / 2, py - w / 2, w, w);
-      }
+    ctx.lineCap = 'round';
+    const hues = flurryState.hues;
+    for (let i = 0; i < 16; i += 1) {
+      const angle = tick * 0.12 + i * 0.42;
+      const sx = 480 + Math.cos(angle) * 560;
+      const sy = 270 + Math.sin(angle * 1.25) * 360;
+      const hue = hues[i % hues.length];
+      const grad = ctx.createLinearGradient(sx, sy, coreX, coreY);
+      grad.addColorStop(0, rgba(hue, 0));
+      grad.addColorStop(0.55, rgba(hue, 0.5));
+      grad.addColorStop(1, rgba(hue, 0.9));
+      ctx.strokeStyle = grad;
+      ctx.globalAlpha = 0.2;
+      ctx.lineWidth = 20 - (i % 5) * 3;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.quadraticCurveTo((sx + coreX) / 2, (sy + coreY) / 2 + Math.sin(angle) * 50, coreX, coreY);
+      ctx.stroke();
     }
-    const coreSize = 48 * brushScale;
-    ctx.globalAlpha = 0.2;
-    ctx.drawImage(brushes.white, coreX - coreSize / 2, coreY - coreSize / 2, coreSize, coreSize);
-    ctx.globalCompositeOperation = 'source-over';
+    const radius = 72 * (0.92 + Math.sin(tick * 0.4) * 0.08);
+    const glow = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, radius);
+    /* The trail fade (0.2 per frame) stacks this glow about 5x, so the
+       stops are low and taper slowly; higher values settle into a hard disc. */
+    const peak = flurryState.still ? 0.1 : 0.16;
+    glow.addColorStop(0, `rgba(230,225,215,${peak})`);
+    glow.addColorStop(0.2, rgba(flurryState.core, peak * 0.6));
+    glow.addColorStop(0.5, rgba(flurryState.core, peak * 0.22));
+    glow.addColorStop(0.8, rgba(flurryState.core, peak * 0.05));
+    glow.addColorStop(1, rgba(flurryState.core, 0));
     ctx.globalAlpha = 1;
+    ctx.fillStyle = glow;
+    ctx.beginPath();
+    ctx.arc(coreX, coreY, radius, 0, Math.PI * 2);
+    ctx.fill();
   }
 
-  function setFlurryTarget(x, y, motion) {
-    const mx = motion === 'reactive' ? 0.16 : 0.06;
-    const my = motion === 'reactive' ? 0.10 : 0.04;
-    field.targetNx = FLURRY_REST_NX + (x - 0.5) * mx;
-    field.targetNy = FLURRY_REST_NY + (y - 0.5) * my;
-  }
-
-  function flurryTargetLive(el) {
-    if (!el || el.dataset.backdrop !== 'flurry') return false;
-    const motion = el.dataset.motion;
-    if (motion !== 'drift' && motion !== 'reactive') return false;
-    if (isHome()) return motionLive();
-    return !reducedMotion.matches;
-  }
-
-  function decorate(el, backdrop, motion, intensity, ambientColors = stops) {
+  function decorate(el, backdrop, motion, intensity, ambientColors = stops, paletteKey = '') {
     if (!el) return () => {};
     el.replaceChildren();
     el.dataset.backdrop = backdrop;
@@ -169,12 +164,15 @@
         : '#10141a';
       el.append(glow);
     } else if (backdrop === 'sculptural') {
-      const palette = ambientColors.length ? ambientColors : sculpturalWarm;
+      const palette = ambientColors && ambientColors.length ? ambientColors : stops;
       for (let i = 0; i < 5; i += 1) {
         const form = document.createElement('i');
+        const color = palette[i % palette.length];
         form.className = 'sculpt-form';
         form.style.setProperty('--form-i', i);
-        form.style.setProperty('--form-color', palette[i % palette.length]);
+        form.style.setProperty('--form-color', color);
+        form.style.setProperty('--form-core', rgba(color, 0.62));
+        form.style.setProperty('--form-mid', rgba(color, 0.22));
         el.append(form);
       }
     } else if (backdrop === 'landscape') {
@@ -184,7 +182,22 @@
       image.addEventListener('error', () => { el.dataset.backdrop = 'unavailable'; });
       el.append(image);
     } else if (backdrop === 'aqua') {
-      el.insertAdjacentHTML('beforeend', aquaRibbons);
+      const pal = paletteFor('aqua', paletteKey);
+      const [a, b, c] = pal.colors;
+      el.dataset.palette = Object.keys(LOOK_PALETTES.aqua).find(k => LOOK_PALETTES.aqua[k] === pal) || 'tide';
+      el.style.setProperty('--aqua-base', pal.base);
+      el.innerHTML = `<svg class="aqua-ribbons" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice"><defs>`
+        + `<linearGradient id="ribbon-a" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${a}"/><stop offset=".48" stop-color="${b}"/><stop offset="1" stop-color="${c}"/></linearGradient>`
+        + `<linearGradient id="ribbon-b" x1="0" y1="1" x2="1" y2="0"><stop stop-color="${c}"/><stop offset=".55" stop-color="${a}"/><stop offset="1" stop-color="${b}"/></linearGradient>`
+        + `<linearGradient id="ribbon-sheen" x1="0" y1="0" x2="1" y2="0"><stop stop-color="${b}" stop-opacity="0"/><stop offset=".5" stop-color="#E6E1D7" stop-opacity=".9"/><stop offset="1" stop-color="${b}" stop-opacity="0"/></linearGradient>`
+        + `</defs><g fill="none" stroke-linecap="round">`
+        + `<path class="aqua-band aqua-glow" stroke="url(#ribbon-a)" stroke-width="460" opacity=".09" d="M-400 1120C300-200 660 1380 1210 670S1860 200 2300 20"/>`
+        + `<path class="aqua-band" stroke="url(#ribbon-b)" stroke-width="120" opacity=".1" d="M560 -120C980 260 1460 40 2200 300"/>`
+        + `<path class="aqua-band" stroke="url(#ribbon-a)" stroke-width="190" opacity=".3" d="M-400 1100C300-240 660 1360 1210 650S1860 180 2300 0"/>`
+        + `<path class="aqua-band" stroke="url(#ribbon-b)" stroke-width="88" opacity=".5" d="M-300 1060C390 20 630 1270 1180 660S1850 320 2300 90"/>`
+        + `<path class="aqua-band" stroke="url(#ribbon-sheen)" stroke-width="3" opacity=".7" d="M-300 1000C390 20 620 1190 1160 620S1850 320 2300 90"/>`
+        + `<path class="aqua-band" stroke="url(#ribbon-a)" stroke-width="40" opacity=".32" d="M-300 1180C300 90 800 1400 1340 700S2000 180 2300 200"/>`
+        + `</g></svg>`;
     } else if (backdrop === 'flurry') {
       const canvas = document.createElement('canvas');
       canvas.className = 'flurry-field';
@@ -192,29 +205,24 @@
       canvas.width = 960;
       canvas.height = 540;
       const ctx = canvas.getContext('2d');
+      const pal = paletteFor('flurry', paletteKey);
+      el.dataset.palette = Object.keys(LOOK_PALETTES.flurry).find(k => LOOK_PALETTES.flurry[k] === pal) || 'spectrum';
+      flurryState.hues = pal.colors;
+      flurryState.core = pal.core;
+      flurryState.still = motion === 'still' || reducedMotion.matches;
       if (ctx) {
-        field.nx = FLURRY_REST_NX;
-        field.ny = FLURRY_REST_NY;
-        field.targetNx = FLURRY_REST_NX;
-        field.targetNy = FLURRY_REST_NY;
-        const liveMotion = reducedMotion.matches ? 'still' : motion;
-        const brushes = buildFlurryBrushes();
-        const brushScale = flurryBrushScale(intensity);
-        let spin = 0;
-        let frameCount = 0;
-        const state = {
-          spin, brushes, brushScale, motion: liveMotion, frameCount, firstFrame: true,
-        };
-        const step = () => {
-          state.spin += 0.008;
-          state.frameCount += 1;
-          drawFlurry(ctx, state);
-        };
-        for (let n = 0; n < 48; n += 1) step();
-        if (liveMotion !== 'still') {
+        let tick = 0;
+        ctx.fillStyle = '#0B0E13';
+        ctx.fillRect(0, 0, 960, 540);
+        for (let n = 0; n < 40; n += 1) {
+          tick += 0.08;
+          drawFlurry(ctx, tick);
+        }
+        if (motion !== 'still' && !reducedMotion.matches) {
           timer = setInterval(() => {
             if (document.hidden || document.body.classList.contains('tv-motion-paused')) return;
-            step();
+            tick += 0.08;
+            drawFlurry(ctx, tick);
           }, 50);
         }
       }
@@ -227,9 +235,22 @@
         el.append(ring);
       }
     }
+    if (['sculptural', 'aqua', 'flurry'].includes(backdrop)) {
+      const grain = document.createElement('i');
+      grain.className = 'look-grain';
+      grain.style.backgroundImage = GRAIN;
+      el.append(grain);
+    }
     return () => { if (timer) clearInterval(timer); el.replaceChildren(); };
   }
-  window.SlateLooks = { decorate, normalizeAppearance, applyTheme };
+  window.SlateLooks = {
+    decorate,
+    palettes: LOOK_PALETTES,
+    loadAmbient,
+    ambientColorsFor,
+    normalizeAppearance,
+    applyTheme,
+  };
 
   function tiles() { return [...document.querySelectorAll('#tiles .tile')]; }
 
@@ -259,17 +280,23 @@
     config = settings || {};
     applyTheme(config);
     if (!isHome()) return;
+    const choice = ['sculptural', 'aqua', 'flurry'].includes(config.tvAppearance) ? config.tvAppearance : 'sculptural';
+    document.body.dataset.tvAppearance = choice;
     document.body.dataset.homeSurface = androidTv() && tvFrame() ? 'tv' : 'flex';
-    const norm = normalizeAppearance(config);
-    const motion = reducedMotion.matches ? 'still' : norm.tvMotion;
-    document.body.dataset.tvBackdrop = norm.tvAppearance;
-    stopBackdrop();
-    stopBackdrop = decorate(
-      document.getElementById('tv-backdrop'),
-      norm.tvAppearance,
-      motion,
-      norm.tvIntensity,
-    );
+    const motion = ['still', 'drift', 'reactive'].includes(config.tvMotion) ? config.tvMotion : 'drift';
+    document.body.dataset.tvBackdrop = choice;
+    document.body.dataset.tvMotion = reducedMotion.matches ? 'still' : motion;
+    const paint = () => {
+      stopBackdrop();
+      const colors = choice === 'sculptural' ? ambientColorsFor(config.ambientPreset) : stops;
+      const key = choice === 'aqua' ? config.tvAquaPalette : choice === 'flurry' ? config.tvFlurryPalette : '';
+      stopBackdrop = decorate(document.getElementById('tv-backdrop'), choice, motion, config.tvIntensity || 'balanced', colors, key);
+    };
+    if (choice === 'sculptural' && !ambientConfig) {
+      loadAmbient().then(() => { if (document.body.dataset.tvAppearance === 'sculptural') paint(); });
+    } else {
+      paint();
+    }
     setPage(0);
   }
 
@@ -290,7 +317,8 @@
     document.body.style.setProperty('--look-y', dy);
     el?.style.setProperty('--look-x', dx);
     el?.style.setProperty('--look-y', dy);
-    if (flurryTargetLive(el)) setFlurryTarget(x, y, config.tvMotion);
+    field.nx = 0.62 + (x - 0.5) * (config.tvMotion === 'reactive' ? 0.28 : 0.1);
+    field.ny = 0.42 + (y - 0.5) * (config.tvMotion === 'reactive' ? 0.2 : 0.08);
   }
 
   function showStreak(x, y, px, py) {
@@ -342,10 +370,9 @@
     if (now - lastPointer < 180 || Math.hypot(event.movementX, event.movementY) < 8) return;
     lastPointer = now;
     showStreak(x, y, event.movementX, event.movementY);
-    const preview = document.getElementById('preview-backdrop');
-    if (flurryTargetLive(preview)) {
-      const previewMotion = preview.dataset.motion || 'drift';
-      setFlurryTarget(x, y, previewMotion);
+    if (!isHome() && document.getElementById('preview-backdrop')?.dataset.backdrop === 'flurry') {
+      field.nx = 0.62 + (x - 0.5) * 0.2;
+      field.ny = 0.42 + (y - 0.5) * 0.16;
     }
   });
   document.addEventListener('click', event => {
@@ -377,8 +404,8 @@
   }, true);
   reducedMotion.addEventListener('change', () => {
     applyTheme(config);
-    if (isHome()) apply(config);
-    else document.dispatchEvent(new Event('slate:motion-preference'));
+    apply(config);
+    document.dispatchEvent(new Event('slate:motion-preference'));
   });
   let resizeTimer;
   addEventListener('resize', () => {

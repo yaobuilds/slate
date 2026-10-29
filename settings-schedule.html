@@ -9,21 +9,20 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="settings.css">
-  <link rel="stylesheet" href="tv-appearance.css">
 </head>
 <body>
   <div class="settings-stage">
     <header class="settings-head">
+      <a class="settings-back" href="settings.html"><span class="back-arrow" aria-hidden="true">←</span>Settings</a>
       <h1 class="settings-title">Calendar</h1>
-      <a class="settings-back" href="settings.html">Back</a>
     </header>
     <section class="settings-panel" id="calendar-host-panel" hidden>
-      <p class="settings-lan-copy">Connect Google Calendar on the computer that runs Slate. Dashboard and calendar views refresh about every two minutes.</p>
+      <p class="settings-lan-copy" style="margin-top:0">Connect Google Calendar on the computer that runs Slate. Dashboard and calendar views refresh about every two minutes.</p>
       <p class="settings-lan-copy" id="calendar-remote-note">Open this page on the host at <code>127.0.0.1:8000</code> to connect.</p>
     </section>
     <section class="settings-panel" id="calendar-setup-panel">
-      <p class="settings-lan-copy">Guest mode shows <strong>Busy</strong> instead of titles. <strong>Show all</strong> reveals details after your PIN on Wi‑Fi.</p>
-      <p class="settings-msg" id="calendar-status" role="status"></p>
+      <p class="settings-lan-copy" style="margin-top:0">Guest mode shows <strong>Busy</strong> instead of titles. <strong>Show all</strong> reveals details after your PIN on Wi‑Fi.</p>
+      <p class="settings-msg settings-status" id="calendar-status" role="status"></p>
       <h2 class="settings-subtitle">Google OAuth client</h2>
       <p class="settings-lan-copy">Create a client in Google Cloud with the Calendar API enabled. Redirect URI: <code>http://127.0.0.1:8000/oauth/callback</code></p>
       <label class="pin-label" for="calendar-client-id">Client ID</label>
@@ -31,24 +30,23 @@
       <label class="pin-label" for="calendar-client-secret">Client secret</label>
       <input id="calendar-client-secret" class="settings-field" type="password" autocomplete="off">
       <div class="settings-actions">
-        <button type="button" id="calendar-save-client">Save client</button>
+        <button type="button" id="calendar-save-client" class="button-primary">Save client</button>
         <button type="button" id="calendar-connect">Connect with Google</button>
       </div>
       <h2 class="settings-subtitle" style="margin-top:28px">Slate calendar</h2>
       <label class="pin-label" for="calendar-pick">Choose calendar</label>
       <select class="settings-field" id="calendar-pick" disabled></select>
       <div class="settings-actions">
-        <button type="button" id="calendar-save-pick" disabled>Use this calendar</button>
+        <button type="button" id="calendar-save-pick" class="button-primary" disabled>Use this calendar</button>
         <button type="button" id="calendar-disconnect">Disconnect</button>
       </div>
       <div class="settings-actions" style="margin-top:24px">
-        <a class="settings-back" href="dashboard.html">Open Dashboard</a>
-        <a class="settings-back" href="calendar.html">Open calendar</a>
+        <a class="settings-link-button" href="dashboard.html">Open Dashboard</a>
+        <a class="settings-link-button" href="calendar.html">Open calendar</a>
       </div>
     </section>
   </div>
   <script src="settings.js"></script>
   <script src="settings-schedule.js"></script>
-  <script src="tv-appearance.js"></script>
 </body>
 </html>

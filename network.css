@@ -27,12 +27,6 @@ body.page-network {
   font-family: var(--sl-font);
 }
 
-html:not([data-slate-surface='tv']) .network-page {
-  width: 100%;
-  max-width: none;
-  margin: 0;
-}
-
 .network-head {
   display: grid;
   grid-template-columns: auto 1fr auto;
@@ -66,8 +60,16 @@ html:not([data-slate-surface='tv']) .network-page {
   cursor: pointer;
 }
 
+.network-back,
 .network-button {
-  border-color: var(--sl-ice);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.network-button {
   background: var(--sl-panel-2);
 }
 

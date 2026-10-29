@@ -9,64 +9,21 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="settings.css">
-  <link rel="stylesheet" href="tv-appearance.css">
 </head>
 <body>
   <div class="settings-stage">
     <header class="settings-head">
+      <a class="settings-back" href="index.html"><span class="back-arrow" aria-hidden="true">←</span>Home</a>
       <h1 class="settings-title">Settings</h1>
-      <a class="settings-back" href="index.html">Back to Home</a>
     </header>
-    <nav class="settings-panel" aria-label="Settings sections">
-      <a class="settings-hub-link" href="settings-apps.html">Home apps<span aria-hidden="true">→</span></a>
-      <a class="settings-hub-link" href="settings-schedule.html">Calendar<span aria-hidden="true">→</span></a>
-      <a class="settings-hub-link" href="settings-theme.html">Appearance<span aria-hidden="true">→</span></a>
-      <a class="settings-hub-link" href="settings-location.html">Location<span aria-hidden="true">→</span></a>
-      <a class="settings-hub-link" href="settings-headlines.html">News sources<span aria-hidden="true">→</span></a>
+    <nav class="settings-panel settings-hub" aria-label="Settings sections">
+      <a class="settings-hub-link" href="settings-apps.html"><svg class="hub-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="4" width="7" height="7" rx="1.5"/><rect x="13" y="4" width="7" height="7" rx="1.5"/><rect x="4" y="13" width="7" height="7" rx="1.5"/><rect x="13" y="13" width="7" height="7" rx="1.5"/></svg><span class="hub-label">Home apps</span><svg class="hub-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      <a class="settings-hub-link" href="settings-schedule.html"><svg class="hub-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="5" width="16" height="15" rx="2.5"/><path d="M4 10h16M9 3v4M15 3v4"/></svg><span class="hub-label">Calendar</span><svg class="hub-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      <a class="settings-hub-link" href="settings-theme.html"><svg class="hub-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h9M18 7h2M4 17h4M13 17h7"/><circle cx="15.5" cy="7" r="2.5"/><circle cx="10.5" cy="17" r="2.5"/></svg><span class="hub-label">Appearance</span><svg class="hub-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      <a class="settings-hub-link" href="settings-location.html"><svg class="hub-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 21s-6.5-5.6-6.5-11A6.5 6.5 0 0 1 18.5 10c0 5.4-6.5 11-6.5 11z"/><circle cx="12" cy="10" r="2.4"/></svg><span class="hub-label">Location</span><svg class="hub-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      <a class="settings-hub-link" href="settings-headlines.html"><svg class="hub-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M4 10h16M4 14h10M4 18h8"/></svg><span class="hub-label">News sources</span><svg class="hub-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
+      <a class="settings-hub-link settings-remote-only" href="remote.html" id="remote-hub-link"><svg class="hub-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="8" y="3" width="8" height="18" rx="3"/><circle cx="12" cy="8.5" r="1.6"/><path d="M10.5 14h3M10.5 17h3"/></svg><span class="hub-label">Remote</span><svg class="hub-chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg></a>
     </nav>
-    <section class="settings-panel settings-lan-panel" id="screensaver-panel" hidden>
-      <h2 class="settings-subtitle">TV screensaver</h2>
-      <p class="settings-lan-copy">Slate can show clock, weather, and the next calendar line while the TV sleeps.</p>
-      <div class="settings-actions"><button type="button" id="screensaver-open">Open screensaver settings</button></div>
-    </section>
-    <section class="settings-panel settings-lan-panel" id="home-routing-panel" hidden>
-      <h2 class="settings-subtitle">TV Home button</h2>
-      <label class="settings-row">
-        <input id="home-routing-toggle" type="checkbox">
-        <span class="nm">Return Home to Slate</span>
-      </label>
-      <p class="settings-lan-copy" id="home-routing-status"></p>
-      <div class="settings-actions"><button type="button" id="home-routing-manage">Accessibility settings</button></div>
-    </section>
-    <section class="settings-panel settings-lan-panel">
-      <h2 class="settings-subtitle">Wi‑Fi PIN</h2>
-      <p class="settings-lan-copy">Used when Slate runs with <code>--lan</code> and you choose <strong>Show all</strong> on Dashboard or calendar. Not required on the host at <code>127.0.0.1</code>.</p>
-      <form id="pin-form" class="settings-pin-fields" autocomplete="off">
-        <label class="pin-label" for="pin-new">New PIN (4–8 digits)</label>
-        <input id="pin-new" class="settings-field" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
-        <label class="pin-label" for="pin-confirm">Confirm PIN</label>
-        <input id="pin-confirm" class="settings-field" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
-        <div class="settings-actions"><button type="submit" id="pin-save">Save PIN</button></div>
-      </form>
-      <p class="settings-msg" id="pin-msg" role="status"></p>
-    </section>
-    <section class="settings-panel settings-lan-panel">
-      <h2 class="settings-subtitle">Footer credit</h2>
-      <label class="settings-row loc-lock">
-        <input id="credit-toggle" type="checkbox" checked>
-        <span class="nm">Show GitHub credit on Home and Dashboard</span>
-      </label>
-      <p class="settings-msg" id="credit-msg" role="status"></p>
-    </section>
-    <section class="settings-panel settings-lan-panel">
-      <h2 class="settings-subtitle">Mouse pointer</h2>
-      <label class="settings-row loc-lock">
-        <input id="pointer-toggle" type="checkbox">
-        <span class="nm">Hide mouse pointer</span>
-      </label>
-      <p class="settings-lan-copy">On hides the cursor on Home, Dashboard, and Settings, even when the mouse moves. Clicks still work. Off shows the pointer after the mouse moves.</p>
-      <p class="settings-msg" id="pointer-msg" role="status"></p>
-    </section>
     <section class="settings-panel settings-lan-panel" id="tv-remote-panel" hidden>
       <h2 class="settings-subtitle">TV remote</h2>
       <p class="settings-lan-copy">Generate a pairing code for the phone remote. The TV remote panel on the phone opens after pairing.</p>
@@ -90,6 +47,49 @@
       </label>
       <p class="settings-msg" id="remote-enabled-msg" role="status"></p>
     </section>
+    <section class="settings-panel settings-lan-panel" id="screensaver-panel" hidden>
+      <h2 class="settings-subtitle">TV screensaver</h2>
+      <p class="settings-lan-copy">Slate can show clock, weather, and the next calendar line while the TV sleeps.</p>
+      <div class="settings-actions"><button type="button" id="screensaver-open">Open screensaver settings</button></div>
+    </section>
+    <section class="settings-panel settings-lan-panel" id="home-routing-panel" hidden>
+      <h2 class="settings-subtitle">TV Home button</h2>
+      <label class="settings-row">
+        <input id="home-routing-toggle" type="checkbox">
+        <span class="nm">Return Home to Slate</span>
+      </label>
+      <p class="settings-lan-copy" id="home-routing-status"></p>
+      <div class="settings-actions"><button type="button" id="home-routing-manage">Accessibility settings</button></div>
+    </section>
+    <section class="settings-panel settings-lan-panel">
+      <h2 class="settings-subtitle">Wi‑Fi PIN</h2>
+      <p class="settings-lan-copy">Used when Slate runs with <code>--lan</code> and you choose <strong>Show all</strong> on Dashboard or calendar. Not required on the host at <code>127.0.0.1</code>.</p>
+      <form id="pin-form" class="settings-pin-fields" autocomplete="off">
+        <label class="pin-label" for="pin-new">New PIN (4–8 digits)</label>
+        <input id="pin-new" class="settings-field" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+        <label class="pin-label" for="pin-confirm">Confirm PIN</label>
+        <input id="pin-confirm" class="settings-field" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password">
+        <div class="settings-actions"><button type="submit" id="pin-save" class="button-primary">Save PIN</button></div>
+      </form>
+      <p class="settings-msg" id="pin-msg" role="status"></p>
+    </section>
+    <section class="settings-panel settings-lan-panel">
+      <h2 class="settings-subtitle">Footer credit</h2>
+      <label class="settings-row loc-lock">
+        <input id="credit-toggle" type="checkbox" checked>
+        <span class="nm">Show GitHub credit on Home and Dashboard</span>
+      </label>
+      <p class="settings-msg" id="credit-msg" role="status"></p>
+    </section>
+    <section class="settings-panel settings-lan-panel">
+      <h2 class="settings-subtitle">Mouse pointer</h2>
+      <label class="settings-row loc-lock">
+        <input id="pointer-toggle" type="checkbox">
+        <span class="nm">Hide mouse pointer</span>
+      </label>
+      <p class="settings-lan-copy">On hides the cursor on Home, Dashboard, and Settings, even when the mouse moves. Clicks still work. Off shows the pointer after the mouse moves.</p>
+      <p class="settings-msg" id="pointer-msg" role="status"></p>
+    </section>
     <section class="settings-panel settings-lan-panel">
       <h2 class="settings-subtitle">Wi-Fi session</h2>
       <p class="settings-lan-copy">When Slate runs with <code>--lan</code>, unlocking Show all on Dashboard sets a cookie on this iPad or phone. Sign out clears it so the schedule asks for the PIN again.</p>
@@ -100,6 +100,5 @@
     </section>
   </div>
   <script src="settings.js"></script>
-  <script src="tv-appearance.js"></script>
 </body>
 </html>

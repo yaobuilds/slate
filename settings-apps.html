@@ -9,13 +9,12 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="settings.css">
-  <link rel="stylesheet" href="tv-appearance.css">
 </head>
 <body>
   <div class="settings-stage">
     <header class="settings-head">
+      <a class="settings-back" href="settings.html"><span class="back-arrow" aria-hidden="true">←</span>Settings</a>
       <h1 class="settings-title">Home apps</h1>
-      <a class="settings-back" href="settings.html">Back</a>
     </header>
     <section class="settings-panel">
       <p class="settings-count" id="apps-count">0 selected</p>
@@ -38,6 +37,7 @@
           <option value="1">HDMI 1</option>
           <option value="2">HDMI 2</option>
           <option value="3">HDMI 3</option>
+          <option value="4">HDMI 4</option>
         </select>
       </div>
       <div class="settings-order-block" id="apps-order-block">
@@ -48,7 +48,7 @@
       <h2 class="settings-subtitle">Catalog</h2>
       <ul class="settings-list" id="apps-list"></ul>
       <div class="settings-actions">
-        <button type="button" id="apps-save">Save</button>
+        <button type="button" id="apps-save" class="button-primary">Save</button>
       </div>
       <p class="settings-msg" id="apps-msg" role="status"></p>
     </section>
@@ -62,6 +62,5 @@
   </form>
   <script src="settings.js"></script>
   <script src="settings-apps.js"></script>
-  <script src="tv-appearance.js"></script>
 </body>
 </html>

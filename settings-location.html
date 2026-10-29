@@ -9,13 +9,12 @@
   <link rel="stylesheet" href="tokens.css">
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="settings.css">
-  <link rel="stylesheet" href="tv-appearance.css">
 </head>
 <body>
   <div class="settings-stage">
     <header class="settings-head">
+      <a class="settings-back" href="settings.html"><span class="back-arrow" aria-hidden="true">←</span>Settings</a>
       <h1 class="settings-title">Location</h1>
-      <a class="settings-back" href="settings.html">Back</a>
     </header>
     <section class="settings-panel">
       <p class="settings-count">Weather and clock time zone</p>
@@ -26,7 +25,7 @@
       </label>
       <div class="settings-actions">
         <button type="button" id="loc-detect">Use my location now</button>
-        <button type="button" id="loc-save">Save</button>
+        <button type="button" id="loc-save" class="button-primary">Save</button>
       </div>
       <p class="settings-msg" id="loc-msg" role="status"></p>
     </section>
@@ -40,6 +39,5 @@
   </form>
   <script src="settings.js"></script>
   <script src="settings-location.js"></script>
-  <script src="tv-appearance.js"></script>
 </body>
 </html>

@@ -86,7 +86,7 @@ All three looks work on TV, Mac, and phone. Aqua and Flurry use a six-app paged 
 
 A separate Android TV WebView app can show Slate as Home. If the server is unreachable, wake the host and run `python3 server.py --lan`, then retry from the TV.
 
-**Screensaver:** the TV app can register a Slate dream that shows clock, weather, and the next **Busy** calendar line. Choose it once in Android screensaver settings, or run:
+**Screensaver:** the TV app can register a Slate dream that shows clock, weather, and the next **Busy** calendar line over a dim version of the selected Home look. Drift and Reactive move the backdrop slowly; Still and reduced motion keep it static. Private calendar titles stay hidden. Choose it once in Android screensaver settings, or run:
 
 ```bash
 adb shell settings put secure screensaver_components dev.slate.home/.SlateDream

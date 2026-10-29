@@ -94,7 +94,7 @@
   function applyTheme(settings) {
     const norm = normalizeAppearance(settings || {});
     let motion = norm.tvMotion;
-    if (reducedMotion.matches || document.body.classList.contains('page-screensaver')) motion = 'still';
+    if (reducedMotion.matches) motion = 'still';
     for (const el of [document.documentElement, document.body]) {
       el.dataset.tvAppearance = norm.tvAppearance;
       el.dataset.tvMotion = motion;
@@ -403,7 +403,6 @@
     }
   }, true);
   reducedMotion.addEventListener('change', () => {
-    applyTheme(config);
     apply(config);
     document.dispatchEvent(new Event('slate:motion-preference'));
   });
@@ -423,6 +422,6 @@
     const promise = window.slateSettingsPromise
       || fetch('settings.json', { cache: 'no-store' }).then(response => response.json());
     if (!window.slateSettingsPromise) window.slateSettingsPromise = promise;
-    promise.then(settings => applyTheme(settings)).catch(() => applyTheme({}));
+    promise.then(settings => apply(settings)).catch(() => apply({}));
   }
 })();

@@ -7,6 +7,10 @@ const eventEl = document.getElementById("saver-event");
 const DRIFT = [[0, 0], [1, 0], [2, 1], [1, -1], [0, -2], [-2, -1], [-2, 0], [-1, 1], [0, 2], [2, 2]];
 let driftIndex = 0;
 let tz = "America/New_York";
+let saverSettings = { tvAppearance: "sculptural", tvMotion: "still" };
+let clearSaverBackdrop = () => {};
+let saverPaint = 0;
+let saverActive = true;
 
 function tickClock() {
   const now = new Date();
@@ -31,29 +35,36 @@ function shiftSaver() {
   driftIndex += 1;
 }
 
+async function paintSaverBackdrop() {
+  const paint = ++saverPaint;
+  const looks = window.SlateLooks;
+  if (!looks || !saverActive) return;
+  const profile = looks.normalizeAppearance(saverSettings);
+  looks.applyTheme(saverSettings);
+  if (profile.tvAppearance === "sculptural") await looks.loadAmbient();
+  if (paint !== saverPaint || !saverActive) return;
+  const colors = profile.tvAppearance === "sculptural" ? looks.ambientColorsFor(profile.ambientPreset) : undefined;
+  const key = profile.tvAppearance === "aqua" ? profile.tvAquaPalette : profile.tvFlurryPalette;
+  clearSaverBackdrop();
+  // Keep the artwork static internally; CSS moves it gently over 120 seconds.
+  clearSaverBackdrop = looks.decorate(
+    document.getElementById("tv-backdrop"), profile.tvAppearance, "still", "soft", colors, key,
+  );
+}
+
 async function loadSettings() {
   try {
-    const settings = await fetch("settings.json", { cache: "no-store" }).then((r) => r.json());
+    const settings = await (window.slateSettingsPromise || fetch("settings.json", { cache: "no-store" }).then((r) => {
+      if (!r.ok) throw new Error(String(r.status));
+      return r.json();
+    }));
+    saverSettings = settings;
     if (settings.location?.timezone) tz = settings.location.timezone;
-    document.body.dataset.tvAppearance = settings.tvAppearance || "sculptural";
-    document.body.dataset.tvMotion = "still";
-    if (window.SlateLooks && settings.tvAppearance) {
-      const look = settings.tvAppearance;
-      if (look === "sculptural") await window.SlateLooks.loadAmbient();
-      const colors = look === "sculptural" ? window.SlateLooks.ambientColorsFor(settings.ambientPreset) : undefined;
-      const key = look === "aqua" ? settings.tvAquaPalette : look === "flurry" ? settings.tvFlurryPalette : "";
-      window.SlateLooks.decorate(
-        document.getElementById("tv-backdrop"),
-        look,
-        "still",
-        "soft",
-        colors,
-        key,
-      );
-    }
+    tickClock();
   } catch (error) {
-    /* defaults */
+    /* Keep a static fallback when settings are unavailable. */
   }
+  await paintSaverBackdrop();
 }
 
 async function loadWeather() {
@@ -105,6 +116,18 @@ async function loadNextEvent() {
 }
 
 tickClock();
+document.addEventListener("slate:motion-preference", paintSaverBackdrop);
+addEventListener("pagehide", () => {
+  saverActive = false;
+  saverPaint += 1;
+  clearSaverBackdrop();
+});
+addEventListener("pageshow", (event) => {
+  if (event.persisted) {
+    saverActive = true;
+    paintSaverBackdrop();
+  }
+});
 setInterval(tickClock, 60000);
 shiftSaver();
 setInterval(shiftSaver, 3 * 60 * 1000);

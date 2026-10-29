@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141A">
+  <title>Traffic</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="traffic.css">
+  <script src="slate-surface.js"></script>
+</head>
+<body class="page-traffic">
+  <main class="traffic-shell" id="traffic-shell">
+    <header class="traffic-head">
+      <a class="traffic-back" href="index.html" data-tr-focus>Home</a>
+      <div class="traffic-title-block">
+        <p class="traffic-eyebrow" id="traffic-place">Traffic</p>
+        <h1 id="traffic-heading">Live map</h1>
+      </div>
+      <p class="traffic-updated" id="traffic-updated"></p>
+    </header>
+
+    <p class="traffic-quiet" id="traffic-quiet" hidden></p>
+
+    <div class="traffic-body" id="traffic-body">
+      <section class="traffic-map-panel" aria-label="Map centered on saved location">
+        <div class="traffic-map" id="traffic-map">
+          <div class="traffic-tiles" id="traffic-tiles"></div>
+          <span class="traffic-center" id="traffic-center" aria-hidden="true"></span>
+          <div class="traffic-markers" id="traffic-markers"></div>
+        </div>
+        <p class="traffic-map-note" id="traffic-incidents-note" hidden></p>
+      </section>
+      <aside class="traffic-incidents" aria-labelledby="traffic-incidents-title">
+        <h2 id="traffic-incidents-title">Incidents nearby</h2>
+        <ul class="traffic-incident-list" id="traffic-incident-list"></ul>
+      </aside>
+    </div>
+
+    <footer class="traffic-foot">
+      <p class="traffic-attribution">
+        Map tiles © <a href="https://www.openstreetmap.org/copyright" rel="noopener noreferrer">OpenStreetMap</a> contributors
+      </p>
+    </footer>
+  </main>
+  <script src="traffic.js"></script>
+</body>
+</html>

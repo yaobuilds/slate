@@ -6,6 +6,9 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import hashlib
+import math
+import xml.etree.ElementTree as ET
+from email.utils import parsedate_to_datetime
 import hmac
 import ipaddress
 import json
@@ -65,6 +68,14 @@ OAUTH_LOCK = threading.Lock()
 OAUTH_PENDING: dict[str, float] = {}
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 OAUTH_REDIRECT = "http://127.0.0.1:8000/oauth/callback"
+TRAFFIC_LOCK = threading.Lock()
+TRAFFIC_CACHE = None
+TRAFFIC_CACHE_AT = 0.0
+TRAFFIC_CACHE_TTL = 180
+TRAFFIC_EVENTS_JSON = "https://511ny.org/api/getevents?format=json"
+TRAFFIC_RSS = "https://511nj.org/client/rest/rss/RSSActiveIncidents"
+NY_STATE_BOUNDS = (40.49, 45.12, -79.76, -71.85)
+GEORSS_NS = {"g": "http://www.georss.org/georss"}
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
     "today": [
@@ -762,6 +773,253 @@ def merge_ambient_payload() -> dict:
     return base
 
 
+def slate_settings_place() -> dict | None:
+    """Same location object published on GET /settings.json (after merge with defaults)."""
+    with PUBLISH_LOCK:
+        publish_settings()
+        loc = normalize_location(SETTINGS_STATE.get("location"))
+    lat = loc.get("lat")
+    lon = loc.get("lon")
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    return loc
+
+
+def in_new_york_state(lat: float, lon: float) -> bool:
+    min_lat, max_lat, min_lon, max_lon = NY_STATE_BOUNDS
+    return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
+
+
+def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    r = 6371.0
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dlon / 2) ** 2
+    return 2 * r * math.asin(min(1.0, math.sqrt(a)))
+
+
+def fetch_http_text(url: str, accept: str = "*/*", timeout: int = 15) -> tuple[str, str]:
+    req = Request(url, headers={"User-Agent": NOMINATIM_UA, "Accept": accept})
+    with urlopen(req, timeout=timeout) as resp:
+        body = resp.read(2 * 1024 * 1024).decode("utf-8", errors="replace")
+        content_type = resp.headers.get_content_type()
+    return body, content_type
+
+
+def parse_511ny_events(body: str, content_type: str) -> list | None:
+    if "json" not in content_type and not body.lstrip().startswith(("{", "[")):
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        for key in ("events", "Events", "features"):
+            raw = data.get(key)
+            if isinstance(raw, list):
+                return raw
+    return None
+
+
+def normalize_511ny_event(raw: dict) -> dict | None:
+    if not isinstance(raw, dict):
+        return None
+    lat = raw.get("Latitude", raw.get("latitude", raw.get("lat")))
+    lon = raw.get("Longitude", raw.get("longitude", raw.get("lon")))
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        geom = raw.get("geometry")
+        if isinstance(geom, dict) and geom.get("type") == "Point":
+            coords = geom.get("coordinates")
+            if isinstance(coords, list) and len(coords) >= 2:
+                lon, lat = coords[0], coords[1]
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return None
+    road = clip_text(
+        raw.get("RoadwayName")
+        or raw.get("roadway_name")
+        or raw.get("facility_name")
+        or raw.get("title")
+        or "Incident",
+        120,
+    )
+    desc = clip_text(
+        raw.get("Description")
+        or raw.get("description")
+        or raw.get("event_description")
+        or raw.get("Summary")
+        or "",
+        220,
+    )
+    when = raw.get("LastUpdated") or raw.get("lastUpdated") or raw.get("create_time") or raw.get("StartDate")
+    if not isinstance(when, str):
+        when = ""
+    return {"road": road, "description": desc, "time": when, "lat": float(lat), "lon": float(lon)}
+
+
+def ny_incident_from_rss(title: str, description: str) -> bool:
+    blob = f"{title} {description}".upper()
+    markers = (
+        "NYSDOT",
+        "NYSTA",
+        "NYS THRUWAY",
+        "NYS DOT",
+        "MTA ",
+        "NYC DOT",
+        "(NEW YORK)",
+        "NEW YORK COUNTY",
+        "KINGS COUNTY",
+        "QUEENS COUNTY",
+        "BRONX",
+        "RICHMOND COUNTY",
+        "WESTCHESTER",
+        "NASSAU COUNTY",
+        "SUFFOLK COUNTY",
+    )
+    return any(marker in blob for marker in markers)
+
+
+def parse_transcom_rss(body: str) -> list[dict]:
+    try:
+        root = ET.fromstring(body)
+    except ET.ParseError:
+        return []
+    rows = []
+    for item in root.findall(".//item"):
+        title = (item.findtext("title") or "").strip()
+        description = (item.findtext("description") or "").strip()
+        pub = (item.findtext("pubDate") or "").strip()
+        lat = lon = None
+        point = item.find("g:point", GEORSS_NS)
+        if point is not None and point.text:
+            parts = point.text.strip().split()
+            if len(parts) >= 2:
+                try:
+                    lat = float(parts[0])
+                    lon = float(parts[1])
+                except ValueError:
+                    lat = lon = None
+        in_ny = ny_incident_from_rss(title, description)
+        if isinstance(lat, float) and isinstance(lon, float) and in_new_york_state(lat, lon):
+            in_ny = True
+        if not in_ny:
+            continue
+        road = title.split(":", 1)[0].strip() if title else "Incident"
+        desc = description
+        for prefix in ("NYSDOT - ", "NYSTA - ", "NYS DOT - ", "ConnDOT: "):
+            if desc.startswith(prefix):
+                desc = desc[len(prefix) :].strip()
+                break
+        when = pub
+        if pub:
+            try:
+                when = parsedate_to_datetime(pub).isoformat()
+            except (TypeError, ValueError, IndexError):
+                when = pub
+        row = {
+            "road": clip_text(road, 120),
+            "description": clip_text(desc, 220),
+            "time": when,
+        }
+        if isinstance(lat, float) and isinstance(lon, float):
+            row["lat"] = lat
+            row["lon"] = lon
+        rows.append(row)
+    return rows
+
+
+def load_ny_incidents() -> tuple[list[dict], str]:
+    """Return incident rows and feed id ('511ny-json', '511ny-rss', or '')."""
+    try:
+        body, content_type = fetch_http_text(TRAFFIC_EVENTS_JSON, accept="application/json")
+        events = parse_511ny_events(body, content_type)
+        if events is not None:
+            rows = []
+            for raw in events:
+                row = normalize_511ny_event(raw if isinstance(raw, dict) else {})
+                if row:
+                    rows.append(row)
+            if rows:
+                return rows, "511ny-json"
+    except (OSError, HTTPError, ValueError):
+        pass
+    try:
+        body, _ = fetch_http_text(TRAFFIC_RSS, accept="application/rss+xml, application/xml, text/xml")
+        rows = parse_transcom_rss(body)
+        if rows:
+            return rows, "511nj-transcom-rss"
+    except (OSError, HTTPError, ValueError):
+        pass
+    return [], ""
+
+
+def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str]:
+    if not in_new_york_state(lat, lon):
+        return [], False, ""
+    now = time.monotonic()
+    global TRAFFIC_CACHE, TRAFFIC_CACHE_AT
+    with TRAFFIC_LOCK:
+        if TRAFFIC_CACHE and now - TRAFFIC_CACHE_AT < TRAFFIC_CACHE_TTL:
+            cached_rows, feed = TRAFFIC_CACHE
+        else:
+            cached_rows, feed = load_ny_incidents()
+            TRAFFIC_CACHE = (cached_rows, feed)
+            TRAFFIC_CACHE_AT = now
+    if not cached_rows:
+        return [], False, feed
+    ranked = []
+    for row in cached_rows:
+        item = dict(row)
+        if isinstance(item.get("lat"), float) and isinstance(item.get("lon"), float):
+            item["distanceKm"] = round(haversine_km(lat, lon, item["lat"], item["lon"]), 1)
+        else:
+            item["distanceKm"] = 9999.0
+        ranked.append(item)
+    ranked.sort(key=lambda row: row.get("distanceKm", 9999.0))
+    picked = []
+    for row in ranked:
+        if row.get("distanceKm", 9999.0) > 160:
+            continue
+        out = {k: v for k, v in row.items() if k != "distanceKm"}
+        picked.append(out)
+        if len(picked) >= 8:
+            break
+    if not picked:
+        picked = [{k: v for k, v in row.items() if k != "distanceKm"} for row in ranked[:5]]
+    return picked, True, feed
+
+
+def traffic_payload() -> dict:
+    updated = datetime.now(timezone.utc).isoformat()
+    place = slate_settings_place()
+    if place is None:
+        return {
+            "hasPlace": False,
+            "incidentsAvailable": False,
+            "incidents": [],
+            "updated": updated,
+        }
+    lat, lon = float(place["lat"]), float(place["lon"])
+    incidents, available, feed = traffic_incidents_for(lat, lon)
+    body = {
+        "hasPlace": True,
+        "place": {
+            "lat": lat,
+            "lon": lon,
+            "label": place.get("label") or "",
+            "timezone": place.get("timezone") or "America/New_York",
+        },
+        "incidentsAvailable": available,
+        "incidents": incidents,
+        "updated": updated,
+    }
+    if feed:
+        body["feed"] = feed
+    return body
+
+
 def pin_matches(offered) -> bool:
     """Constant-time check. The length of a wrong PIN does not skip the compare."""
     if not pin_configured():
@@ -779,6 +1037,7 @@ ALLOWED_FILES = {
     "/dashboard.html",
     "/calendar.html",
     "/weather.html",
+    "/traffic.html",
     "/network.html",
     "/settings.html",
     "/settings-apps.html",
@@ -796,9 +1055,12 @@ ALLOWED_FILES = {
     "/dashboard.js",
     "/calendar.js",
     "/weather.js",
+    "/traffic.js",
+    "/slate-surface.js",
     "/network.js",
     "/calendar.css",
     "/weather.css",
+    "/traffic.css",
     "/settings.js",
     "/settings-apps.js",
     "/settings-theme.js",
@@ -814,7 +1076,6 @@ ALLOWED_FILES = {
     "/ambient.json",
     "/tv-appearance.css",
     "/tv-appearance.js",
-    "/slate-surface.js",
     "/assets/wallpapers/alpine.jpg",
     "/manifest.webmanifest",
     "/favicon.ico",
@@ -1492,6 +1753,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/radar.png":
             self.serve_radar()
+            return
+        if path == "/traffic.json":
+            self.send_json(200, traffic_payload())
             return
         if path in ROUTE_REDIRECTS:
             self.redirect(ROUTE_REDIRECTS[path])

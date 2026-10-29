@@ -628,25 +628,6 @@ body.show-focus .home-pill:focus {
   align-items: center;
 }
 
-.hint {
-  display: flex;
-  gap: 14px;
-  align-items: center;
-}
-
-.cap {
-  font-family: var(--sl-mono);
-  font-weight: 500;
-  font-size: 24px;
-  color: var(--sl-dim);
-  border: 2px solid var(--sl-line);
-  border-radius: 8px;
-  padding: 0 10px;
-  line-height: 32px;
-  min-width: 40px;
-  text-align: center;
-}
-
 .guest-flag {
   display: none;
 }
@@ -773,11 +754,6 @@ body.hide-pointer * {
   grid-column: 1 / -1;
   font-size: 36px;
   color: var(--muted);
-}
-
-/* Phone and Mac window. The TCL WebView reports 960×540 at devicePixelRatio 2. */
-.hint-touch {
-  display: none;
 }
 
 .guest-toggle {
@@ -1122,18 +1098,8 @@ body.hide-pointer * {
     background: var(--sl-ink);
   }
 
-  .hints,
-  .hint {
+  .hints {
     flex-wrap: wrap;
-  }
-
-  .hint-keys {
-    display: none;
-  }
-
-  .hint-touch {
-    display: flex;
-    font-size: 18px;
   }
 
   .dwx {
@@ -1245,14 +1211,6 @@ body.hide-pointer * {
 
     .panel-today { grid-area: today; }
     .panel-upcoming { grid-area: upcoming; }
-
-    .hint-keys {
-      display: flex;
-    }
-
-    .hint-touch {
-      display: flex;
-    }
 
     .clock {
       font-size: clamp(84px, 9vw, 148px);
@@ -1451,10 +1409,6 @@ body.hide-pointer * {
       min-height: 44px;
       font-size: 16px;
     }
-
-    .hint-touch {
-      font-size: 16px;
-    }
   }
 }
 
@@ -1515,10 +1469,6 @@ body.hide-pointer * {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-  }
-
-  .dash-foot .hint-keys:nth-child(2) {
-    display: none;
   }
 }
 

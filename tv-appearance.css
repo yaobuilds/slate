@@ -69,8 +69,6 @@
   .page-home[data-home-surface='tv'][data-tv-appearance='sculptural'] .tile { border-radius: 28px; }
   .page-home[data-home-surface='tv'][data-tv-appearance='sculptural'] .tile .nm { font-weight: 450; }
   .page-home[data-home-surface='tv'][data-tv-appearance='sculptural'] .foot-link { padding: 10px 18px; border: 1px solid var(--sl-line); border-radius: 999px; }
-  .page-home[data-home-surface='tv'][data-tv-appearance='sculptural'] .hint-keys .cap { border: 0; padding: 0; font-size: 22px; min-width: 0; }
-  .page-home[data-home-surface='tv'][data-tv-appearance='sculptural'] .hints { gap: 24px; }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .stage { display: block; }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .hero { position: absolute; top: 66px; left: 96px; }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .clock { font-size: 88px; font-weight: 450; line-height: 1; margin: 0; letter-spacing: -.05em; }
@@ -109,7 +107,6 @@
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']).show-focus .tile:focus { background: rgba(230,225,215,.13); transform: translateY(-4px); }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .tile-empty { display: none; }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .foot { position: static; }
-  html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .hints { display: none; }
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .foot-link {
     position: absolute; top: 66px; right: 96px; min-height: 88px; display: flex; align-items: center;
     padding: 0 24px; border: 1px solid rgba(230,225,215,.2); background: rgba(16,20,26,.3); border-radius: 999px; font-size: 28px;

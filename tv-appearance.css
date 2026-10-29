@@ -128,8 +128,8 @@ html[data-tv-appearance] body.page-screensaver {
   html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .dock-pagination:not([hidden]) { display: block; position: absolute; bottom: 108px; left: 0; right: 0; margin: 0; text-align: center; font: 450 24px/1 var(--sl-font); color: var(--sl-text-2); }}
 
   html:not([data-slate-surface='tv']) .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .weather {
-    background-color: color-mix(in srgb, var(--sl-ink) 30%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--sl-text) 20%, transparent);
+    background: transparent;
+    box-shadow: none;
   }
 @media (prefers-reduced-motion: reduce) {
   .tv-backdrop *, .appearance-preview * { animation: none !important; transition: none !important; }

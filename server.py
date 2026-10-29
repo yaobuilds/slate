@@ -118,6 +118,7 @@ SETTINGS_STATE = {
     "hidePointer": False,
     "showCredit": True,
     "tileSize": "auto",
+    "hdmiInput": "1",
     "tvAppearance": "sculptural",
     "tvBackdrop": "ambient",
     "tvMotion": "drift",
@@ -255,6 +256,10 @@ def normalize_home_apps(values) -> list:
 
 def normalize_tile_size(value) -> str:
     return value if isinstance(value, str) and value in {"auto", "large"} else "auto"
+
+
+def normalize_hdmi_input(value) -> str:
+    return value if isinstance(value, str) and value in {"1", "2", "3"} else "1"
 
 
 def normalize_ambient_preset(value) -> str:
@@ -600,6 +605,7 @@ def publish_settings() -> None:
         hide_pointer = local.get("hidePointer") is True
         show_credit = local.get("showCredit") is not False
         tile_size = normalize_tile_size(local.get("tileSize"))
+        hdmi_input = normalize_hdmi_input(local.get("hdmiInput"))
         remote_on = local.get("remoteEnabled")
         if remote_on is False:
             remote_flag = False
@@ -612,6 +618,7 @@ def publish_settings() -> None:
             "hidePointer": hide_pointer,
             "showCredit": show_credit,
             "tileSize": tile_size,
+            "hdmiInput": hdmi_input,
             "remoteEnabled": remote_flag,
             **normalize_tv_appearance(local),
         }
@@ -2624,6 +2631,7 @@ class Handler(SimpleHTTPRequestHandler):
             "hidePointer",
             "showCredit",
             "tileSize",
+            "hdmiInput",
             "tvAppearance",
             "tvBackdrop",
             "tvMotion",
@@ -2649,6 +2657,8 @@ class Handler(SimpleHTTPRequestHandler):
                 current["showCredit"] = obj.get("showCredit") is not False
             if "tileSize" in obj:
                 current["tileSize"] = normalize_tile_size(obj.get("tileSize"))
+            if "hdmiInput" in obj:
+                current["hdmiInput"] = normalize_hdmi_input(obj.get("hdmiInput"))
             if "remoteEnabled" in obj:
                 current["remoteEnabled"] = obj.get("remoteEnabled") is not False
             current.update(normalize_tv_appearance({**current, **{

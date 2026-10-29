@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en" class="page-remote">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#10141A">
+  <title>Remote</title>
+  <link rel="stylesheet" href="tokens.css">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="remote.css">
+  <script>
+    (function () {
+      var ua = navigator.userAgent || "";
+      if (/Android TV|Google TV|SlateTV/i.test(ua) || (window.SlateTV && typeof window.SlateTV === "object")) {
+        location.replace("index.html");
+      }
+    })();
+  </script>
+</head>
+<body>
+  <div class="remote-stage">
+    <h1 class="remote-title">Wi-Fi remote</h1>
+    <p class="remote-copy">Control Slate on the TV from this phone. Pair once, then use the pad and shortcuts.</p>
+
+    <section class="remote-panel" id="remote-pair-panel">
+      <h2>Phone pairing</h2>
+      <p class="remote-copy">Generate a code on the Mac in Settings, or here if you are already on Wi-Fi.</p>
+      <div class="remote-row">
+        <button type="button" id="remote-gen-code">Generate pairing code</button>
+        <span id="remote-phone-code" aria-live="polite"></span>
+      </div>
+      <label class="remote-pair-block">Enter the code from this Mac
+        <div class="remote-row">
+          <input id="remote-pair-input" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000">
+          <button type="button" id="remote-pair-btn">Pair</button>
+        </div>
+      </label>
+      <p class="remote-msg" id="remote-pair-msg" role="status"></p>
+    </section>
+
+    <section class="remote-panel" id="remote-control-panel" hidden>
+      <h2>Control</h2>
+      <p class="remote-status" id="remote-service-line"></p>
+      <div class="remote-row">
+        <button type="button" id="remote-show-code">Show code on TV</button>
+        <input id="remote-tv-code" maxlength="6" autocomplete="off" placeholder="TV code" aria-label="Six character TV code">
+        <button type="button" id="remote-send-code">Send code</button>
+      </div>
+      <p class="remote-msg" id="remote-tv-msg" role="status"></p>
+      <div class="remote-row" aria-label="Direction pad">
+        <button type="button" data-key="ArrowUp">↑</button>
+        <button type="button" data-key="ArrowDown">↓</button>
+        <button type="button" data-key="ArrowLeft">←</button>
+        <button type="button" data-key="ArrowRight">→</button>
+        <button type="button" data-key="Enter">OK</button>
+        <button type="button" data-key="BrowserBack">Back</button>
+        <button type="button" data-key="Home">Home</button>
+        <button type="button" data-key="g">Guest</button>
+        <button type="button" data-bridge="openScreensaverSettings">Screensaver</button>
+      </div>
+      <div class="remote-volume" aria-label="Volume">
+        <button type="button" data-key="VolumeDown">Vol −</button>
+        <button type="button" data-key="VolumeMute">Mute</button>
+        <button type="button" data-key="VolumeUp">Vol +</button>
+      </div>
+    </section>
+  </div>
+  <script src="remote.js"></script>
+</body>
+</html>

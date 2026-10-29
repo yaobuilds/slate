@@ -39,6 +39,29 @@
       <p class="settings-lan-copy">On hides the cursor on Home, Dashboard, and Settings, even when the mouse moves. Clicks still work. Off shows the pointer after the mouse moves.</p>
       <p class="settings-msg" id="pointer-msg" role="status"></p>
     </section>
+    <section class="settings-panel settings-lan-panel" id="tv-remote-panel" hidden>
+      <h2 class="settings-subtitle">TV remote</h2>
+      <p class="settings-lan-copy">Generate a pairing code for the phone remote. The TV remote panel on the phone opens after pairing.</p>
+      <div class="settings-actions">
+        <button type="button" id="remote-settings-gen">Generate pairing code for the phone</button>
+      </div>
+      <p class="settings-msg" id="remote-settings-phone-code" role="status"></p>
+      <p class="settings-lan-copy">The TV will show a code. Someone in the room reads it. No remote is required.</p>
+      <div class="settings-actions">
+        <button type="button" id="remote-settings-show-code">Show code on TV</button>
+      </div>
+      <label class="settings-row">
+        <span class="nm">TV code</span>
+        <input id="remote-settings-tv-code" maxlength="6" autocomplete="off" style="max-width:8em">
+        <button type="button" id="remote-settings-send-code">Send code</button>
+      </label>
+      <p class="settings-msg" id="remote-settings-tv-msg" role="status"></p>
+      <label class="settings-row loc-lock">
+        <input id="remote-enabled-toggle" type="checkbox" checked>
+        <span class="nm">Wi-Fi remote enabled</span>
+      </label>
+      <p class="settings-msg" id="remote-enabled-msg" role="status"></p>
+    </section>
     <section class="settings-panel settings-lan-panel">
       <h2 class="settings-subtitle">Wi-Fi session</h2>
       <p class="settings-lan-copy">When Slate runs with <code>--lan</code>, unlocking Show all on Dashboard sets a cookie on this iPad or phone. Sign out clears it so the schedule asks for the PIN again.</p>

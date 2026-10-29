@@ -25,6 +25,8 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 from urllib.request import Request, urlopen
 
+import atv_remote
+
 ROOT = Path(__file__).resolve().parent
 PORT = 8000
 DISCOVERY_PORT = 8001
@@ -90,7 +92,20 @@ SETTINGS_STATE = {
     "tvBackdrop": "ambient",
     "tvMotion": "drift",
     "tvIntensity": "balanced",
+    "remoteEnabled": True,
 }
+REMOTE_COOKIE = "slate_remote"
+REMOTE_COOKIE_RE = re.compile(r"^[A-Za-z0-9_-]{20,128}$")
+REMOTE_PAIR_LOCK = threading.Lock()
+REMOTE_PAIRINGS: dict[str, float] = {}
+REMOTE_SESSIONS: set[str] = set()
+REMOTE_EVENTS_LOCK = threading.Lock()
+REMOTE_EVENTS: list[dict] = []
+REMOTE_SEQ = 0
+REMOTE_TV_PAGE = ""
+REMOTE_TV_LAST = 0.0
+REMOTE_PHONE_TTL = 300
+REMOTE_TV_ONLINE_S = 45
 CATALOG_IDS = set()
 AMBIENT_PRESETS = set()
 NOMINATIM_UA = "SlateDashboard/1.0 (local personal dashboard)"
@@ -335,15 +350,22 @@ def publish_settings() -> None:
         location = normalize_location(local.get("location"))
         hide_pointer = local.get("hidePointer") is True
         tile_size = normalize_tile_size(local.get("tileSize"))
+        remote_on = local.get("remoteEnabled")
+        if remote_on is False:
+            remote_flag = False
+        else:
+            remote_flag = True
         SETTINGS_STATE = {
             "homeApps": home,
             "ambientPreset": preset,
             "location": location,
             "hidePointer": hide_pointer,
             "tileSize": tile_size,
+            "remoteEnabled": remote_flag,
             **normalize_tv_appearance(local),
         }
         publish_apps(home)
+        atv_remote.get_service(remote_enabled).set_enabled(remote_flag)
 
 
 def normalize_tv_appearance(source: dict) -> dict:
@@ -724,6 +746,7 @@ ALLOWED_FILES = {
     "/calendar.html",
     "/weather.html",
     "/network.html",
+    "/remote.html",
     "/settings.html",
     "/settings-apps.html",
     "/settings-theme.html",
@@ -741,6 +764,9 @@ ALLOWED_FILES = {
     "/calendar.css",
     "/weather.css",
     "/settings.js",
+    "/remote.js",
+    "/remote.css",
+    "/remote-consumer.js",
     "/settings-apps.js",
     "/settings-theme.js",
     "/settings-location.js",
@@ -764,7 +790,13 @@ ALLOWED_FILES = {
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")
 APP_ICON = re.compile(r"^/assets/app/[a-z0-9][a-z0-9.-]*\.png$")
-BLOCKED_FILES = {"/data.local.json", "/calendar-cache.local.json", "/server.py", "/pin.local"}
+BLOCKED_FILES = {
+    "/data.local.json",
+    "/calendar-cache.local.json",
+    "/server.py",
+    "/pin.local",
+    "/atv.local",
+}
 ROUTE_REDIRECTS = {
     "/settings": "/settings.html",
     "/settings/": "/settings.html",
@@ -891,6 +923,84 @@ def forget_session(token: str) -> None:
 
 def cookie_header(token: str, max_age: int) -> str:
     return f"slate={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}"
+
+
+def remote_cookie_header(token: str, max_age: int) -> str:
+    return f"{REMOTE_COOKIE}={token}; HttpOnly; SameSite=Lax; Path=/; Max-Age={max_age}"
+
+
+def remote_enabled() -> bool:
+    return SETTINGS_STATE.get("remoteEnabled") is not False
+
+
+def remote_lan_ok(server) -> bool:
+    return bool(getattr(server, "lan_enabled", False))
+
+
+def remote_session_ok(token: str) -> bool:
+    if not token or not REMOTE_COOKIE_RE.fullmatch(token):
+        return False
+    with STATE_LOCK:
+        return token in REMOTE_SESSIONS
+
+
+def remember_remote_session(token: str) -> None:
+    with STATE_LOCK:
+        if len(REMOTE_SESSIONS) >= 32:
+            REMOTE_SESSIONS.clear()
+        REMOTE_SESSIONS.add(token)
+
+
+def forget_remote_session(token: str) -> None:
+    if not token:
+        return
+    with STATE_LOCK:
+        REMOTE_SESSIONS.discard(token)
+
+
+def prune_remote_pairings() -> None:
+    now = time.time()
+    with REMOTE_PAIR_LOCK:
+        expired = [code for code, exp in REMOTE_PAIRINGS.items() if exp <= now]
+        for code in expired:
+            REMOTE_PAIRINGS.pop(code, None)
+
+
+def queue_remote_event(event: dict) -> dict:
+    global REMOTE_SEQ
+    with REMOTE_EVENTS_LOCK:
+        REMOTE_SEQ += 1
+        item = {"seq": REMOTE_SEQ, **event}
+        REMOTE_EVENTS.append(item)
+        if len(REMOTE_EVENTS) > 200:
+            del REMOTE_EVENTS[:-200]
+        return item
+
+
+def remote_tv_online() -> bool:
+    return (time.time() - REMOTE_TV_LAST) <= REMOTE_TV_ONLINE_S
+
+
+def remote_status_payload(paired: bool) -> dict:
+    svc = atv_remote.get_service(remote_enabled)
+    return {
+        "ok": True,
+        "remoteEnabled": remote_enabled(),
+        "paired": paired,
+        "tvOnline": remote_tv_online(),
+        "tvKnown": svc.tv_known(),
+        "tvService": svc.status(),
+    }
+
+
+def remote_bridge_action(action: str) -> dict | None:
+    if action == "openScreensaverSettings":
+        return {"type": "bridge", "action": action}
+    if action == "openGoogleTvHome":
+        return {"type": "bridge", "action": action}
+    if action == "navigateHome":
+        return {"type": "bridge", "action": action}
+    return None
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -1088,7 +1198,18 @@ class Handler(SimpleHTTPRequestHandler):
             self.send_json(400, {"error": "bad"})
             return
         allowed = set(obj.keys())
-        if not allowed or not allowed.issubset({"homeApps", "ambientPreset", "location", "hidePointer", "tileSize", "tvAppearance", "tvBackdrop", "tvMotion", "tvIntensity"}):
+        if not allowed or not allowed.issubset({
+            "homeApps",
+            "ambientPreset",
+            "location",
+            "hidePointer",
+            "tileSize",
+            "tvAppearance",
+            "tvBackdrop",
+            "tvMotion",
+            "tvIntensity",
+            "remoteEnabled",
+        }):
             self.send_json(400, {"error": "bad"})
             return
         with PUBLISH_LOCK:
@@ -1106,6 +1227,8 @@ class Handler(SimpleHTTPRequestHandler):
                 current["hidePointer"] = obj.get("hidePointer") is True
             if "tileSize" in obj:
                 current["tileSize"] = normalize_tile_size(obj.get("tileSize"))
+            if "remoteEnabled" in obj:
+                current["remoteEnabled"] = obj.get("remoteEnabled") is not False
             current.update(normalize_tv_appearance({**current, **{
                 key: value for key, value in obj.items() if key.startswith("tv")
             }}))
@@ -1113,6 +1236,158 @@ class Handler(SimpleHTTPRequestHandler):
             publish_settings()
             body = dict(SETTINGS_STATE)
         self.send_json(200, body)
+
+    def remote_api_ok(self) -> bool:
+        if not remote_lan_ok(self.server):
+            return False
+        if not remote_enabled():
+            return False
+        return True
+
+    def remote_paired(self) -> bool:
+        return remote_session_ok(self.cookie(REMOTE_COOKIE))
+
+    def serve_remote_status(self):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        self.send_json(200, remote_status_payload(self.remote_paired()))
+
+    def serve_remote_events(self):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        params = parse_qs(urlsplit(self.path).query)
+        try:
+            since = int(params.get("since", ["0"])[0])
+        except ValueError:
+            since = 0
+        with REMOTE_EVENTS_LOCK:
+            events = [ev for ev in REMOTE_EVENTS if ev.get("seq", 0) > since]
+        self.send_json(200, {"events": events})
+
+    def remote_pairing_code(self):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        prune_remote_pairings()
+        code = f"{secrets.randbelow(900000) + 100000}"
+        with REMOTE_PAIR_LOCK:
+            REMOTE_PAIRINGS[code] = time.time() + REMOTE_PHONE_TTL
+        self.send_json(200, {"code": code, "expiresIn": REMOTE_PHONE_TTL})
+
+    def remote_pair(self, obj):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        if obj is None or set(obj.keys()) != {"code"}:
+            self.send_json(400, {"error": "bad"})
+            return
+        offered = obj.get("code") if isinstance(obj.get("code"), str) else ""
+        prune_remote_pairings()
+        with REMOTE_PAIR_LOCK:
+            expires = REMOTE_PAIRINGS.get(offered)
+        if not expires or expires <= time.time():
+            self.send_json(401, {"error": "code"})
+            return
+        with REMOTE_PAIR_LOCK:
+            REMOTE_PAIRINGS.pop(offered, None)
+        token = secrets.token_urlsafe(32)
+        remember_remote_session(token)
+        self.send_json(200, {"ok": True}, (("Set-Cookie", remote_cookie_header(token, REMOTE_PHONE_TTL)),))
+
+    def remote_unpair(self):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        forget_remote_session(self.cookie(REMOTE_COOKIE))
+        self.send_json(200, {"ok": True}, (("Set-Cookie", remote_cookie_header("", 0)),))
+
+    def remote_heartbeat(self, obj):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        global REMOTE_TV_PAGE, REMOTE_TV_LAST
+        page = obj.get("page") if isinstance(obj, dict) and isinstance(obj.get("page"), str) else ""
+        REMOTE_TV_PAGE = page[:120]
+        REMOTE_TV_LAST = time.time()
+        client_ip = self.client_address[0]
+        atv_remote.get_service(remote_enabled).note_tv_host(client_ip)
+        self.send_json(200, {"ok": True})
+
+    def remote_command(self, obj):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        if not self.remote_paired():
+            self.send_json(401, {"error": "remote"})
+            return
+        if obj is None:
+            self.send_json(400, {"error": "bad"})
+            return
+        svc = atv_remote.get_service(remote_enabled)
+        kind = obj.get("type")
+        if kind == "key":
+            key = obj.get("key")
+            if not isinstance(key, str):
+                self.send_json(400, {"error": "bad"})
+                return
+            if key in atv_remote.VOLUME_KEYS:
+                if not svc.ready():
+                    self.send_json(409, {"error": "tv"})
+                    return
+            if key == "Home" and not svc.ready():
+                queue_remote_event(remote_bridge_action("navigateHome"))
+                self.send_json(200, {"ok": True, "path": "page"})
+                return
+            if key in atv_remote.PAGE_KEYS or key in atv_remote.VOLUME_KEYS or key == "Home":
+                if svc.ready() and key in atv_remote.KEY_MAP:
+                    if svc.inject_key(key):
+                        self.send_json(200, {"ok": True, "path": "tv"})
+                        return
+                if key in atv_remote.VOLUME_KEYS:
+                    self.send_json(409, {"error": "tv"})
+                    return
+                if key in atv_remote.PAGE_KEYS:
+                    queue_remote_event({"type": "key", "key": key})
+                    self.send_json(200, {"ok": True, "path": "page"})
+                    return
+            self.send_json(400, {"error": "bad"})
+            return
+        if kind == "bridge":
+            action = obj.get("action")
+            if not isinstance(action, str):
+                self.send_json(400, {"error": "bad"})
+                return
+            payload = remote_bridge_action(action)
+            if not payload:
+                self.send_json(400, {"error": "bad"})
+                return
+            queue_remote_event(payload)
+            self.send_json(200, {"ok": True, "path": "page"})
+            return
+        self.send_json(400, {"error": "bad"})
+
+    def remote_tv_pair(self, obj):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        host = None
+        if obj and isinstance(obj.get("host"), str) and obj.get("host").strip():
+            host = obj.get("host").strip()
+        client_ip = self.client_address[0]
+        code, payload = atv_remote.get_service(remote_enabled).begin_tv_pair(host, client_ip)
+        self.send_json(code, payload)
+
+    def remote_tv_code(self, obj):
+        if not self.remote_api_ok():
+            self.send_json(403, {"error": "lan"})
+            return
+        if obj is None or set(obj.keys()) != {"code"} or not isinstance(obj.get("code"), str):
+            self.send_json(400, {"error": "bad"})
+            return
+        code, payload = atv_remote.get_service(remote_enabled).submit_tv_code(obj["code"])
+        self.send_json(code, payload)
 
     def save_schedule(self, obj):
         if obj is None or set(obj.keys()) != {"today", "deadlines", "money"}:
@@ -1138,6 +1413,12 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if path == "/health":
             self.send_json(200, {"ok": True, "service": "slate"})
+            return
+        if path == "/remote/v1/status.json":
+            self.serve_remote_status()
+            return
+        if path == "/remote/v1/events.json":
+            self.serve_remote_events()
             return
         if path == "/network.json":
             query = parse_qs(urlsplit(self.path).query)
@@ -1228,6 +1509,32 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         path = public_path(self.path)
+        if path == "/remote/v1/pairing.json":
+            self.remote_pairing_code()
+            return
+        if path == "/remote/v1/pair.json":
+            obj = self.read_object(max_len=128)
+            self.remote_pair(obj)
+            return
+        if path == "/remote/v1/unpair.json":
+            self.remote_unpair()
+            return
+        if path == "/remote/v1/command.json":
+            obj = self.read_object()
+            self.remote_command(obj)
+            return
+        if path == "/remote/v1/heartbeat.json":
+            obj = self.read_object(max_len=256)
+            self.remote_heartbeat(obj if isinstance(obj, dict) else {})
+            return
+        if path == "/remote/v1/tv-pair.json":
+            obj = self.read_object(max_len=256)
+            self.remote_tv_pair(obj if isinstance(obj, dict) else {})
+            return
+        if path == "/remote/v1/tv-code.json":
+            obj = self.read_object(max_len=128)
+            self.remote_tv_code(obj)
+            return
         if path == "/settings.json":
             if not self.settings_write_ok():
                 self.close_connection = True
@@ -1476,6 +1783,7 @@ def main() -> None:
     AMBIENT_PRESETS = load_ambient_preset_keys()
     publish_settings()
     publish_data()
+    atv_remote.get_service(remote_enabled).start_background()
 
     local = listen("127.0.0.1", False, lan)
     if local is None:

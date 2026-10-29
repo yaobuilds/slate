@@ -307,8 +307,94 @@ async function bootPointerSetting() {
   }
 }
 
+function isTvSurface() {
+  return !!window.SlateTV || /Android TV|Google TV|SlateTV/i.test(navigator.userAgent || "");
+}
+
+async function remoteSettingsJson(url, options) {
+  const response = await fetch(url, { credentials: "same-origin", cache: "no-store", ...options });
+  let body = null;
+  try { body = await response.json(); } catch (err) { body = null; }
+  return { response, body };
+}
+
+function wireTvRemotePanel() {
+  const panel = document.getElementById("tv-remote-panel");
+  if (!panel || isTvSurface()) return;
+  panel.hidden = false;
+
+  document.getElementById("remote-settings-gen")?.addEventListener("click", async () => {
+    const msg = document.getElementById("remote-settings-phone-code");
+    const { response, body } = await remoteSettingsJson("/remote/v1/pairing.json", { method: "POST" });
+    if (!response.ok) {
+      if (msg) msg.textContent = response.status === 403 ? "Start the server with --lan on Wi-Fi." : "Could not generate a code.";
+      return;
+    }
+    if (msg) msg.textContent = body.code ? `Phone code: ${body.code} (five minutes)` : "";
+  });
+
+  document.getElementById("remote-settings-show-code")?.addEventListener("click", async () => {
+    const msg = document.getElementById("remote-settings-tv-msg");
+    const { response, body } = await remoteSettingsJson("/remote/v1/tv-pair.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (response.status === 409 && body && body.error === "no-host") {
+      if (msg) msg.textContent = "Open Slate on the TV first.";
+      return;
+    }
+    if (!response.ok) {
+      if (msg) msg.textContent = "Could not start TV pairing.";
+      return;
+    }
+    if (msg) msg.textContent = "Enter the code shown on the TV.";
+  });
+
+  document.getElementById("remote-settings-send-code")?.addEventListener("click", async () => {
+    const input = document.getElementById("remote-settings-tv-code");
+    const msg = document.getElementById("remote-settings-tv-msg");
+    const code = input && input.value.trim();
+    if (!/^[0-9a-fA-F]{6}$/.test(code || "")) {
+      if (msg) msg.textContent = "Enter the six-character TV code.";
+      return;
+    }
+    const { response } = await remoteSettingsJson("/remote/v1/tv-code.json", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code }),
+    });
+    if (response.status === 401) {
+      if (msg) msg.textContent = "That code did not match.";
+      return;
+    }
+    if (!response.ok) {
+      if (msg) msg.textContent = "Could not send the code.";
+      return;
+    }
+    if (msg) msg.textContent = "TV paired.";
+  });
+
+  const toggle = document.getElementById("remote-enabled-toggle");
+  toggle?.addEventListener("change", async () => {
+    const msg = document.getElementById("remote-enabled-msg");
+    const result = await saveWithPin({ remoteEnabled: toggle.checked });
+    if (result.error === "pin") return;
+    if (result.error) {
+      if (msg) msg.textContent = "Could not save.";
+      return;
+    }
+    if (msg) msg.textContent = result.remoteEnabled === false ? "Remote disabled." : "Remote enabled.";
+  });
+
+  loadSettings().then((settings) => {
+    if (toggle) toggle.checked = settings.remoteEnabled !== false;
+  }).catch(() => {});
+}
+
 wireSettingsSignOut();
 wirePointerToggle();
+wireTvRemotePanel();
 if (document.documentElement.classList.contains("page-settings")) {
   document.body.classList.add("has-mouse");
 }

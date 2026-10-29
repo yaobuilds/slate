@@ -24,6 +24,17 @@ On Wi-Fi, use **Settings → Sign out on Wi-Fi** to clear the unlock cookie so D
 
 Leave this Mac awake while you use Slate. If it sleeps, the page stops.
 
+## Wi-Fi remote
+
+With `python3 server.py --lan`, open **Settings → TV remote** or `http://<mac-ip>:8000/remote.html` on a phone (not on the TV itself).
+
+1. **Pair the phone** — Generate a six-digit code on the Mac, enter it on the phone. That sets a session cookie for the remote API.
+2. **Pair the TV** — Tap **Show code on TV**. The TV displays a six-character hex code (no physical remote). Enter that code on the phone or in Settings.
+
+Until the TV code is accepted, arrow keys from the phone move focus inside Slate in the browser. Volume waits for TV pairing. After pairing, keys inject into whatever app is on screen on the Google TV. Same Wi-Fi only; do not forward port 8000 on the router.
+
+TV credentials live in `atv.local` on this Mac (gitignored). Turn the broker off with **Wi-Fi remote enabled** in Settings without erasing that file.
+
 ## What you get (v1: tablet and Mac)
 
 - **Home:** minute clock, weather, Dashboard plus selected apps from the catalog. Tiles auto-fit the screen; TV Settings can choose Auto fit or Large tiles.

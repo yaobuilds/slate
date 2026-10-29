@@ -1386,13 +1386,12 @@ def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str
         when = incident_datetime(item.get("time", ""))
         if when is None or when < cutoff:
             continue
-        if isinstance(item.get("lat"), float) and isinstance(item.get("lon"), float):
-            dist = haversine_km(lat, lon, item["lat"], item["lon"])
-            if dist > TRAFFIC_INCIDENT_MAX_KM:
-                continue
-            item["distanceKm"] = round(dist, 1)
-        else:
-            item["distanceKm"] = 9999.0
+        if not isinstance(item.get("lat"), float) or not isinstance(item.get("lon"), float):
+            continue
+        dist = haversine_km(lat, lon, item["lat"], item["lon"])
+        if dist > TRAFFIC_INCIDENT_MAX_KM:
+            continue
+        item["distanceKm"] = round(dist, 1)
         item["_whenTs"] = when.timestamp()
         ranked.append(item)
     ranked.sort(key=lambda row: (-row.get("_whenTs", 0.0), row.get("distanceKm", 9999.0)))

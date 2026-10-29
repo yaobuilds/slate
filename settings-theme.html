@@ -14,45 +14,50 @@
 <body>
   <div class="settings-stage appearance-stage">
     <header class="settings-head">
-      <a class="settings-back" href="settings.html">Back</a>
+      <a class="settings-back" href="settings.html"><span class="back-arrow" aria-hidden="true">←</span>Settings</a>
       <h1 class="settings-title">Appearance</h1>
     </header>
     <div class="appearance-workspace">
       <div class="appearance-controls">
         <section class="appearance-section">
-          <h2>Home</h2>
-          <div class="appearance-options appearance-styles" id="appearance-styles" role="radiogroup" aria-label="Home style"></div>
+          <h2 id="look-heading">Home look</h2>
+          <div class="look-cards" id="appearance-styles" role="radiogroup" aria-labelledby="look-heading"></div>
         </section>
-        <section class="appearance-section">
-          <h2>Motion</h2>
-          <div class="appearance-options appearance-three" id="appearance-motion" role="radiogroup" aria-label="Motion"></div>
-          <p class="appearance-note" id="motion-description">Slow, continuous movement.</p>
-        </section>
-        <section class="appearance-section">
-          <h2>Intensity</h2>
-          <div class="appearance-options appearance-three" id="appearance-intensity" role="radiogroup" aria-label="Background intensity"></div>
-        </section>
-        <section class="appearance-section" id="ambient-controls">
-          <h2>Ambient color</h2>
-          <label for="ambient-preset" class="appearance-note">Also used on Dashboard and other devices</label>
-          <select class="settings-field" id="ambient-preset"></select>
+        <section class="appearance-section" id="color-section">
+          <div class="appearance-section-head">
+            <h2 id="color-heading">Colors</h2>
+            <p class="appearance-hint" id="color-hint">Also used on Dashboard and other devices</p>
+          </div>
+          <div class="palette-chips" id="appearance-colors" role="radiogroup" aria-labelledby="color-heading"></div>
         </section>
       </div>
       <aside class="appearance-preview-area" aria-label="Home preview">
         <div class="appearance-preview" id="appearance-preview" data-style="sculptural">
           <div class="preview-backdrop tv-backdrop" id="preview-backdrop" aria-hidden="true"></div>
           <div class="preview-hero"><span>9:41</span><small>Wednesday, October 28</small></div>
-          <div class="preview-weather">☁ 62°<small>Cloudy</small></div>
+          <div class="preview-weather"><span class="preview-wx-icon" data-icon="cloud"></span>62°<small>Cloudy</small></div>
           <div class="preview-settings">Settings</div>
-          <div class="preview-dock"><span>⌘<small>Dashboard</small></span><span>N<small>Netflix</small></span><span>▶<small>YouTube</small></span></div>
+          <div class="preview-dock">
+            <span><i data-icon="grid"></i><small>Dashboard</small></span>
+            <span><i data-icon="film"></i><small>Netflix</small></span>
+            <span><i data-icon="tv"></i><small>YouTube</small></span>
+          </div>
         </div>
-        <p class="appearance-note" id="appearance-description">Deep ink and luminous forms.</p>
-        <p class="appearance-note">Sculptural Light, Aqua, and Flurry set the colors on every page. The TV, Mac, and phone share a look. Each device keeps its own layout.</p>
+        <p class="appearance-caption"><strong id="appearance-name">Sculptural Light</strong><span id="appearance-description">Deep ink and luminous forms.</span></p>
+        <section class="appearance-section appearance-inline">
+          <h2 id="motion-heading">Motion</h2>
+          <div class="appearance-options appearance-three" id="appearance-motion" role="radiogroup" aria-labelledby="motion-heading"></div>
+        </section>
+        <p class="appearance-note" id="motion-description">Slow, continuous movement.</p>
+        <section class="appearance-section appearance-inline">
+          <h2 id="intensity-heading">Intensity</h2>
+          <div class="appearance-options appearance-three" id="appearance-intensity" role="radiogroup" aria-labelledby="intensity-heading"></div>
+        </section>
       </aside>
     </div>
     <div class="appearance-save">
       <p class="settings-msg" id="theme-msg" role="status"></p>
-      <button type="button" id="theme-save">Save and open Home</button>
+      <button type="button" id="theme-save" class="button-primary">Save and open Home</button>
     </div>
   </div>
   <form id="settings-pin-form" class="settings-pin-form" hidden autocomplete="off">

@@ -1236,16 +1236,42 @@ def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str
     return picked, True, feed
 
 
-def traffic_payload() -> dict:
+def parse_traffic_center(params: dict) -> tuple[float, float] | None:
+    raw_lat = params.get("lat", [""])[0] if params else ""
+    raw_lon = params.get("lon", [""])[0] if params else ""
+    try:
+        lat = float(raw_lat)
+        lon = float(raw_lon)
+    except (TypeError, ValueError):
+        return None
+    if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
+        return None
+    return lat, lon
+
+
+def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     updated = datetime.now(timezone.utc).isoformat()
-    place = slate_settings_place()
-    if place is None:
+    settings_place = slate_settings_place()
+    if center is not None:
+        lat, lon = center
+        label = ""
+        if settings_place and isinstance(settings_place.get("label"), str):
+            slat = settings_place.get("lat")
+            slon = settings_place.get("lon")
+            if isinstance(slat, (int, float)) and isinstance(slon, (int, float)):
+                if haversine_km(lat, lon, float(slat), float(slon)) < 1.0:
+                    label = settings_place.get("label") or ""
+        tz = (settings_place or {}).get("timezone") or "America/New_York"
+        place = {"lat": lat, "lon": lon, "label": label, "timezone": tz}
+    elif settings_place is None:
         return {
             "hasPlace": False,
             "incidentsAvailable": False,
             "incidents": [],
             "updated": updated,
         }
+    else:
+        place = settings_place
     lat, lon = float(place["lat"]), float(place["lon"])
     incidents, available, feed = traffic_incidents_for(lat, lon)
     body = {
@@ -1778,6 +1804,7 @@ ALLOWED_FILES = {
     "/weather.js",
     "/traffic.js",
     "/slate-surface.js",
+    "/slate-place.js",
     "/network.js",
     "/calendar.css",
     "/weather.css",
@@ -1809,6 +1836,7 @@ ALLOWED_FILES = {
     "/gallery.css",
     "/gallery.js",
     "/slate-surface.js",
+    "/slate-place.js",
 }
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")
@@ -2879,7 +2907,8 @@ class Handler(SimpleHTTPRequestHandler):
             self.serve_radar()
             return
         if path == "/traffic.json":
-            self.send_json(200, traffic_payload())
+            query = parse_qs(urlsplit(self.path).query)
+            self.send_json(200, traffic_payload(parse_traffic_center(query)))
             return
         if path in ROUTE_REDIRECTS:
             self.redirect(ROUTE_REDIRECTS[path])

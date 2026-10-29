@@ -255,9 +255,18 @@ function forecastOk(data) {
   return !!(data && Array.isArray(data.daily?.time) && data.daily.time.length > 0);
 }
 
+function applyDeviceWeatherPlace() {
+  const slatePlace = window.SlatePlace;
+  if (!slatePlace || typeof slatePlace.readDevicePlace !== "function") return;
+  const device = slatePlace.readDevicePlace();
+  if (device) savedPlace = { ...savedPlace, ...device };
+}
+
 async function resolveWeatherPlace(settings) {
   const loc = settings?.location;
-  const onTv = /Android TV|Google TV/i.test(navigator.userAgent || "");
+  const onTv =
+    /Android TV|Google TV/i.test(navigator.userAgent || "") ||
+    document.documentElement.dataset.slateSurface === "tv";
   applyWeatherPlaceFromSettings(settings);
   if (loc && typeof loc.lat === "number" && (loc.locked === true || onTv)) {
     let label = typeof loc.label === "string" ? loc.label.trim() : "";
@@ -265,8 +274,15 @@ async function resolveWeatherPlace(settings) {
     savedPlace = { ...savedPlace, label };
     return;
   }
+  applyDeviceWeatherPlace();
   const detected = await detectDeviceLocation();
-  if (detected) {
+  if (!detected) return;
+  const slatePlace = window.SlatePlace;
+  const promptKm = slatePlace && slatePlace.PROMPT_KM ? slatePlace.PROMPT_KM : 25;
+  const dist = slatePlace
+    ? slatePlace.haversineKm(savedPlace.lat, savedPlace.lon, detected.lat, detected.lon)
+    : promptKm + 1;
+  if (dist <= promptKm) {
     const label = await reversePlaceLabel(detected.lat, detected.lon);
     savedPlace = { ...detected, label, timezone: savedPlace.timezone };
   }

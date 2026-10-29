@@ -182,6 +182,15 @@ function onAndroidTv() {
   return /Android TV|Google TV/i.test(navigator.userAgent || "");
 }
 
+function hdmiInputFrom(settings) {
+  const raw = settings && settings.hdmiInput;
+  return raw === "2" || raw === "3" ? raw : "1";
+}
+
+function hdmiTileLabel(port) {
+  return `HDMI ${port}`;
+}
+
 function chosenText(override, fallback) {
   if (typeof override === "string" && override.trim()) return override;
   return tileText(fallback);
@@ -369,6 +378,18 @@ function openTile(tile) {
         return;
       }
     }
+    if (url.startsWith("slate://hdmi")) {
+      const port = hdmiInputFrom(window.slateHomeSettings);
+      const bridge = window.SlateTV;
+      if (bridge && typeof bridge.openHdmi === "function") {
+        bridge.openHdmi(port);
+        return;
+      }
+      if (bridge || onAndroidTv()) {
+        location.href = `slate://hdmi?port=${encodeURIComponent(port)}`;
+      }
+      return;
+    }
     location.href = url;
     return;
   }
@@ -468,7 +489,12 @@ async function loadTiles() {
   document.body.dataset.tileSize = settings.tileSize === "large" ? "large" : "auto";
   window.slateHomeSettings = settings;
   document.dispatchEvent(new CustomEvent("slate:appearance", { detail: settings }));
-  const built = renderTileList(resolveApps(entries, catalog));
+  const apps = resolveApps(entries, catalog);
+  const hdmiPort = hdmiInputFrom(settings);
+  for (const app of apps) {
+    if (app.id === "hdmi") app.name = hdmiTileLabel(hdmiPort);
+  }
+  const built = renderTileList(apps);
   await paintTileIcons(built);
 }
 

@@ -5,10 +5,20 @@ const countEl = document.getElementById("apps-count");
 const msgEl = document.getElementById("apps-msg");
 const saveBtn = document.getElementById("apps-save");
 const tileSizeEl = document.getElementById("tile-size");
+const hdmiInputEl = document.getElementById("hdmi-input");
 
 let catalog = [];
 let selected = [];
 let tileSize = "auto";
+let hdmiInput = "1";
+
+function normalizeHdmiInput(value) {
+  return value === "2" || value === "3" ? value : "1";
+}
+
+function isTvOnlyCatalogId(id) {
+  return (id === "google-tv" || id === "hdmi") && !isTvSurface();
+}
 
 function isTvSurface() {
   return !!window.SlateTV || /Android TV|Google TV/i.test(navigator.userAgent || "");
@@ -89,7 +99,7 @@ function renderList() {
     input.type = "checkbox";
     input.name = "app";
     input.value = item.id;
-    const tvOnly = item.id === "google-tv" && !isTvSurface();
+    const tvOnly = isTvOnlyCatalogId(item.id);
     input.disabled = tvOnly;
     const name = document.createElement("span");
     name.className = "nm";
@@ -112,7 +122,8 @@ function renderList() {
 
 async function persistApps() {
   if (tileSizeEl) tileSize = tileSizeEl.value === "large" ? "large" : "auto";
-  const result = await saveSettings({ homeApps: selected, tileSize });
+  if (hdmiInputEl) hdmiInput = normalizeHdmiInput(hdmiInputEl.value);
+  const result = await saveSettings({ homeApps: selected, tileSize, hdmiInput });
   if (result.error === "pin") {
     wireSettingsPinForm(persistApps);
     return;
@@ -134,6 +145,10 @@ async function persistApps() {
     tileSize = result.tileSize;
     if (tileSizeEl) tileSizeEl.value = tileSize;
   }
+  if (typeof result.hdmiInput === "string") {
+    hdmiInput = normalizeHdmiInput(result.hdmiInput);
+    if (hdmiInputEl) hdmiInputEl.value = hdmiInput;
+  }
   if (msgEl) {
     msgEl.textContent = selected.length
       ? "Saved. Open Home to see the new tiles."
@@ -150,6 +165,8 @@ async function init() {
     selected = raw.filter((id, index) => known.has(id) && raw.indexOf(id) === index);
     tileSize = settings.tileSize === "large" ? "large" : "auto";
     if (tileSizeEl) tileSizeEl.value = tileSize;
+    hdmiInput = normalizeHdmiInput(settings.hdmiInput);
+    if (hdmiInputEl) hdmiInputEl.value = hdmiInput;
     renderList();
   } catch (err) {
     if (msgEl) msgEl.textContent = "Could not load the app list.";

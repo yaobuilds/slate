@@ -2,8 +2,16 @@
 (() => {
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const stops = ['#72c9d0', '#837ee0', '#db9cae', '#b7d2e4'];
-  const flurryHues = ['#ff4ad8', '#8a4bff', '#3a6dff', '#3ee7ff', '#ffe14a', '#3dff7a'];
-  const field = { nx: 0.68, ny: 0.42 };
+  const FLURRY_REST_NX = 0.62;
+  const FLURRY_REST_NY = 0.42;
+  const flurryStreams = [
+    { slot: 0.15, rgb: [196, 52, 128], len: 0.55, phase: 0.2 },
+    { slot: 1.35, rgb: [52, 92, 188], len: 0.75, phase: 1.1 },
+    { slot: 2.55, rgb: [40, 160, 176], len: 0.95, phase: 2.4 },
+    { slot: 3.85, rgb: [188, 156, 48], len: 0.70, phase: 3.6 },
+    { slot: 5.15, rgb: [40, 150, 88], len: 0.85, phase: 4.8 },
+  ];
+  const field = { nx: FLURRY_REST_NX, ny: FLURRY_REST_NY, targetNx: FLURRY_REST_NX, targetNy: FLURRY_REST_NY };
   let stopBackdrop = () => {};
   let config = {};
   let page = 0;
@@ -16,33 +24,102 @@
   const flurryDock = () => isHome() && androidTv() && tvFrame() && document.body.dataset.tvAppearance === 'flurry';
   const motionLive = () => !reducedMotion.matches && config.tvMotion !== 'still';
 
-  function drawFlurry(ctx, tick) {
+  function flurryBrushScale(intensity) {
+    if (intensity === 'soft') return 0.9;
+    if (intensity === 'vivid') return 1.12;
+    return 1;
+  }
+
+  function buildFlurryBrushes() {
+    const makeColor = (r, g, b) => {
+      const brush = document.createElement('canvas');
+      brush.width = 96;
+      brush.height = 96;
+      const bctx = brush.getContext('2d');
+      if (!bctx) return brush;
+      const grad = bctx.createRadialGradient(48, 48, 0, 48, 48, 48);
+      grad.addColorStop(0, `rgba(${r},${g},${b},0.55)`);
+      grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      bctx.fillStyle = grad;
+      bctx.fillRect(0, 0, 96, 96);
+      return brush;
+    };
+    const white = makeColor(255, 255, 255);
+    return { colors: flurryStreams.map(s => makeColor(...s.rgb)), white };
+  }
+
+  function clampFlurryCore() {
+    field.nx = Math.max(0.5, Math.min(0.76, field.nx));
+    field.ny = Math.max(0.3, Math.min(0.56, field.ny));
+  }
+
+  function flurryAim(motion, frameCount) {
+    const driftT = frameCount * 0.05 * (Math.PI * 2 / 40);
+    const ellipseNx = FLURRY_REST_NX + Math.sin(driftT) * 0.02;
+    const ellipseNy = FLURRY_REST_NY + Math.cos(driftT) * 0.015;
+    if (motion === 'still') return { nx: ellipseNx, ny: ellipseNy };
+    return {
+      nx: ellipseNx * 0.5 + field.targetNx * 0.5,
+      ny: ellipseNy * 0.5 + field.targetNy * 0.5,
+    };
+  }
+
+  function drawFlurry(ctx, state) {
+    const { spin, brushes, brushScale, motion, frameCount, firstFrame } = state;
+    const aim = flurryAim(motion, frameCount);
+    field.nx += (aim.nx - field.nx) * 0.08;
+    field.ny += (aim.ny - field.ny) * 0.08;
+    clampFlurryCore();
     const coreX = 960 * field.nx;
     const coreY = 540 * field.ny;
-    ctx.fillStyle = 'rgba(0,0,0,0.2)';
-    ctx.fillRect(0, 0, 960, 540);
-    ctx.lineCap = 'round';
-    for (let i = 0; i < 16; i += 1) {
-      const angle = tick * 0.12 + i * 0.42;
-      const sx = 480 + Math.cos(angle) * 560;
-      const sy = 270 + Math.sin(angle * 1.25) * 360;
-      ctx.strokeStyle = flurryHues[i % flurryHues.length];
-      ctx.globalAlpha = 0.2;
-      ctx.lineWidth = 22 - (i % 5) * 3;
-      ctx.beginPath();
-      ctx.moveTo(sx, sy);
-      ctx.quadraticCurveTo((sx + coreX) / 2, (sy + coreY) / 2 + Math.sin(angle) * 50, coreX, coreY);
-      ctx.stroke();
-    }
-    const glow = ctx.createRadialGradient(coreX, coreY, 0, coreX, coreY, 78);
-    glow.addColorStop(0, 'rgba(255,255,255,0.95)');
-    glow.addColorStop(0.35, 'rgba(190,240,255,0.45)');
-    glow.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalCompositeOperation = 'source-over';
     ctx.globalAlpha = 1;
-    ctx.fillStyle = glow;
-    ctx.beginPath();
-    ctx.arc(coreX, coreY, 78, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.fillStyle = firstFrame ? '#000' : 'rgba(0,0,0,0.08)';
+    ctx.fillRect(0, 0, 960, 540);
+    state.firstFrame = false;
+    ctx.globalCompositeOperation = 'lighter';
+    const baseLen = 250;
+    for (let i = 0; i < flurryStreams.length; i += 1) {
+      const stream = flurryStreams[i];
+      const angle = stream.slot + spin + 0.45 * Math.sin(spin * 0.55 + stream.slot);
+      const length = baseLen * stream.len * (1 + 0.12 * Math.sin(spin * 0.3 + stream.phase));
+      const headX = coreX - Math.cos(angle) * length;
+      const headY = coreY - Math.sin(angle) * length;
+      const perpX = -Math.sin(angle);
+      const perpY = Math.cos(angle);
+      const brush = brushes.colors[i];
+      for (let s = 0; s < 6; s += 1) {
+        const t = s / 5;
+        const lx = headX + (coreX - headX) * t;
+        const ly = headY + (coreY - headY) * t;
+        const bend = Math.sin(t * Math.PI) * 50;
+        const px = lx + perpX * bend;
+        const py = ly + perpY * bend;
+        const w = (48 + Math.sin(t * Math.PI) * 88) * brushScale;
+        ctx.globalAlpha = 0.02 + Math.sin(t * Math.PI) * 0.03;
+        ctx.drawImage(brush, px - w / 2, py - w / 2, w, w);
+      }
+    }
+    const coreSize = 48 * brushScale;
+    ctx.globalAlpha = 0.2;
+    ctx.drawImage(brushes.white, coreX - coreSize / 2, coreY - coreSize / 2, coreSize, coreSize);
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+  }
+
+  function setFlurryTarget(x, y, motion) {
+    const mx = motion === 'reactive' ? 0.16 : 0.06;
+    const my = motion === 'reactive' ? 0.10 : 0.04;
+    field.targetNx = FLURRY_REST_NX + (x - 0.5) * mx;
+    field.targetNy = FLURRY_REST_NY + (y - 0.5) * my;
+  }
+
+  function flurryTargetLive(el) {
+    if (!el || el.dataset.backdrop !== 'flurry') return false;
+    const motion = el.dataset.motion;
+    if (motion !== 'drift' && motion !== 'reactive') return false;
+    if (isHome()) return motionLive();
+    return !reducedMotion.matches;
   }
 
   function decorate(el, backdrop, motion, intensity, ambientColors = stops) {
@@ -84,18 +161,28 @@
       canvas.height = 540;
       const ctx = canvas.getContext('2d');
       if (ctx) {
-        let tick = 0;
-        ctx.fillStyle = '#000';
-        ctx.fillRect(0, 0, 960, 540);
-        for (let n = 0; n < 40; n += 1) {
-          tick += 0.08;
-          drawFlurry(ctx, tick);
-        }
-        if (motion !== 'still' && !reducedMotion.matches) {
+        field.nx = FLURRY_REST_NX;
+        field.ny = FLURRY_REST_NY;
+        field.targetNx = FLURRY_REST_NX;
+        field.targetNy = FLURRY_REST_NY;
+        const liveMotion = reducedMotion.matches ? 'still' : motion;
+        const brushes = buildFlurryBrushes();
+        const brushScale = flurryBrushScale(intensity);
+        let spin = 0;
+        let frameCount = 0;
+        const state = {
+          spin, brushes, brushScale, motion: liveMotion, frameCount, firstFrame: true,
+        };
+        const step = () => {
+          state.spin += 0.008;
+          state.frameCount += 1;
+          drawFlurry(ctx, state);
+        };
+        for (let n = 0; n < 48; n += 1) step();
+        if (liveMotion !== 'still') {
           timer = setInterval(() => {
             if (document.hidden || document.body.classList.contains('tv-motion-paused')) return;
-            tick += 0.08;
-            drawFlurry(ctx, tick);
+            step();
           }, 50);
         }
       }
@@ -167,8 +254,7 @@
     document.body.style.setProperty('--look-y', dy);
     el?.style.setProperty('--look-x', dx);
     el?.style.setProperty('--look-y', dy);
-    field.nx = 0.62 + (x - 0.5) * (config.tvMotion === 'reactive' ? 0.28 : 0.1);
-    field.ny = 0.42 + (y - 0.5) * (config.tvMotion === 'reactive' ? 0.2 : 0.08);
+    if (flurryTargetLive(el)) setFlurryTarget(x, y, config.tvMotion);
   }
 
   function showStreak(x, y, px, py) {
@@ -220,9 +306,10 @@
     if (now - lastPointer < 180 || Math.hypot(event.movementX, event.movementY) < 8) return;
     lastPointer = now;
     showStreak(x, y, event.movementX, event.movementY);
-    if (!isHome() && document.getElementById('preview-backdrop')?.dataset.backdrop === 'flurry') {
-      field.nx = 0.62 + (x - 0.5) * 0.2;
-      field.ny = 0.42 + (y - 0.5) * 0.16;
+    const preview = document.getElementById('preview-backdrop');
+    if (flurryTargetLive(preview)) {
+      const previewMotion = preview.dataset.motion || 'drift';
+      setFlurryTarget(x, y, previewMotion);
     }
   });
   document.addEventListener('click', event => {

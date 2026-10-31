@@ -17,7 +17,6 @@ const radarImage = document.getElementById("radar-image");
 const radarBasemap = document.getElementById("radar-basemap");
 const radarCaption = document.getElementById("radar-caption");
 const radarTime = document.getElementById("radar-time");
-const TV_LAYOUT = window.matchMedia("(min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9)");
 const radarPlay = document.getElementById("radar-play");
 const radarZoom = document.getElementById("radar-zoom");
 
@@ -206,9 +205,12 @@ function updateRadarImage() {
   radarTime.textContent = `Recent radar · ${new Date(stamp * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 
-function applyWeatherLayout() {
-  const tvSurface = document.documentElement.dataset.slateSurface === "tv";
-  document.body.classList.toggle("weather-tv", TV_LAYOUT.matches && tvSurface);
+function focusAndReveal(el) {
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  if (typeof window.SlateSurface?.reveal === "function") {
+    window.SlateSurface.reveal(el);
+  }
 }
 
 function detectDeviceLocation() {
@@ -313,7 +315,7 @@ function moveFocus(key) {
   const items = focusables();
   const current = document.activeElement;
   if (!items.includes(current)) {
-    items[0]?.focus();
+    focusAndReveal(items[0]);
     return;
   }
   const rect = current.getBoundingClientRect();
@@ -338,16 +340,10 @@ function moveFocus(key) {
       best = el;
     }
   }
-  best?.focus({ preventScroll: true });
+  focusAndReveal(best);
 }
 
 async function init() {
-  applyWeatherLayout();
-  if (TV_LAYOUT.addEventListener) {
-    TV_LAYOUT.addEventListener("change", applyWeatherLayout);
-  } else {
-    addEventListener("resize", applyWeatherLayout);
-  }
   let settings = null;
   try {
     settings = await fetch("settings.json", { cache: "no-store" }).then((r) => r.json());

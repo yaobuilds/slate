@@ -109,9 +109,19 @@ function applyNight(now) {
   document.documentElement.classList.toggle("night", wallClock(now).hour < 6);
 }
 
+function applySeason(now) {
+  const clock = wallClock(now);
+  const on = clock.month === 10 && clock.day === 31;
+  const root = document.documentElement;
+  if (root.classList.contains("halloween") === on) return;
+  root.classList.toggle("halloween", on);
+  document.dispatchEvent(new CustomEvent("slate:season"));
+}
+
 function tickTime() {
   const now = new Date();
   applyNight(now);
+  applySeason(now);
   renderClock(now);
 }
 
@@ -267,10 +277,25 @@ function moveHomeFocus(key) {
   moveDirectionalFocus(homeFocusables(), key);
 }
 
+function dashboardFocusable(el) {
+  return el && el.offsetParent !== null && !el.disabled;
+}
+
 function dashboardFocusables() {
-  return [...document.querySelectorAll(
-    ".home-pill[href], #guest-toggle, .calendar-panel-link[data-focus], .dash-foot .foot-link[href]",
-  )].filter((el) => el && el.offsetParent !== null && !el.disabled);
+  const list = [];
+  document.querySelectorAll(".home-pill[href], .calendar-panel-link[data-focus]").forEach((el) => {
+    if (dashboardFocusable(el)) list.push(el);
+  });
+  const headlines = document.getElementById("headlines");
+  if (headlines && !headlines.hidden) {
+    document.querySelectorAll(".headline-item[data-focus][href]").forEach((el) => {
+      if (dashboardFocusable(el)) list.push(el);
+    });
+  }
+  document.querySelectorAll("#guest-toggle, .dash-foot .foot-link[href]").forEach((el) => {
+    if (dashboardFocusable(el)) list.push(el);
+  });
+  return list;
 }
 
 function moveDashboardFocus(key) {
@@ -308,7 +333,7 @@ function moveDirectionalFocus(items, key) {
   }
   if (best) {
     best.focus({ preventScroll: true });
-    best.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (window.SlateSurface && SlateSurface.reveal) SlateSurface.reveal(best);
     return;
   }
   const order = items.indexOf(current);
@@ -317,7 +342,7 @@ function moveDirectionalFocus(items, key) {
   const next = items[order + step];
   if (next) {
     next.focus({ preventScroll: true });
-    next.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (window.SlateSurface && SlateSurface.reveal) SlateSurface.reveal(next);
   }
 }
 

@@ -276,26 +276,47 @@
     if (focusIndex !== undefined && all[focusIndex]) all[focusIndex].focus({ preventScroll: true });
   }
 
+  function syncHomeSurface() {
+    if (!isHome()) return;
+    document.body.dataset.homeSurface = androidTv() && tvFrame() ? 'tv' : 'flex';
+  }
+
+  function paintBackdrop() {
+    if (!isHome()) return;
+    const choice = ['sculptural', 'aqua', 'flurry'].includes(config.tvAppearance) ? config.tvAppearance : 'sculptural';
+    const motion = ['still', 'drift', 'reactive'].includes(config.tvMotion) ? config.tvMotion : 'drift';
+    stopBackdrop();
+    const halloween = document.documentElement.classList.contains('halloween');
+    let colors = choice === 'sculptural' ? ambientColorsFor(config.ambientPreset) : stops;
+    let key = choice === 'aqua' ? config.tvAquaPalette : choice === 'flurry' ? config.tvFlurryPalette : '';
+    if (halloween) {
+      if (choice === 'sculptural') colors = ['#FFA51F', '#F0453A', '#F3C46B'];
+      else key = 'ember';
+    }
+    stopBackdrop = decorate(
+      document.getElementById('tv-backdrop'),
+      choice,
+      reducedMotion.matches ? 'still' : motion,
+      config.tvIntensity || 'balanced',
+      colors,
+      key,
+    );
+  }
+
   function apply(settings) {
     config = settings || {};
     applyTheme(config);
     if (!isHome()) return;
     const choice = ['sculptural', 'aqua', 'flurry'].includes(config.tvAppearance) ? config.tvAppearance : 'sculptural';
     document.body.dataset.tvAppearance = choice;
-    document.body.dataset.homeSurface = androidTv() && tvFrame() ? 'tv' : 'flex';
+    syncHomeSurface();
     const motion = ['still', 'drift', 'reactive'].includes(config.tvMotion) ? config.tvMotion : 'drift';
     document.body.dataset.tvBackdrop = choice;
     document.body.dataset.tvMotion = reducedMotion.matches ? 'still' : motion;
-    const paint = () => {
-      stopBackdrop();
-      const colors = choice === 'sculptural' ? ambientColorsFor(config.ambientPreset) : stops;
-      const key = choice === 'aqua' ? config.tvAquaPalette : choice === 'flurry' ? config.tvFlurryPalette : '';
-      stopBackdrop = decorate(document.getElementById('tv-backdrop'), choice, motion, config.tvIntensity || 'balanced', colors, key);
-    };
     if (choice === 'sculptural' && !ambientConfig) {
-      loadAmbient().then(() => { if (document.body.dataset.tvAppearance === 'sculptural') paint(); });
+      loadAmbient().then(() => { if (document.body.dataset.tvAppearance === 'sculptural') paintBackdrop(); });
     } else {
-      paint();
+      paintBackdrop();
     }
     setPage(0);
   }
@@ -348,6 +369,7 @@
     setTimeout(() => document.body.classList.remove('field-hot'), 420);
   }
 
+  document.addEventListener('slate:season', () => { if (isHome()) paintBackdrop(); });
   document.addEventListener('slate:appearance', event => apply(event.detail));
   document.addEventListener('slate:tiles', () => { if (isHome()) setPage(0); });
   document.addEventListener('focusin', event => {
@@ -406,17 +428,23 @@
     apply(config);
     document.dispatchEvent(new Event('slate:motion-preference'));
   });
+  const setHidden = hidden => document.body.classList.toggle('tv-motion-paused', hidden);
   let resizeTimer;
   addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (isHome()) apply(config); }, 180);
+    resizeTimer = setTimeout(() => {
+      if (!isHome()) return;
+      const prevSurface = document.body.dataset.homeSurface;
+      syncHomeSurface();
+      if (document.body.dataset.homeSurface !== prevSurface) paintBackdrop();
+    }, 180);
   });
-  addEventListener('pagehide', () => stopBackdrop());
-  const setHidden = hidden => document.body.classList.toggle('tv-motion-paused', hidden);
+  addEventListener('pagehide', () => { stopBackdrop(); setHidden(true); });
   document.addEventListener('visibilitychange', () => setHidden(document.hidden));
-  addEventListener('blur', () => setHidden(true));
-  addEventListener('focus', () => setHidden(false));
-  addEventListener('pageshow', event => { if (event.persisted) apply(config); });
+  addEventListener('pageshow', event => {
+    setHidden(document.hidden);
+    if (event.persisted) apply(config);
+  });
   if (window.slateHomeSettings) apply(window.slateHomeSettings);
   else if (!isHome() && !document.documentElement.classList.contains('page-appearance')) {
     const promise = window.slateSettingsPromise

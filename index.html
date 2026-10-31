@@ -18,6 +18,18 @@
         }
         if (hour === 24) hour = 0;
         if (hour < 6) document.documentElement.classList.add("night");
+        var day = new Intl.DateTimeFormat("en-US", {
+          timeZone: "America/New_York",
+          month: "2-digit",
+          day: "2-digit"
+        }).formatToParts(new Date());
+        var monthNum = 0;
+        var dayNum = 0;
+        for (var j = 0; j < day.length; j += 1) {
+          if (day[j].type === "month") monthNum = Number(day[j].value);
+          if (day[j].type === "day") dayNum = Number(day[j].value);
+        }
+        if (monthNum === 10 && dayNum === 31) document.documentElement.classList.add("halloween");
       } catch (err) {
         /* The clock script applies the same window once it loads. */
       }

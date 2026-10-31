@@ -35,7 +35,7 @@ html[data-slate-surface="tv"] .traffic-shell {
   min-height: 0;
   padding: 54px 96px;
   gap: 20px;
-  transform: translate(-50%, -50%) scale(min(100vw / 1920, 100vh / 1080));
+  transform: translate(-50%, -50%) scale(min(100vw / 1920px, 100vh / 1080px));
   transform-origin: center center;
 }
 

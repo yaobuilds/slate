@@ -119,7 +119,7 @@ function moveSettingsFocus(direction) {
   }
   if (next) {
     next.focus({ preventScroll: true });
-    next.scrollIntoView({ block: "nearest", inline: "nearest" });
+    if (window.SlateSurface && SlateSurface.reveal) SlateSurface.reveal(next);
   }
 }
 

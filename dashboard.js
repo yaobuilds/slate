@@ -257,16 +257,19 @@ function headlineTimeLabel(iso) {
 }
 
 function headlineRow(item) {
+  const titleText = typeof item.title === "string" ? item.title.trim() : "";
+  if (!titleText) return null;
   const li = document.createElement("li");
   const link = document.createElement("a");
   link.className = "headline-item";
   link.href = typeof item.url === "string" ? item.url : "#";
   link.target = "_blank";
   link.rel = "noopener noreferrer";
-  link.tabIndex = -1;
+  link.tabIndex = 0;
+  link.setAttribute("data-focus", "");
   const title = document.createElement("span");
   title.className = "headline-title";
-  title.textContent = typeof item.title === "string" ? item.title : "";
+  title.textContent = titleText;
   const meta = document.createElement("span");
   meta.className = "headline-meta";
   const source = document.createElement("span");
@@ -290,7 +293,9 @@ function renderHeadlines(payload) {
   }
   if (headlinesSection) headlinesSection.hidden = false;
   if (!headlineList) return;
-  headlineList.replaceChildren(...items.slice(0, 4).map((item) => headlineRow(item)));
+  headlineList.replaceChildren(
+    ...items.slice(0, 4).map((item) => headlineRow(item)).filter(Boolean),
+  );
 }
 
 async function loadHeadlines() {

@@ -171,8 +171,9 @@ function applyDrift() {
   if (!shellEl || document.documentElement.dataset.slateSurface !== "tv") return;
   const [dx, dy] = DRIFT[driftIndex % DRIFT.length];
   driftIndex += 1;
+  const scale = Math.min(window.innerWidth / 1920, window.innerHeight / 1080);
   shellEl.style.transform =
-    `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(min(100vw / 1920, 100vh / 1080))`;
+    `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px)) scale(${scale})`;
 }
 
 function showNoPlace() {

@@ -265,7 +265,7 @@ function openDetail(event, button) {
 
 function closeDetail() {
   detail.hidden = true;
-  returnFocus?.focus({ preventScroll: true });
+  focusAndReveal(returnFocus);
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => {
@@ -343,6 +343,14 @@ pinForm.addEventListener("submit", async (event) => {
   }
 });
 
+function focusAndReveal(el) {
+  if (!el) return;
+  el.focus({ preventScroll: true });
+  if (typeof window.SlateSurface?.reveal === "function") {
+    window.SlateSurface.reveal(el);
+  }
+}
+
 function focusables() {
   const root = detail.hidden ? document : detail;
   return [...root.querySelectorAll("[data-cal-focus]")].filter((el) => el.offsetParent !== null);
@@ -352,7 +360,7 @@ function moveFocus(key) {
   const items = focusables();
   const current = document.activeElement;
   if (!items.includes(current)) {
-    items[0]?.focus();
+    focusAndReveal(items[0]);
     return;
   }
   const rect = current.getBoundingClientRect();
@@ -377,7 +385,7 @@ function moveFocus(key) {
       best = el;
     }
   }
-  best?.focus({ preventScroll: true });
+  focusAndReveal(best);
 }
 
 document.addEventListener("keydown", (event) => {

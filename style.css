@@ -181,6 +181,34 @@ body.show-focus .nav-link:focus-visible {
   color: var(--sl-text);
 }
 
+/* October 31 only. The class is removed at midnight in the saved time zone. */
+html.halloween .stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 42% 34% at 10% 92%, rgba(240, 138, 75, 0.22), transparent 70%),
+    radial-gradient(ellipse 36% 30% at 90% 86%, rgba(168, 64, 44, 0.2), transparent 72%);
+}
+
+html.halloween .stage > * {
+  position: relative;
+  z-index: 1;
+}
+
+html.halloween .date::after,
+html.halloween .dash-date::after {
+  content: "Halloween";
+  display: block;
+  margin-top: 10px;
+  color: #e8b86a;
+  font: 500 28px/1.2 var(--sl-font);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 /* Design px inside the 1920 stage. The stage is scaled as a whole, so these are not multiplied by --px. */
 .weather {
   grid-area: weather;

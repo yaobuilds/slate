@@ -7,6 +7,9 @@
 .tv-backdrop img, .tv-backdrop canvas, .aqua-ribbons {
   width: 100%; height: 100%; object-fit: cover;
   transform: translate(var(--look-x, 0px), var(--look-y, 0px)) scale(1.06);
+}
+.tv-backdrop[data-motion='still'] img,
+.tv-backdrop[data-motion='still'] canvas {
   transition: transform 1400ms ease-out;
 }
 /* Text protection: soft ink pools under the clock (top left) and weather (top right),
@@ -154,7 +157,8 @@
 .page-home[data-tv-motion='reactive'] .amb { transform: translate(var(--look-x, 0px), var(--look-y, 0px)); transition: transform 1400ms ease-out; }
 .tv-motion-paused .tv-backdrop * { animation-play-state: paused !important; }
 .tile .i.brand-mark { fill: currentColor; stroke: none; }
-.ambient-preview { width: 100%; height: 100%; transform: translate(var(--look-x, 0px), var(--look-y, 0px)) scale(1.1); transition: transform 1400ms ease-out; }
+.ambient-preview { width: 100%; height: 100%; transform: translate(var(--look-x, 0px), var(--look-y, 0px)) scale(1.1); }
+.tv-backdrop[data-motion='still'] .ambient-preview { transition: transform 1400ms ease-out; }
 [data-motion]:not([data-motion='still']) .ambient-preview { animation: alpine-drift 40s ease-in-out infinite alternate; }
 .page-home[data-tv-appearance] .tile[hidden] { display: none; }
 
@@ -184,27 +188,18 @@
   from { transform: translate(calc(var(--look-x, 0px) * 1.6 - 10px), calc(var(--look-y, 0px) * 1.6)) scale(1); }
   to { transform: translate(calc(var(--look-x, 0px) * 1.6 + 16px), calc(var(--look-y, 0px) * 1.6 - 8px)) scale(1.05); }
 }
-.page-home[data-tv-motion='drift'] .sculpt-form,
-.page-home[data-tv-motion='reactive'] .sculpt-form,
-.page-home[data-tv-motion='drift'] .tv-backdrop canvas,
-.page-home[data-tv-motion='reactive'] .tv-backdrop canvas,
-.page-home[data-tv-motion='drift'] .tv-backdrop img,
-.page-home[data-tv-motion='reactive'] .tv-backdrop img {
-  transition: transform 280ms ease-out;
-}
-.page-home[data-home-surface='tv'][data-tv-appearance='flurry'] .tiles.menu-turn,
-.page-home[data-home-surface='tv'][data-tv-appearance='aqua'] .tiles.menu-turn { animation: dock-turn 320ms ease; }
+html[data-slate-surface='tv'] .page-home:is([data-tv-appearance='aqua'], [data-tv-appearance='flurry']) .tiles.menu-turn { animation: dock-turn 320ms ease; }
 @keyframes dock-turn {
   from { opacity: .35; transform: translateX(calc(-50% + 28px)); }
   to { opacity: 1; transform: translateX(-50%); }
 }
 .light-hit { animation: light-hit 620ms ease-out; }
 @keyframes light-hit {
-  0% { box-shadow: 0 0 0 0 rgba(169,194,218,0); transform: translateY(0); }
-  28% { box-shadow: 0 0 72px 12px rgba(230,225,215,.62); transform: translateY(-12px); }
-  100% { box-shadow: 0 0 0 0 rgba(169,194,218,0); transform: translateY(0); }
+  0% { box-shadow: 0 0 0 0 rgba(169,194,218,0); opacity: 1; }
+  28% { box-shadow: 0 0 72px 12px rgba(230,225,215,.62); opacity: 1; }
+  100% { box-shadow: 0 0 0 0 rgba(169,194,218,0); opacity: 1; }
 }
-.menu-turn { animation: menu-turn 280ms ease; }
+.menu-turn:not(.tiles) { animation: menu-turn 280ms ease; }
 @keyframes menu-turn { from { opacity: .45; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
   .light-hit, .menu-turn, .sculpt-form, .move-streak, .tv-backdrop.core-pulse::before { animation: none !important; }

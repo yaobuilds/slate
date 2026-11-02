@@ -1,24 +1,26 @@
 # Slate
 
-A local dashboard for a Mac, tablet, or TV: clock, weather, calendar, app tiles, and settings. Plain HTML, CSS, and JavaScript. Python 3 serves the files. No build step.
+A local dashboard for a computer, phone, tablet, or TV: clock, weather, calendar, app tiles, and settings. Plain HTML, CSS, and JavaScript. Python serves the files. No build step and no dependencies.
 
-## Run
+Setup is this page. Design notes live in `docs/design/`. The working log is `STATUS.md`. The task list is `TASKS.md`.
 
-On the computer that hosts Slate:
+## What you need
+
+- Python 3.9 or newer. The server uses the standard library only.
+- A computer that stays awake while Slate is open. If it sleeps, the page stops.
+- The same Wi-Fi as the phone or TV, if you want those screens. Do not forward port 8000 on the router.
+
+Calendar connect stores its secrets in the macOS Keychain, so that step is for a Mac host. Clock, weather, apps, and settings run on any computer with Python 3.9.
+
+## Set it up
 
 ```bash
+git clone https://github.com/yaobuilds/tv-dashboard.git
+cd tv-dashboard
 python3 server.py
 ```
 
 Open http://127.0.0.1:8000.
-
-To use a phone or tablet on the same Wi‑Fi (do not forward port 8000 on your router):
-
-```bash
-python3 server.py --lan
-```
-
-The terminal prints a local address you can open on other devices.
 
 The first start creates the local files that are not in the repository:
 
@@ -28,86 +30,85 @@ The first start creates the local files that are not in the repository:
 - `gallery.local/` — an empty folder for photos.
 - `data.json` — the guest copy of the schedule, rewritten on each start.
 
-Files that already exist are left as they are. Delete `pin.local` and start again to print a new PIN. `atv.local` is written when a TV is paired. Google Calendar stays optional: the client id, secret, and refresh token go in the macOS Keychain from Settings → Calendar, not into a file in this folder.
+Files that already exist are left as they are. Delete `pin.local` and start again to print a new PIN.
 
-Leave the host computer awake while Slate is in use. If it sleeps, the page stops.
+The default place is New York, NY. Change it in **Settings → Location**. Until you lock the location, the browser may share its place for weather and the clock time zone.
 
-## What you get
+## Phone, tablet, or TV on the same Wi-Fi
 
-- **Home:** clock, weather, Dashboard, and apps you pick from the catalog.
-- **Dashboard:** guest mode by default. **Now / Next** and **Upcoming** come from Google Calendar when connected. **G** or **Show all** reveals real titles. On Wi‑Fi, that needs your PIN once per session. On the host (`127.0.0.1`), no PIN is required.
-- **Calendar:** Today, Week, and Month views from the same Google Calendar feed.
-- **Weather:** open weather from Home for seven days, hourly detail, a today rain chart, and recent radar (fetched by the server). Radar playback runs from oldest to newest, then repeats.
-- **Traffic:** open **Traffic** from Home for a map centered on your saved place and nearby live incidents when a public feed covers that area.
-- **Settings:** home apps, appearance, location, PIN, calendar connect, and optional credit link.
+```bash
+python3 server.py --lan
+```
 
-## Wi-Fi remote
+The terminal prints an address such as `http://<host>:8000`. Open that address on the other device. Same Wi-Fi only. Do not forward port 8000.
 
-With `python3 server.py --lan`, open **Settings → TV remote** or `http://<mac-ip>:8000/remote.html` on a phone (not on the TV itself).
-
-1. **Pair the phone** — Generate a six-digit code on the Mac, enter it on the phone. That sets a session cookie for the remote API.
-2. **Pair the TV** — Tap **Show code on TV**. The TV displays a six-character hex code (no physical remote). Enter that code on the phone or in Settings.
-
-Until the TV code is accepted, arrow keys from the phone move focus inside Slate in the browser. Volume waits for TV pairing. After pairing, keys inject into whatever app is on screen on the Google TV. `index.html?remote=1` uses the Home screen as the remote and is hidden on the TV. Same Wi-Fi only; do not forward port 8000 on the router.
-
-TV credentials live in `atv.local` on this Mac (gitignored). Turn the broker off with **Wi-Fi remote enabled** in Settings without erasing that file.
-
-Weather uses [Open-Meteo](https://open-meteo.com/) (no API key). By default the browser may share location for weather and the clock time zone until you **lock location** in Settings → Location.
-
-## Private files (never commit)
-
-| File | Purpose |
-|------|---------|
-| `settings.local.json` | Home apps, appearance, location, toggles |
-| `pin.local` | Wi‑Fi unlock PIN (mode 600) |
-| `data.local.json` | Legacy manual schedule backup (optional) |
-| `calendar-cache.local.json` | Last good Google Calendar fetch |
-| `data.json` | Generated guest copy of the schedule |
-| `atv.local` | TV remote certificate, created when a TV is paired |
-| `gallery.local/` | Photos uploaded from Settings |
-
-Google Calendar **client id**, **client secret**, and **refresh token** live in the macOS Keychain (service **Slate Calendar**), not in the repo. Set them up in **Settings → Calendar** on the host.
-
-If you forget the PIN, delete `pin.local` and start Slate again. The new PIN is printed once. You can also set a different PIN in Settings.
+On the host (`127.0.0.1`) the schedule does not ask for a PIN. On the Wi-Fi address, **Show all** on Dashboard or Calendar asks for the PIN in `pin.local` once per device. **Settings → Sign out on Wi-Fi** clears that device so the PIN is asked again. A private browser window also starts without the saved session.
 
 The PIN over HTTP is a convenience lock, not strong security.
 
-## Calendar
+## Pages
 
-Create a Google Calendar for Slate (or use an existing one). On the host, open **Settings → Calendar**, enter your OAuth client id and secret, connect with Google, and choose the calendar. Dashboard and calendar views refresh about every two minutes. Edit events in Google Calendar or any tool that writes to that calendar.
+- **Home:** clock, weather, Dashboard, and the apps you pick.
+- **Dashboard:** guest mode on every load. **Now / Next** and **Upcoming** come from Google Calendar when it is connected. **G** or **Show all** reveals real titles.
+- **Calendar:** Today, Week, and Month from the same calendar.
+- **Weather:** seven days, hourly detail, a today rain chart, and recent radar fetched by the server. Radar plays from oldest to newest, then repeats. Weather uses [Open-Meteo](https://open-meteo.com/) and needs no key.
+- **Traffic:** a map centered on the saved place, plus nearby incidents when a public feed covers that area.
+- **Gallery:** photos you upload. They stay in `gallery.local/`.
+- **Keel:** the reading page.
+- **Wi-Fi / LAN:** devices seen from the host, linked from the Dashboard footer.
+- **Settings:** home apps, appearance, location, news sources, PIN, calendar, the Wi-Fi remote, and the optional credit link.
 
-In Google Cloud, create a **Desktop** or **Web** OAuth client with redirect URI:
+## Wi-Fi remote
+
+With `python3 server.py --lan`, open **Settings → TV remote** on the host, or `http://<host>:8000/remote.html` on a phone. Do not open the remote page on the TV.
+
+1. **Pair the phone.** Generate a six-digit code on the host and enter it on the phone.
+2. **Pair the TV.** Tap **Show code on TV**. The TV shows a six-character code. Enter that code on the phone or in Settings.
+
+Until the TV code is accepted, arrow keys from the phone move focus inside Slate. Volume waits for TV pairing. After pairing, keys go to whatever app is on the Google TV screen. `atv.local` is written on the host when a TV is paired. **Wi-Fi remote enabled** in Settings turns the broker off without deleting that file.
+
+## Calendar (optional)
+
+On the Mac that hosts Slate, open **Settings → Calendar**. Create a Google Cloud **Desktop** or **Web** OAuth client with this redirect URI:
 
 `http://127.0.0.1:8000/oauth/callback`
 
-Enable the Google Calendar API for the project.
+Enable the Google Calendar API. Enter the client id and secret in Settings, connect with Google, and choose the calendar. The client id, client secret, and refresh token stay in the macOS Keychain under the service **Slate Calendar**. They are not written into this folder.
+
+Dashboard and Calendar refresh about every two minutes. Edit events in Google Calendar.
 
 ## Home appearance
 
-Choose **Sculptural Light**, **Aqua**, or **Flurry** in **Settings → Appearance**. The look changes the decorative Home backdrop; panels, text, and focus rings keep the shared Slate palette.
+Choose **Sculptural Light**, **Aqua**, or **Flurry** in **Settings → Appearance**. The look changes the Home backdrop. Panels, text, and the focus ring stay the shared Slate palette.
 
-- **Sculptural Light:** soft light forms colored by the ambient preset. There are nine ambient choices, including still versions and Off. Off uses the original Home colors while turning off Dashboard ambient light.
-- **Aqua:** flowing ribbons. Colors: **Tide** (default), Glacier, Lagoon, Dusk, Moss, Ember.
-- **Flurry:** colored streaks around a soft core. Colors: **Spectrum** (default), Ice, Aurora, Ember, Lagoon, Bloom.
+- **Sculptural Light:** soft light forms. Nine ambient choices, including still versions and Off.
+- **Aqua:** flowing ribbons. **Tide** is the default.
+- **Flurry:** colored streaks around a soft core. **Spectrum** is the default.
 
-The live preview updates before saving. Each look remembers its color choice. **Save and open Home** saves the choices and returns Home. Motion offers **Still**, **Drift**, and **Reactive**; intensity offers **Soft**, **Balanced**, and **Vivid**. Still and reduced motion stop decorative Home movement and press effects.
+**Save and open Home** stores the choice. Motion is **Still**, **Drift**, or **Reactive**. Intensity is **Soft**, **Balanced**, or **Vivid**. Still and reduced motion stop the decorative movement.
 
-All three looks work on TV, Mac, and phone. Aqua and Flurry use a six-app paged dock on TV; Mac and phone keep responsive grids. Select weather on Home to open the forecast page.
+Aqua and Flurry use a six-app dock on a TV. A computer and a phone keep their own layouts.
 
-## TV (optional)
+## TV app (optional)
 
-A separate Android TV WebView app can show Slate as Home. If the server is unreachable, wake the host and run `python3 server.py --lan`, then retry from the TV.
+A separate project, `tv-control`, is an Android TV app that can show this server as the TV home screen. Wake the host, run `python3 server.py --lan`, and open the printed address from the TV. Install and check that app on your own network.
 
-**Screensaver:** the TV app can register a Slate dream that shows clock, weather, and the next **Busy** calendar line over a dim version of the selected Home look. Drift and Reactive move the backdrop slowly; Still and reduced motion keep it static. Private calendar titles stay hidden. Choose it once in Android screensaver settings, or run:
+The screensaver can show the clock, weather, and the next **Busy** calendar line. Private titles stay hidden. After the app is installed:
 
 ```bash
 adb shell settings put secure screensaver_components dev.slate.home/.SlateDream
 ```
 
-Install and verify the TV app on your own network.
+## Files you do not commit
 
-## Wi‑Fi session
+| File | Purpose |
+|------|---------|
+| `settings.local.json` | Home apps, appearance, location, toggles |
+| `pin.local` | Wi-Fi unlock PIN (mode 600) |
+| `data.local.json` | Schedule kept on this computer |
+| `calendar-cache.local.json` | Last good Google Calendar fetch |
+| `data.json` | Generated guest copy of the schedule |
+| `atv.local` | TV remote certificate, created when a TV is paired |
+| `gallery.local/` | Uploaded photos |
 
-With `--lan`, unlocking **Show all** sets a cookie on that device. **Settings → Sign out on Wi‑Fi** clears it so the PIN is asked again.
-
-To check the PIN prompt again, open the same Wi‑Fi address, sign out in Settings, then return to Dashboard or Calendar and choose **Show all**. A private browser window also starts without the saved session. The standard Mac-only server skips PIN checks, so clearing its cookies will not make it ask for a PIN; use the Wi‑Fi address printed by `--lan` for this check.
+If you forget the PIN, delete `pin.local` and start Slate again. The new PIN is printed once. You can also set a different one in Settings.

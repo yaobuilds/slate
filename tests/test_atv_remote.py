@@ -254,6 +254,17 @@ class RemoteHttpTests(unittest.TestCase):
         self.assertEqual(body.get("path"), "page")
         self.assertTrue(server.REMOTE_EVENTS)
 
+    def test_heartbeat_ignores_phone_until_tv(self):
+        status, body = self._post("/remote/v1/heartbeat.json", {"page": "index"})
+        self.assertEqual(status, 200)
+        self.assertTrue(body.get("ignored"))
+        self.assertFalse(server.remote_tv_online())
+        status, body = self._post("/remote/v1/heartbeat.json", {"page": "dashboard", "tv": True})
+        self.assertEqual(status, 200)
+        self.assertNotIn("ignored", body)
+        self.assertTrue(server.remote_tv_online())
+        self.assertEqual(server.REMOTE_TV_PAGE, "dashboard")
+
     def test_volume_409_when_tv_down(self):
         cookie = self._phone_pair()
         status, body = self._post(

@@ -858,10 +858,59 @@ class FixTests(unittest.TestCase):
             self.assertRegex(created, r"^[0-9]{4,8}$")
             self.assertTrue(pin_path.exists())
             self.assertEqual(pin_path.stat().st_mode & 0o777, 0o600)
+            pin_path.write_text("\n", encoding="utf-8")
+            replaced = server.load_pin(False)
+            self.assertRegex(replaced, r"^[0-9]{6}$")
+            self.assertEqual(pin_path.read_text(encoding="utf-8").strip(), replaced)
         finally:
             server.PIN_PATH = old
             if old_env is not None:
                 os.environ["SLATE_PIN"] = old_env
+
+    def test_ensure_local_files_creates_missing_only(self):
+        root = Path(self.tmp.name) / "fresh"
+        root.mkdir()
+        apps = root / "apps.json"
+        apps.write_text(json.dumps([{"id": "netflix"}, {"id": "youtube"}]) + "\n", encoding="utf-8")
+        settings = root / "settings.local.json"
+        local = root / "data.local.json"
+        gallery = root / "gallery.local"
+        old = (
+            server.APPS_PUBLIC,
+            server.SETTINGS_LOCAL,
+            server.LOCAL,
+            server.GALLERY_DIR,
+            set(server.CATALOG_IDS),
+        )
+        try:
+            server.APPS_PUBLIC = apps
+            server.SETTINGS_LOCAL = settings
+            server.LOCAL = local
+            server.GALLERY_DIR = gallery
+            server.CATALOG_IDS = {"netflix", "youtube", "hulu"}
+            server.ensure_local_files()
+            self.assertTrue(gallery.is_dir())
+            self.assertEqual(gallery.stat().st_mode & 0o777, 0o700)
+            saved = json.loads(settings.read_text(encoding="utf-8"))
+            self.assertEqual(saved["homeApps"], ["netflix", "youtube"])
+            self.assertEqual(saved["location"]["label"], "New York, NY")
+            self.assertEqual(settings.stat().st_mode & 0o777, 0o600)
+            schedule = json.loads(local.read_text(encoding="utf-8"))
+            self.assertEqual(schedule["today"][0]["title"], "Morning notes")
+            self.assertEqual(local.stat().st_mode & 0o777, 0o600)
+            settings.write_text('{"homeApps": ["hulu"]}\n', encoding="utf-8")
+            local.write_text('{"today": []}\n', encoding="utf-8")
+            server.ensure_local_files()
+            self.assertEqual(json.loads(settings.read_text(encoding="utf-8"))["homeApps"], ["hulu"])
+            self.assertEqual(json.loads(local.read_text(encoding="utf-8"))["today"], [])
+        finally:
+            (
+                server.APPS_PUBLIC,
+                server.SETTINGS_LOCAL,
+                server.LOCAL,
+                server.GALLERY_DIR,
+                server.CATALOG_IDS,
+            ) = old
 
     def test_shipped_js_has_no_prototype_controls(self):
         for name in ("ambient.js", "main.js", "dashboard.js"):

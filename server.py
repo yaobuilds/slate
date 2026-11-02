@@ -2342,8 +2342,12 @@ def path_allowed(path):
     return bool(FONT_FILE.match(path) or ICON_FILE.match(path) or APP_ICON.match(path))
 
 
+def new_pin() -> str:
+    return f"{secrets.randbelow(1_000_000):06d}"
+
+
 def load_pin(lan: bool) -> str:
-    """Return the phone PIN. Generate one only when this Mac is shared on Wi-Fi."""
+    """Return the Wi-Fi PIN. Create pin.local the first time it is missing."""
     env = os.environ.get("SLATE_PIN", "").strip()
     if env:
         if not PIN_RE.fullmatch(env):
@@ -2354,17 +2358,67 @@ def load_pin(lan: bool) -> str:
         return env
     if PIN_PATH.exists():
         pin = PIN_PATH.read_text(encoding="utf-8").strip()
-        if not PIN_RE.fullmatch(pin):
-            print("pin.local must contain 4 to 8 digits and nothing else.", file=sys.stderr)
-            sys.exit(1)
-        protect_pin_file()
-        if lan:
-            print("The phone needs the PIN saved in pin.local.")
-        return pin
-    if not lan:
-        return ""
-    print("No PIN yet. Set one in Settings on this Mac before using Show all on Wi-Fi.")
-    return ""
+        if pin:
+            if not PIN_RE.fullmatch(pin):
+                print("pin.local must contain 4 to 8 digits and nothing else.", file=sys.stderr)
+                sys.exit(1)
+            protect_pin_file()
+            if lan:
+                print("The phone needs the PIN saved in pin.local.")
+            return pin
+    pin = new_pin()
+    PIN_PATH.write_text(pin + "\n", encoding="utf-8")
+    protect_pin_file()
+    print(f"Phone PIN: {pin}")
+    print("Saved in pin.local. Change it in Settings. It is printed only this once.")
+    return pin
+
+
+def home_apps_from_public() -> list:
+    """Use the shipped apps.json row when a new settings file is created."""
+    try:
+        raw = json.loads(APPS_PUBLIC.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return list(DEFAULT_HOME_APPS)
+    if not isinstance(raw, list):
+        return list(DEFAULT_HOME_APPS)
+    ids = []
+    for item in raw:
+        if isinstance(item, dict) and isinstance(item.get("id"), str):
+            ids.append(item["id"])
+    found = normalize_home_apps(ids)
+    return found if found else list(DEFAULT_HOME_APPS)
+
+
+def default_settings_payload() -> dict:
+    return {
+        "homeApps": home_apps_from_public(),
+        "ambientPreset": DEFAULT_AMBIENT_PRESET,
+        "location": dict(DEFAULT_LOCATION),
+        "hidePointer": False,
+        "showCredit": True,
+        "tileSize": "auto",
+        "hdmiInput": "1",
+        "remoteEnabled": True,
+        "tvAppearance": "sculptural",
+        "tvBackdrop": "ambient",
+        "tvMotion": "drift",
+        "tvIntensity": "balanced",
+        "tvAquaPalette": "tide",
+        "tvFlurryPalette": "spectrum",
+    }
+
+
+def ensure_local_files() -> None:
+    """Create the gitignored files a fresh checkout does not have."""
+    gallery_ensure_dir()
+    if not SETTINGS_LOCAL.exists():
+        write_settings_local(default_settings_payload())
+        print("Wrote settings.local.json. Home apps and the place can be changed in Settings.")
+    if not LOCAL.exists():
+        LOCAL.write_text(json.dumps(PLACEHOLDER, indent=2) + "\n", encoding="utf-8")
+        protect_local_file(LOCAL)
+        print("Wrote data.local.json with an example schedule. Guest pages show Busy.")
 
 
 def protect_pin_file() -> None:
@@ -2575,6 +2629,25 @@ def queue_remote_event(event: dict) -> dict:
         if len(REMOTE_EVENTS) > 200:
             del REMOTE_EVENTS[:-200]
         return item
+
+
+TV_UA = re.compile(
+    r"Android TV|Google TV|AFT[A-Z0-9]|BRAVIA|CrKey|SMART-TV|SmartTV|Smart-TV|Television",
+    re.I,
+)
+
+
+def remote_client_is_tv(handler, obj) -> bool:
+    """A phone page must not count as the set. An older TV page still can."""
+    if isinstance(obj, dict) and obj.get("tv") is True:
+        return True
+    ua = handler.headers.get("User-Agent", "")
+    if TV_UA.search(ua):
+        return True
+    store = atv_remote.get_service(remote_enabled).store
+    with store.lock:
+        known = store.host
+    return bool(known) and known == handler.client_address[0]
 
 
 def remote_tv_online() -> bool:
@@ -3225,7 +3298,7 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.remote_api_ok():
             self.send_json(403, {"error": "lan"})
             return
-        if not isinstance(obj, dict) or obj.get("tv") is not True:
+        if not remote_client_is_tv(self, obj):
             self.send_json(200, {"ok": True, "ignored": True})
             return
         global REMOTE_TV_PAGE, REMOTE_TV_LAST
@@ -3756,6 +3829,7 @@ def main() -> None:
     global CATALOG_IDS, AMBIENT_PRESETS
     CATALOG_IDS = load_catalog_ids()
     AMBIENT_PRESETS = load_ambient_preset_keys()
+    ensure_local_files()
     publish_settings()
     publish_data()
     atv_remote.get_service(remote_enabled).start_background()

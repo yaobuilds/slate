@@ -304,45 +304,13 @@ function moveDashboardFocus(key) {
 
 function moveDirectionalFocus(items, key) {
   if (!items.length) return;
-  let current = document.activeElement;
+  const current = document.activeElement;
   if (!items.includes(current)) {
     items[0].focus({ preventScroll: true });
     return;
   }
-  const cr = current.getBoundingClientRect();
-  const cx = cr.left + cr.width / 2;
-  const cy = cr.top + cr.height / 2;
-  let best = null;
-  let bestScore = Infinity;
-  for (const el of items) {
-    if (el === current) continue;
-    const r = el.getBoundingClientRect();
-    const dx = r.left + r.width / 2 - cx;
-    const dy = r.top + r.height / 2 - cy;
-    if (key === "ArrowLeft" && dx >= -8) continue;
-    if (key === "ArrowRight" && dx <= 8) continue;
-    if (key === "ArrowUp" && dy >= -8) continue;
-    if (key === "ArrowDown" && dy <= 8) continue;
-    const primary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
-    const secondary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
-    const score = primary * 1000 + secondary;
-    if (score < bestScore) {
-      bestScore = score;
-      best = el;
-    }
-  }
-  if (best) {
-    best.focus({ preventScroll: true });
-    if (window.SlateSurface && SlateSurface.reveal) SlateSurface.reveal(best);
-    return;
-  }
-  const order = items.indexOf(current);
-  if (order === -1) return;
-  const step = key === "ArrowLeft" || key === "ArrowUp" ? -1 : 1;
-  const next = items[order + step];
-  if (next) {
-    next.focus({ preventScroll: true });
-    if (window.SlateSurface && SlateSurface.reveal) SlateSurface.reveal(next);
+  if (window.SlateSurface && typeof SlateSurface.moveFocus === "function") {
+    SlateSurface.moveFocus(items, key);
   }
 }
 

@@ -4,11 +4,8 @@
   const CURSOR_KEY = "slate-remote-seq";
 
   function isTvClient() {
-    const surface = document.documentElement.dataset.slateSurface;
-    if (surface === "pointer" || surface === "touch") return false;
-    return surface === "tv"
-      || !!window.SlateTV
-      || /Android TV|Google TV/i.test(navigator.userAgent || "");
+    if (window.SlateTV || /Android TV|Google TV|AFT|BRAVIA|CrKey/i.test(navigator.userAgent || "")) return true;
+    return document.documentElement.dataset.slateSurface === "tv";
   }
 
   if (!isTvClient()) return;

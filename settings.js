@@ -91,35 +91,12 @@ function moveSettingsFocus(direction) {
   const items = settingsFocusables();
   if (!items.length) return;
   const current = document.activeElement;
-  const rect = current && current.getBoundingClientRect ? current.getBoundingClientRect() : null;
-  if (!rect || !items.includes(current)) {
+  if (!items.includes(current)) {
     items[0].focus({ preventScroll: true });
     return;
   }
-  const x = rect.left + rect.width / 2;
-  const y = rect.top + rect.height / 2;
-  let next = null;
-  let score = Infinity;
-  for (const item of items) {
-    if (item === current) continue;
-    const target = item.getBoundingClientRect();
-    const dx = target.left + target.width / 2 - x;
-    const dy = target.top + target.height / 2 - y;
-    if (direction === "ArrowLeft" && dx >= -8) continue;
-    if (direction === "ArrowRight" && dx <= 8) continue;
-    if (direction === "ArrowUp" && dy >= -8) continue;
-    if (direction === "ArrowDown" && dy <= 8) continue;
-    const primary = direction === "ArrowLeft" || direction === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
-    const secondary = direction === "ArrowLeft" || direction === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
-    const candidateScore = primary * 1000 + secondary;
-    if (candidateScore < score) {
-      next = item;
-      score = candidateScore;
-    }
-  }
-  if (next) {
-    next.focus({ preventScroll: true });
-    if (window.SlateSurface && SlateSurface.reveal) SlateSurface.reveal(next);
+  if (window.SlateSurface && typeof SlateSurface.moveFocus === "function") {
+    SlateSurface.moveFocus(items, direction);
   }
 }
 

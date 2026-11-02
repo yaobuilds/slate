@@ -159,11 +159,117 @@
     if (!inViewport(rect, REVEAL_PAD)) reveal(target);
   });
 
+  function moveFocus(items, key) {
+    const current = document.activeElement;
+    if (!current || !items.includes(current)) return false;
+    const cr = current.getBoundingClientRect();
+    const cx = cr.left + cr.width / 2;
+    const cy = cr.top + cr.height / 2;
+    const horizontal = key === "ArrowLeft" || key === "ArrowRight";
+    let best = null;
+    let bestScore = Infinity;
+    for (const el of items) {
+      if (el === current) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      const dx = rect.left + rect.width / 2 - cx;
+      const dy = rect.top + rect.height / 2 - cy;
+      if (key === "ArrowLeft" && dx >= -8) continue;
+      if (key === "ArrowRight" && dx <= 8) continue;
+      if (key === "ArrowUp" && dy >= -8) continue;
+      if (key === "ArrowDown" && dy <= 8) continue;
+      const primary = horizontal ? Math.abs(dx) : Math.abs(dy);
+      const secondary = horizontal ? Math.abs(dy) : Math.abs(dx);
+      if (primary < 8) continue;
+      // A little wider than 45 degrees, so a nav row that sits just
+      // beside the current item still counts as straight ahead.
+      if (secondary > primary * 1.15) continue;
+      const score = primary + secondary * 1.5;
+      if (score < bestScore) {
+        bestScore = score;
+        best = el;
+      }
+    }
+    if (!best) {
+      // Nothing sits in the arrow's cone. Take the nearest real target
+      // only when the straight choice was missing.
+      best = null;
+      bestScore = Infinity;
+      for (const el of items) {
+        if (el === current) continue;
+        const rect = el.getBoundingClientRect();
+        const dx = rect.left + rect.width / 2 - cx;
+        const dy = rect.top + rect.height / 2 - cy;
+        if (key === "ArrowLeft" && dx >= -8) continue;
+        if (key === "ArrowRight" && dx <= 8) continue;
+        if (key === "ArrowUp" && dy >= -8) continue;
+        if (key === "ArrowDown" && dy <= 8) continue;
+        const primary = horizontal ? Math.abs(dx) : Math.abs(dy);
+        const secondary = horizontal ? Math.abs(dy) : Math.abs(dx);
+        if (primary < 48) continue;
+        const score = primary + secondary;
+        if (score < bestScore) {
+          bestScore = score;
+          best = el;
+        }
+      }
+    }
+    if (!best) return false;
+    best.focus({ preventScroll: true });
+    reveal(best);
+    return true;
+  }
+
+  const DPAD_CODES = {
+    19: "ArrowUp",
+    20: "ArrowDown",
+    21: "ArrowLeft",
+    22: "ArrowRight",
+    23: "Enter",
+    4: "Escape",
+  };
+  const DPAD_NAMES = {
+    Up: "ArrowUp",
+    Down: "ArrowDown",
+    Left: "ArrowLeft",
+    Right: "ArrowRight",
+    OK: "Enter",
+    Select: "Enter",
+  };
+
+  document.addEventListener("keydown", (event) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const named = DPAD_NAMES[event.key];
+    const coded = !event.key || event.key === "Unidentified" || event.key === "Dead" ? DPAD_CODES[event.keyCode] : "";
+    const mapped = named || coded;
+    if (!mapped || mapped === event.key) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    document.dispatchEvent(new KeyboardEvent("keydown", {
+      key: mapped,
+      keyCode: event.keyCode,
+      which: event.keyCode,
+      bubbles: true,
+      cancelable: true,
+    }));
+  }, true);
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "Home" || event.metaKey || event.ctrlKey || event.altKey) return;
+    const tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+    const path = location.pathname;
+    if (path === "/" || path.endsWith("/index.html")) return;
+    event.preventDefault();
+    location.href = "index.html";
+  }, true);
+
   window.SlateSurface = {
     TV_LAYOUT,
     applySurface: applyGallerySurface,
     fitGalleryFrame,
     reveal,
+    moveFocus,
     onDrift(callback) {
       setInterval(() => {
         driftIndex = (driftIndex + 1) % DRIFT.length;

@@ -231,6 +231,8 @@ function scheduleRefresh() {
 }
 
 function installBackKeys() {
+  const home = document.querySelector("a.traffic-back");
+  if (home) home.focus({ preventScroll: true });
   document.addEventListener("keydown", (event) => {
     const back =
       ["Escape", "Backspace", "BrowserBack", "GoBack", "Back"].includes(event.key) ||
@@ -238,7 +240,14 @@ function installBackKeys() {
     if (back) {
       event.preventDefault();
       location.href = "index.html";
+      return;
     }
+    if (!["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"].includes(event.key)) return;
+    const items = [...document.querySelectorAll("[data-tr-focus]")];
+    if (!items.length || !window.SlateSurface || typeof SlateSurface.moveFocus !== "function") return;
+    event.preventDefault();
+    if (!items.includes(document.activeElement)) items[0].focus({ preventScroll: true });
+    else SlateSurface.moveFocus(items, event.key);
   });
 }
 

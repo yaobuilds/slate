@@ -404,27 +404,87 @@
     const tile = event.target.closest?.('.tile, #wx, .foot-link');
     if (tile) flashSelection(tile);
   });
+  function visibleBox(el) {
+    if (!el || !el.isConnected || el.hidden) return false;
+    const style = getComputedStyle(el);
+    if (style.display === 'none' || style.visibility === 'hidden') return false;
+    const rect = el.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function dockRows() {
+    const top = [document.getElementById('wx'), document.querySelector("a.foot-link[href='settings.html']")].filter(visibleBox);
+    const middle = tiles().filter(visibleBox);
+    const bottom = [...document.querySelectorAll('.home-tools .foot-link, #site-credit')].filter(visibleBox);
+    return [top, middle, bottom].filter(row => row.length);
+  }
+
+  function nearestInRow(row, x) {
+    let best = row[0];
+    let bestDx = Infinity;
+    for (const el of row) {
+      const rect = el.getBoundingClientRect();
+      const dx = Math.abs(rect.left + rect.width / 2 - x);
+      if (dx < bestDx) {
+        bestDx = dx;
+        best = el;
+      }
+    }
+    return best;
+  }
+
+  function moveDockFocus(key) {
+    const rows = dockRows();
+    const active = document.activeElement;
+    let rowIndex = -1;
+    let index = -1;
+    rows.forEach((row, r) => {
+      const found = row.indexOf(active);
+      if (found >= 0) {
+        rowIndex = r;
+        index = found;
+      }
+    });
+    if (rowIndex < 0) return false;
+    if (key === 'ArrowLeft' || key === 'ArrowRight') {
+      const step = key === 'ArrowRight' ? 1 : -1;
+      if (active.classList.contains('tile')) {
+        const all = tiles();
+        const at = all.indexOf(active);
+        const next = at + step;
+        if (at >= 0 && next >= 0 && next < all.length) setPage(Math.floor(next / PAGE_SIZE), next);
+        return true;
+      }
+      const next = rows[rowIndex][index + step];
+      if (!next) return true;
+      const here = active.getBoundingClientRect();
+      const there = next.getBoundingClientRect();
+      const gap = Math.abs((there.left + there.width / 2) - (here.left + here.width / 2));
+      if (gap > 480) return true;
+      next.focus({ preventScroll: true });
+      return true;
+    }
+    const dir = key === 'ArrowDown' ? 1 : key === 'ArrowUp' ? -1 : 0;
+    if (!dir) return false;
+    const target = rows[rowIndex + dir];
+    if (!target) return true;
+    const rect = active.getBoundingClientRect();
+    nearestInRow(target, rect.left + rect.width / 2).focus({ preventScroll: true });
+    return true;
+  }
+
   document.addEventListener('keydown', event => {
     if (!isHome() || event.metaKey || event.ctrlKey || event.altKey) return;
     if (event.key === 'Enter') flashSelection(document.activeElement);
     if (!profileDock()) return;
     const fallback = document.getElementById('tv-app-fallback');
     if (fallback && !fallback.hidden) return;
-    const active = document.activeElement;
-    if (active?.classList.contains('tile')) {
-      const all = tiles();
-      const index = all.indexOf(active);
-      if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
-        const next = index + (event.key === 'ArrowRight' ? 1 : -1);
-        if (next >= 0 && next < all.length) {
-          event.preventDefault();
-          event.stopImmediatePropagation();
-          setPage(Math.floor(next / PAGE_SIZE), next);
-          document.body.classList.add('show-focus');
-          if (typeof bumpIdle === 'function') bumpIdle();
-        }
-      }
-    }
+    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return;
+    if (!moveDockFocus(event.key)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    document.body.classList.add('show-focus');
+    if (typeof bumpIdle === 'function') bumpIdle();
   }, true);
   reducedMotion.addEventListener('change', () => {
     apply(config);

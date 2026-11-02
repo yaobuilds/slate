@@ -358,34 +358,13 @@ function focusables() {
 
 function moveFocus(key) {
   const items = focusables();
-  const current = document.activeElement;
-  if (!items.includes(current)) {
+  if (!items.includes(document.activeElement)) {
     focusAndReveal(items[0]);
     return;
   }
-  const rect = current.getBoundingClientRect();
-  const x = rect.left + rect.width / 2;
-  const y = rect.top + rect.height / 2;
-  let best = null;
-  let score = Infinity;
-  for (const el of items) {
-    if (el === current) continue;
-    const target = el.getBoundingClientRect();
-    const dx = target.left + target.width / 2 - x;
-    const dy = target.top + target.height / 2 - y;
-    if (key === "ArrowLeft" && dx >= 0) continue;
-    if (key === "ArrowRight" && dx <= 0) continue;
-    if (key === "ArrowUp" && dy >= 0) continue;
-    if (key === "ArrowDown" && dy <= 0) continue;
-    const primary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
-    const secondary = key === "ArrowLeft" || key === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
-    const nextScore = primary * 1000 + secondary;
-    if (nextScore < score) {
-      score = nextScore;
-      best = el;
-    }
+  if (window.SlateSurface && typeof SlateSurface.moveFocus === "function") {
+    SlateSurface.moveFocus(items, key);
   }
-  focusAndReveal(best);
 }
 
 document.addEventListener("keydown", (event) => {

@@ -126,29 +126,9 @@ function moveNetworkFocus(direction) {
     items[0].focus({ preventScroll: true });
     return;
   }
-  const rect = current.getBoundingClientRect();
-  const x = rect.left + rect.width / 2;
-  const y = rect.top + rect.height / 2;
-  let best = null;
-  let bestScore = Infinity;
-  for (const item of items) {
-    if (item === current) continue;
-    const target = item.getBoundingClientRect();
-    const dx = target.left + target.width / 2 - x;
-    const dy = target.top + target.height / 2 - y;
-    if (direction === "ArrowLeft" && dx >= -8) continue;
-    if (direction === "ArrowRight" && dx <= 8) continue;
-    if (direction === "ArrowUp" && dy >= -8) continue;
-    if (direction === "ArrowDown" && dy <= 8) continue;
-    const primary = direction === "ArrowLeft" || direction === "ArrowRight" ? Math.abs(dx) : Math.abs(dy);
-    const secondary = direction === "ArrowLeft" || direction === "ArrowRight" ? Math.abs(dy) : Math.abs(dx);
-    const candidate = primary * 1000 + secondary;
-    if (candidate < bestScore) {
-      best = item;
-      bestScore = candidate;
-    }
+  if (window.SlateSurface && typeof SlateSurface.moveFocus === "function") {
+    SlateSurface.moveFocus(items, direction);
   }
-  if (best) best.focus({ preventScroll: true });
 }
 
 document.addEventListener("keydown", (event) => {

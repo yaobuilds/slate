@@ -1,4 +1,9 @@
 (function () {
+  const ua = navigator.userAgent || "";
+  const platform = navigator.userAgentData && navigator.userAgentData.platform;
+  const mac = platform ? platform === "macOS" : /Macintosh|Mac OS X/i.test(ua);
+  if (mac && !/iPhone|iPad|iPod/i.test(ua)) document.documentElement.dataset.slateMac = "1";
+
   const TV_LAYOUT = window.matchMedia("(min-width: 960px) and (min-height: 540px) and (min-aspect-ratio: 16/9)");
   const DRIFT_MS = 3 * 60 * 1000;
   const DRIFT = [
@@ -279,6 +284,16 @@
   };
 
   applyHtmlSurface();
+
+  function keepMacPointer() {
+    if (document.documentElement.dataset.slateMac !== "1") return;
+    if (document.documentElement.dataset.slateSurface === "tv") return;
+    if (!document.body || document.body.classList.contains("hide-pointer")) return;
+    document.body.classList.add("has-mouse");
+  }
+  if (document.body) keepMacPointer();
+  else document.addEventListener("DOMContentLoaded", keepMacPointer);
+
   const hover = window.matchMedia("(hover: hover)");
   const coarse = window.matchMedia("(any-pointer: coarse)");
   if (hover.addEventListener) {

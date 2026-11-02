@@ -792,8 +792,8 @@ body.show-focus .panel:focus-visible {
   line-height: 1.25;
 }
 
-body:not(.has-mouse),
-body:not(.has-mouse) * {
+html:not([data-slate-mac="1"]) body:not(.has-mouse),
+html:not([data-slate-mac="1"]) body:not(.has-mouse) * {
   cursor: none;
 }
 

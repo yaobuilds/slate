@@ -20,6 +20,16 @@ python3 server.py --lan
 
 The terminal prints a local address you can open on other devices.
 
+The first start creates the local files that are not in the repository:
+
+- `pin.local` — a new 6-digit PIN, printed once in the terminal. Change it in Settings.
+- `settings.local.json` — Home apps from `apps.json`, the default place, and appearance.
+- `data.local.json` — an example schedule. Guest pages show Busy in place of those titles.
+- `gallery.local/` — an empty folder for photos.
+- `data.json` — the guest copy of the schedule, rewritten on each start.
+
+Files that already exist are left as they are. Delete `pin.local` and start again to print a new PIN. `atv.local` is written when a TV is paired. Google Calendar stays optional: the client id, secret, and refresh token go in the macOS Keychain from Settings → Calendar, not into a file in this folder.
+
 Leave the host computer awake while Slate is in use. If it sleeps, the page stops.
 
 ## What you get
@@ -52,11 +62,13 @@ Weather uses [Open-Meteo](https://open-meteo.com/) (no API key). By default the 
 | `pin.local` | Wi‑Fi unlock PIN (mode 600) |
 | `data.local.json` | Legacy manual schedule backup (optional) |
 | `calendar-cache.local.json` | Last good Google Calendar fetch |
-| `data.json` | Generated guest copy of manual schedule (if used) |
+| `data.json` | Generated guest copy of the schedule |
+| `atv.local` | TV remote certificate, created when a TV is paired |
+| `gallery.local/` | Photos uploaded from Settings |
 
 Google Calendar **client id**, **client secret**, and **refresh token** live in the macOS Keychain (service **Slate Calendar**), not in the repo. Set them up in **Settings → Calendar** on the host.
 
-If you forget the PIN, edit or delete `pin.local` on the computer running Slate, then set a new PIN in Settings.
+If you forget the PIN, delete `pin.local` and start Slate again. The new PIN is printed once. You can also set a different PIN in Settings.
 
 The PIN over HTTP is a convenience lock, not strong security.
 

@@ -1006,14 +1006,8 @@ class FixTests(unittest.TestCase):
         feeds = server.active_headline_feeds()
         self.assertEqual([name for name, _url in feeds], ["NPR"])
 
-    def test_nearest_speed_segments_prefers_the_close_road(self):
+    def test_map_speed_segments_cover_separate_roads(self):
         rows = [
-            {
-                "level": "red",
-                "points": [[40.80, -73.90], [40.81, -73.90]],
-                "lat": 40.80,
-                "lon": -73.90,
-            },
             {
                 "level": "green",
                 "points": [[40.73, -73.80], [40.74, -73.80]],
@@ -1021,15 +1015,29 @@ class FixTests(unittest.TestCase):
                 "lon": -73.80,
             },
             {
+                "level": "green",
+                "points": [[40.728, -73.804], [40.738, -73.804]],
+                "lat": 40.728,
+                "lon": -73.804,
+            },
+            {
+                "level": "red",
+                "points": [[40.80, -73.95], [40.81, -73.95]],
+                "lat": 40.80,
+                "lon": -73.95,
+            },
+            {
                 "level": "yellow",
-                "points": [[41.20, -73.80], [41.21, -73.80]],
-                "lat": 41.20,
+                "points": [[41.50, -73.80], [41.51, -73.80]],
+                "lat": 41.50,
                 "lon": -73.80,
             },
         ]
-        picked = server.nearest_speed_segments(rows, 40.7128, -74.0060, limit=1)
-        self.assertEqual(len(picked), 1)
-        self.assertEqual(picked[0]["level"], "green")
+        picked = server.map_speed_segments(rows, 40.7128, -74.0060)
+        levels = [item["level"] for item in picked]
+        self.assertEqual(levels.count("green"), 1)
+        self.assertIn("red", levels)
+        self.assertNotIn("yellow", levels)
         self.assertNotIn("lat", picked[0])
 
     def test_map_tile_keeps_the_carto_key_on_the_server(self):

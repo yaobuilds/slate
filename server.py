@@ -206,7 +206,9 @@ SPEED_LOCK = threading.Lock()
 SPEED_CACHE = None
 SPEED_CACHE_AT = 0.0
 SPEED_CACHE_TTL = 240
-SPEED_SEGMENT_LIMIT = 250
+SPEED_SEGMENT_LIMIT = 400
+SPEED_RADIUS_KM = 34.0
+SPEED_CELL_DEG = 0.02
 # Public OpenConditions emitter (README: GET /observations.geojson and /segments.geojson, bbox-filterable).
 OPENCONDITIONS_EMITTER = os.environ.get("SLATE_OPENCONDITIONS_URL", "https://ingest.openconditions.org").rstrip("/")
 NY_STATE_BOUNDS = (40.49, 45.12, -79.76, -71.85)
@@ -1638,23 +1640,36 @@ def nyc_speed_time(raw: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def nearest_speed_segments(rows: list[dict], lat: float, lon: float, limit: int = SPEED_SEGMENT_LIMIT) -> list[dict]:
-    """Keep the roads closest to the map center. The city feed is not ordered by place."""
-    west, south, east, north = traffic_speed_bbox(lat, lon, radius_km=18)
-    ranked = []
+def map_speed_segments(rows: list[dict], lat: float, lon: float, limit: int = SPEED_SEGMENT_LIMIT) -> list[dict]:
+    """One line per patch of the map, the slowest road in that patch.
+
+    The closest links alone pile onto the two highways next to the dot.
+    """
+    west, south, east, north = traffic_speed_bbox(lat, lon, radius_km=SPEED_RADIUS_KM)
+    severity = {"red": 0, "yellow": 1, "green": 2}
+    chosen: dict[tuple[int, int], dict] = {}
     for item in rows:
         mid_lat = item.get("lat")
         mid_lon = item.get("lon")
         points = item.get("points")
+        level = item.get("level")
         if not isinstance(mid_lat, float) or not isinstance(mid_lon, float):
             continue
         if not isinstance(points, list) or len(points) < 2:
             continue
+        if level not in severity:
+            continue
         if not (south <= mid_lat <= north and west <= mid_lon <= east):
             continue
-        ranked.append((haversine_km(lat, lon, mid_lat, mid_lon), item))
-    ranked.sort(key=lambda pair: pair[0])
-    return [{"level": item["level"], "points": item["points"]} for _dist, item in ranked[:limit]]
+        key = (round(mid_lat / SPEED_CELL_DEG), round(mid_lon / SPEED_CELL_DEG))
+        current = chosen.get(key)
+        if current is None or severity[level] < severity[current["level"]]:
+            chosen[key] = item
+    ranked = sorted(
+        chosen.values(),
+        key=lambda item: (severity[item["level"]], haversine_km(lat, lon, item["lat"], item["lon"])),
+    )
+    return [{"level": item["level"], "points": item["points"]} for item in ranked[:limit]]
 
 
 def load_nyc_speed_rows() -> list[dict] | None:
@@ -1722,7 +1737,7 @@ def fetch_nyc_speed_segments(lat: float, lon: float) -> tuple[list[dict], bool, 
     rows = load_nyc_speed_rows()
     if rows is None:
         return [], False, False
-    segments = nearest_speed_segments(rows, lat, lon)
+    segments = map_speed_segments(rows, lat, lon)
     return segments, True, bool(segments)
 
 

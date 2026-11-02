@@ -257,7 +257,9 @@
   function setPage(next, focusIndex) {
     const all = tiles();
     const total = Math.max(1, Math.ceil(all.length / PAGE_SIZE));
-    page = Math.max(0, Math.min(next, total - 1));
+    const target = Math.max(0, Math.min(next, total - 1));
+    const pageChanged = target !== page;
+    page = target;
     all.forEach((tile, index) => { tile.hidden = profileDock() && Math.floor(index / PAGE_SIZE) !== page; });
     const indicator = document.getElementById('dock-pagination');
     if (indicator) {
@@ -267,7 +269,7 @@
     const nav = document.getElementById('tiles');
     if (nav) {
       nav.style.setProperty('--dock-count', Math.min(PAGE_SIZE, all.length));
-      if (profileDock()) {
+      if (profileDock() && pageChanged) {
         nav.classList.remove('menu-turn');
         void nav.offsetWidth;
         nav.classList.add('menu-turn');

@@ -1,12 +1,49 @@
 (function () {
   const HEARTBEAT_MS = 15000;
   const POLL_MS = 500;
+  const CURSOR_KEY = "slate-remote-seq";
+
+  function isTvClient() {
+    const surface = document.documentElement.dataset.slateSurface;
+    if (surface === "pointer" || surface === "touch") return false;
+    return surface === "tv"
+      || !!window.SlateTV
+      || /Android TV|Google TV/i.test(navigator.userAgent || "");
+  }
+
+  if (!isTvClient()) return;
+
   let since = 0;
+  let primed = false;
   let pollTimer = 0;
+
+  try {
+    const saved = Number(sessionStorage.getItem(CURSOR_KEY));
+    if (Number.isFinite(saved) && saved > 0) {
+      since = saved;
+      primed = true;
+    }
+  } catch (err) {
+    /* Private mode may block storage. The first poll still drops the backlog. */
+  }
 
   function pageName() {
     const path = location.pathname.split("/").pop() || "index.html";
     return path.replace(/\.html$/, "") || "index";
+  }
+
+  function storeCursor(seq) {
+    since = seq;
+    try {
+      sessionStorage.setItem(CURSOR_KEY, String(since));
+    } catch (err) {
+      /* Ignore quota or private-mode failures. */
+    }
+  }
+
+  function remember(seq) {
+    if (typeof seq !== "number" || !Number.isFinite(seq) || seq <= since) return;
+    storeCursor(seq);
   }
 
   function dispatchKey(key) {
@@ -54,9 +91,28 @@
       const response = await fetch(`/remote/v1/events.json?since=${since}`, { cache: "no-store" });
       if (!response.ok) return;
       const body = await response.json();
+      const latest = typeof body.latest === "number" ? body.latest : since;
+      if (latest < since) {
+        primed = true;
+        storeCursor(latest);
+        return;
+      }
       const events = Array.isArray(body.events) ? body.events : [];
+      if (!primed) {
+        primed = true;
+        let cursor = since;
+        for (const ev of events) {
+          if (ev && typeof ev.seq === "number" && ev.seq > cursor) cursor = ev.seq;
+        }
+        if (latest > cursor) cursor = latest;
+        remember(cursor);
+        return;
+      }
       for (const ev of events) {
-        if (typeof ev.seq === "number" && ev.seq > since) since = ev.seq;
+        if (ev && typeof ev.seq === "number") {
+          if (ev.seq <= since) continue;
+          remember(ev.seq);
+        }
         handleEvent(ev);
       }
     } catch (err) {
@@ -69,7 +125,7 @@
       await fetch("/remote/v1/heartbeat.json", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ page: pageName() }),
+        body: JSON.stringify({ page: pageName(), tv: true }),
         cache: "no-store",
       });
     } catch (err) {
@@ -85,4 +141,5 @@
   heartbeat();
   setInterval(heartbeat, HEARTBEAT_MS);
   tick();
+  void pollTimer;
 })();

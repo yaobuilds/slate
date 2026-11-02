@@ -549,25 +549,25 @@ function dashboardBackAction(fromPopState) {
     pinForm.hidden = true;
     if (pinError) pinError.textContent = "";
     if (pinInput) pinInput.blur();
-    if (fromPopState) {
-      try {
-        history.pushState({ slate: "dashboard" }, "", location.href);
-      } catch (err) {
-        /* History may be unavailable in some embeds. */
-      }
-    }
+    if (fromPopState) pushDashboardState();
     return;
   }
   goHome();
 }
 
-function installDashboardBack() {
-  if (!onDashboard()) return;
+function pushDashboardState() {
+  if (document.documentElement.dataset.slateSurface === "tv" || window.SlateTV) return;
   try {
-    history.pushState({ slate: "dashboard" }, "", location.href);
+    history.pushState({ slate: "dashboard" }, "");
   } catch (err) {
     /* History may be unavailable in some embeds. */
   }
+}
+
+function installDashboardBack() {
+  if (!onDashboard()) return;
+  const onTv = document.documentElement.dataset.slateSurface === "tv" || !!window.SlateTV;
+  if (!onTv && !(history.state && history.state.slate === "dashboard")) pushDashboardState();
   window.addEventListener("popstate", () => {
     if (!onDashboard()) return;
     dashboardBackAction(true);

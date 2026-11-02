@@ -3180,8 +3180,9 @@ class Handler(SimpleHTTPRequestHandler):
         except ValueError:
             since = 0
         with REMOTE_EVENTS_LOCK:
+            latest = REMOTE_SEQ
             events = [ev for ev in REMOTE_EVENTS if ev.get("seq", 0) > since]
-        self.send_json(200, {"events": events})
+        self.send_json(200, {"events": events, "latest": latest})
 
     def remote_pairing_code(self):
         if not self.remote_api_ok():
@@ -3224,8 +3225,11 @@ class Handler(SimpleHTTPRequestHandler):
         if not self.remote_api_ok():
             self.send_json(403, {"error": "lan"})
             return
+        if not isinstance(obj, dict) or obj.get("tv") is not True:
+            self.send_json(200, {"ok": True, "ignored": True})
+            return
         global REMOTE_TV_PAGE, REMOTE_TV_LAST
-        page = obj.get("page") if isinstance(obj, dict) and isinstance(obj.get("page"), str) else ""
+        page = obj.get("page") if isinstance(obj.get("page"), str) else ""
         REMOTE_TV_PAGE = page[:120]
         REMOTE_TV_LAST = time.time()
         client_ip = self.client_address[0]

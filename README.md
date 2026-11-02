@@ -52,11 +52,23 @@ The PIN over HTTP is a convenience lock, not strong security.
 - **Dashboard:** guest mode on every load. **Now / Next** and **Upcoming** come from Google Calendar when it is connected. **G** or **Show all** reveals real titles.
 - **Calendar:** Today, Week, and Month from the same calendar.
 - **Weather:** seven days, hourly detail, a today rain chart, and recent radar fetched by the server. Radar plays from oldest to newest, then repeats. Weather uses [Open-Meteo](https://open-meteo.com/) and needs no key.
-- **Traffic:** a map centered on the saved place, plus nearby incidents when a public feed covers that area.
+- **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents appear when a public feed covers that area.
 - **Gallery:** photos you upload. They stay in `gallery.local/`.
 - **Keel:** the reading page.
 - **Wi-Fi / LAN:** devices seen from the host, linked from the Dashboard footer.
 - **Settings:** home apps, appearance, location, news sources, PIN, calendar, the Wi-Fi remote, and the optional credit link.
+
+## Traffic map
+
+Street tiles come from [CARTO](https://carto.com/attributions). Request a free key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/). No account is required. Save the key as the only line of `carto.local` and start Slate again:
+
+```bash
+umask 077
+printf '%s\n' 'paste-the-key-here' > carto.local
+python3 server.py
+```
+
+You can set `SLATE_CARTO_KEY` instead of the file. The key stays on this computer. The page asks Slate for tiles, so the key is not sent to the browser. Without a key, the page still centers on the detected place. The streets stay blank until the key is there.
 
 ## Wi-Fi remote
 
@@ -105,6 +117,7 @@ adb shell settings put secure screensaver_components dev.slate.home/.SlateDream
 |------|---------|
 | `settings.local.json` | Home apps, appearance, location, toggles |
 | `pin.local` | Wi-Fi unlock PIN (mode 600) |
+| `carto.local` | Free CARTO key for traffic street tiles |
 | `data.local.json` | Schedule kept on this computer |
 | `calendar-cache.local.json` | Last good Google Calendar fetch |
 | `data.json` | Generated guest copy of the schedule |

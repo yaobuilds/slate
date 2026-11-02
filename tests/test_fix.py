@@ -1006,6 +1006,107 @@ class FixTests(unittest.TestCase):
         feeds = server.active_headline_feeds()
         self.assertEqual([name for name, _url in feeds], ["NPR"])
 
+    def test_nearest_speed_segments_prefers_the_close_road(self):
+        rows = [
+            {
+                "level": "red",
+                "points": [[40.80, -73.90], [40.81, -73.90]],
+                "lat": 40.80,
+                "lon": -73.90,
+            },
+            {
+                "level": "green",
+                "points": [[40.73, -73.80], [40.74, -73.80]],
+                "lat": 40.73,
+                "lon": -73.80,
+            },
+            {
+                "level": "yellow",
+                "points": [[41.20, -73.80], [41.21, -73.80]],
+                "lat": 41.20,
+                "lon": -73.80,
+            },
+        ]
+        picked = server.nearest_speed_segments(rows, 40.7128, -74.0060, limit=1)
+        self.assertEqual(len(picked), 1)
+        self.assertEqual(picked[0]["level"], "green")
+        self.assertNotIn("lat", picked[0])
+
+    def test_map_tile_keeps_the_carto_key_on_the_server(self):
+        png = b"\x89PNG\r\n\x1a\n" + b"tile-bytes"
+        seen = []
+
+        class Resp:
+            headers = {"ETag": '"street"'}
+
+            def geturl(self):
+                return "https://basemaps.cartocdn.com/rastertiles/dark_all/11/600/766.png?key=hidden"
+
+            def read(self, _limit):
+                return png
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_open(request, timeout=8):
+            seen.append((request.full_url, timeout))
+            return Resp()
+
+        key = "abcDEF1234567890"
+        old_env = os.environ.get("SLATE_CARTO_KEY")
+        old_path = server.CARTO_KEY_PATH
+        old_cache = dict(server.TILE_CACHE)
+        server.TILE_CACHE.clear()
+        server.CARTO_KEY_PATH = Path(self.tmp.name) / "missing-carto.local"
+        os.environ["SLATE_CARTO_KEY"] = key
+        try:
+            with mock.patch.object(server, "urlopen", fake_open):
+                conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+                conn.request("GET", "/map/11/600/766.png")
+                resp = conn.getresponse()
+                body = resp.read()
+                conn.close()
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(body, png)
+            self.assertEqual(len(seen), 1)
+            self.assertIn("key=" + key, seen[0][0])
+            self.assertEqual(seen[0][1], 8)
+            self.assertNotIn(key, body.decode("latin1"))
+            status, payload, _headers = self._raw("GET", "/traffic.json")
+            self.assertEqual(status, 200)
+            self.assertNotIn(key, payload)
+            self.assertTrue(json.loads(payload)["mapReady"])
+            status, payload, _headers = self._raw("GET", "/map/99/1/1.png")
+            self.assertEqual(status, 404)
+            self.assertNotIn(key, payload)
+            status, _body, _headers = self._raw("GET", "/carto.local")
+            self.assertEqual(status, 404)
+        finally:
+            server.TILE_CACHE.clear()
+            server.TILE_CACHE.update(old_cache)
+            server.CARTO_KEY_PATH = old_path
+            if old_env is None:
+                os.environ.pop("SLATE_CARTO_KEY", None)
+            else:
+                os.environ["SLATE_CARTO_KEY"] = old_env
+
+        os.environ.pop("SLATE_CARTO_KEY", None)
+        server.CARTO_KEY_PATH = Path(self.tmp.name) / "missing-carto.local"
+        server.TILE_CACHE.clear()
+        seen.clear()
+        try:
+            with mock.patch.object(server, "urlopen", fake_open):
+                status, payload, _headers = self._raw("GET", "/map/11/600/766.png")
+            self.assertEqual(status, 503)
+            self.assertIn("key", payload)
+            self.assertFalse(seen)
+            self.assertFalse(json.loads(self._raw("GET", "/traffic.json")[1])["mapReady"])
+        finally:
+            server.CARTO_KEY_PATH = old_path
+
 
 def wait_until(cdp, expression, timeout=8):
     deadline = time.time() + timeout

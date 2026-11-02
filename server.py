@@ -55,6 +55,10 @@ DEFAULT_LOCATION = {
 }
 PIN_PATH = ROOT / "pin.local"
 PIN_RE = re.compile(r"^[0-9]{4,8}$")
+CARTO_KEY_PATH = ROOT / "carto.local"
+CARTO_KEY_RE = re.compile(r"^[A-Za-z0-9._~-]{8,200}$")
+CARTO_TILE_HOST = re.compile(r"^(?:[a-d]\.)?basemaps\.cartocdn\.com$")
+MAP_TILE_RE = re.compile(r"^/map/(\d{1,2})/(\d{1,7})/(\d{1,7})\.png$")
 FAIL_LIMIT = 5
 LOCKOUT_S = 60
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60
@@ -182,6 +186,10 @@ CALENDAR_PREFETCH_FORWARD_DAYS = 45
 RADAR_LOCK = threading.Lock()
 RADAR_CACHE = {}
 MAP_CACHE = {}
+TILE_LOCK = threading.Lock()
+TILE_CACHE = {}
+TILE_CACHE_TTL = 24 * 60 * 60
+TILE_CACHE_MAX = 240
 OAUTH_LOCK = threading.Lock()
 OAUTH_PENDING: dict[str, float] = {}
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
@@ -1334,7 +1342,7 @@ def parse_transcom_rss(body: str) -> list[dict]:
 
 
 def load_ny_incidents() -> tuple[list[dict], str]:
-    """Return incident rows and feed id ('511ny-json', '511ny-rss', or '')."""
+    """Return incident rows and a feed id. An empty feed id means the read failed."""
     try:
         body, content_type = fetch_http_text(TRAFFIC_EVENTS_JSON, accept="application/json")
         events = parse_511ny_events(body, content_type)
@@ -1376,12 +1384,21 @@ def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str
     now = time.monotonic()
     global TRAFFIC_CACHE, TRAFFIC_CACHE_AT
     with TRAFFIC_LOCK:
-        if TRAFFIC_CACHE and now - TRAFFIC_CACHE_AT < TRAFFIC_CACHE_TTL:
+        fresh = TRAFFIC_CACHE and now - TRAFFIC_CACHE_AT < TRAFFIC_CACHE_TTL
+        if fresh:
             cached_rows, feed = TRAFFIC_CACHE
         else:
-            cached_rows, feed = load_ny_incidents()
-            TRAFFIC_CACHE = (cached_rows, feed)
-            TRAFFIC_CACHE_AT = now
+            cached_rows, feed = None, ""
+    if not fresh:
+        # A failed read must not replace the last good list, and must not stick for the whole cache time.
+        cached_rows, feed = load_ny_incidents()
+        if feed:
+            with TRAFFIC_LOCK:
+                TRAFFIC_CACHE = (cached_rows, feed)
+                TRAFFIC_CACHE_AT = now
+        elif TRAFFIC_CACHE:
+            with TRAFFIC_LOCK:
+                cached_rows, feed = TRAFFIC_CACHE
     if not cached_rows:
         return [], bool(feed), feed
     cutoff = datetime.now(timezone.utc) - TRAFFIC_INCIDENT_MAX_AGE
@@ -1541,9 +1558,11 @@ def parse_openconditions_speed_body(body: str) -> list[dict]:
     return marks
 
 
+# Newest rows first. An unordered page can be hours old, and then the map drops every road.
 NYC_SPEEDS_URL = (
     "https://data.cityofnewyork.us/resource/i4gi-tjb9.json"
-    "?$select=speed,status,data_as_of,encoded_poly_line&$where=status=%270%27&$limit=5000"
+    "?$select=speed,status,data_as_of,encoded_poly_line"
+    "&$where=status=%270%27&$order=data_as_of%20DESC&$limit=5000"
 )
 NYC_SPEED_MAX_AGE = timedelta(hours=8)
 
@@ -1619,68 +1638,96 @@ def nyc_speed_time(raw: str) -> datetime | None:
     return parsed.astimezone(timezone.utc)
 
 
-def fetch_nyc_speed_segments(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
-    """NYC DOT live speeds. No key. Roads are green, yellow, or red by measured mph."""
-    if not in_new_york_city(lat, lon):
-        return [], False, False
+def nearest_speed_segments(rows: list[dict], lat: float, lon: float, limit: int = SPEED_SEGMENT_LIMIT) -> list[dict]:
+    """Keep the roads closest to the map center. The city feed is not ordered by place."""
     west, south, east, north = traffic_speed_bbox(lat, lon, radius_km=18)
+    ranked = []
+    for item in rows:
+        mid_lat = item.get("lat")
+        mid_lon = item.get("lon")
+        points = item.get("points")
+        if not isinstance(mid_lat, float) or not isinstance(mid_lon, float):
+            continue
+        if not isinstance(points, list) or len(points) < 2:
+            continue
+        if not (south <= mid_lat <= north and west <= mid_lon <= east):
+            continue
+        ranked.append((haversine_km(lat, lon, mid_lat, mid_lon), item))
+    ranked.sort(key=lambda pair: pair[0])
+    return [{"level": item["level"], "points": item["points"]} for _dist, item in ranked[:limit]]
+
+
+def load_nyc_speed_rows() -> list[dict] | None:
+    """Decoded NYC roads. None means the feed could not be read and must be tried again."""
+    now = time.monotonic()
+    global SPEED_CACHE, SPEED_CACHE_AT
+    with SPEED_LOCK:
+        if SPEED_CACHE is not None and now - SPEED_CACHE_AT < SPEED_CACHE_TTL:
+            return SPEED_CACHE
     try:
         body, content_type = fetch_http_text(NYC_SPEEDS_URL, accept="application/json", timeout=20)
     except (OSError, HTTPError, ValueError):
-        return [], False, False
+        return None
     if "json" not in content_type and not body.lstrip().startswith("["):
-        return [], False, False
+        return None
     try:
         rows = json.loads(body)
     except json.JSONDecodeError:
-        return [], False, False
-    if not isinstance(rows, list) or not rows:
-        return [], True, False
+        return None
+    if not isinstance(rows, list):
+        return None
     newest = None
+    decoded: list[dict] = []
     for row in rows:
         if not isinstance(row, dict):
             continue
         when = nyc_speed_time(str(row.get("data_as_of") or ""))
         if when is not None and (newest is None or when > newest):
             newest = when
-    if newest is None or newest < datetime.now(timezone.utc) - NYC_SPEED_MAX_AGE:
-        return [], True, False
-    segments = []
-    for row in rows:
-        if not isinstance(row, dict) or str(row.get("status")) != "0":
-            continue
-        try:
-            mph = float(row.get("speed"))
-        except (TypeError, ValueError):
-            continue
-        if mph <= 1:
-            continue
-        points = nyc_line_points(str(row.get("encoded_poly_line") or ""))
-        if len(points) < 2:
-            continue
-        mid_lat, mid_lon = points[len(points) // 2]
-        if not (south <= mid_lat <= north and west <= mid_lon <= east):
-            continue
-        segments.append({"level": nyc_speed_level(mph), "points": points})
-        if len(segments) >= SPEED_SEGMENT_LIMIT:
-            break
+    fresh_enough = bool(rows) and newest is not None and newest >= datetime.now(timezone.utc) - NYC_SPEED_MAX_AGE
+    if fresh_enough:
+        for row in rows:
+            if not isinstance(row, dict) or str(row.get("status")) != "0":
+                continue
+            try:
+                mph = float(row.get("speed"))
+            except (TypeError, ValueError):
+                continue
+            if mph <= 1:
+                continue
+            points = nyc_line_points(str(row.get("encoded_poly_line") or ""))
+            if len(points) < 2:
+                continue
+            mid_lat, mid_lon = points[len(points) // 2]
+            decoded.append({
+                "level": nyc_speed_level(mph),
+                "points": points,
+                "lat": float(mid_lat),
+                "lon": float(mid_lon),
+            })
+    if decoded:
+        with SPEED_LOCK:
+            SPEED_CACHE = decoded
+            SPEED_CACHE_AT = now
+    return decoded
+
+
+def fetch_nyc_speed_segments(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
+    """NYC DOT live speeds. No key. Roads are green, yellow, or red by measured mph.
+
+    Outside the city there is no speed feed, so the streets stay uncolored.
+    """
+    if not in_new_york_city(lat, lon):
+        return [], False, False
+    rows = load_nyc_speed_rows()
+    if rows is None:
+        return [], False, False
+    segments = nearest_speed_segments(rows, lat, lon)
     return segments, True, bool(segments)
 
 
 def traffic_speed_segments_for(lat: float, lon: float) -> tuple[list[dict], bool, bool]:
-    now = time.monotonic()
-    key = (round(lat, 2), round(lon, 2))
-    global SPEED_CACHE, SPEED_CACHE_AT
-    with SPEED_LOCK:
-        if SPEED_CACHE and now - SPEED_CACHE_AT < SPEED_CACHE_TTL:
-            cached_key, segments, feed_ok, speeds_ok = SPEED_CACHE
-            if cached_key == key:
-                return segments, feed_ok, speeds_ok
-    segments, feed_ok, speeds_ok = fetch_nyc_speed_segments(lat, lon)
-    with SPEED_LOCK:
-        SPEED_CACHE = (key, segments, feed_ok, speeds_ok)
-        SPEED_CACHE_AT = now
-    return segments, feed_ok, speeds_ok
+    return fetch_nyc_speed_segments(lat, lon)
 
 
 def parse_traffic_center(params: dict) -> tuple[float, float] | None:
@@ -1694,6 +1741,90 @@ def parse_traffic_center(params: dict) -> tuple[float, float] | None:
     if not (-90.0 <= lat <= 90.0 and -180.0 <= lon <= 180.0):
         return None
     return lat, lon
+
+
+def _carto_key_text() -> str:
+    env = os.environ.get("SLATE_CARTO_KEY", "").strip()
+    if env:
+        return env
+    try:
+        text = CARTO_KEY_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return ""
+
+
+def carto_key() -> str:
+    """Free CARTO key from SLATE_CARTO_KEY or carto.local.
+
+    The file is gitignored. The page never sees the key; it asks this server for tiles.
+    """
+    raw = _carto_key_text()
+    if not CARTO_KEY_RE.fullmatch(raw):
+        return ""
+    return raw
+
+
+def carto_key_status() -> str:
+    raw = _carto_key_text()
+    if not raw:
+        return "missing"
+    if not CARTO_KEY_RE.fullmatch(raw):
+        return "invalid"
+    return "ready"
+
+
+def parse_map_tile(path: str) -> tuple[int, int, int] | None:
+    match = MAP_TILE_RE.fullmatch(path or "")
+    if not match:
+        return None
+    z, x, y = int(match.group(1)), int(match.group(2)), int(match.group(3))
+    if z > 20:
+        return None
+    limit = 1 << z
+    if x >= limit or y >= limit:
+        return None
+    return z, x, y
+
+
+def fetch_carto_tile(z: int, x: int, y: int) -> bytes | None:
+    """Fetch one dark street tile. The key is added here and is not returned."""
+    key = carto_key()
+    if not key:
+        return None
+    cache_key = (z, x, y)
+    now = time.monotonic()
+    with TILE_LOCK:
+        cached = TILE_CACHE.get(cache_key)
+        if cached and now - cached[0] < TILE_CACHE_TTL:
+            return cached[1]
+    url = "https://basemaps.cartocdn.com/rastertiles/dark_all/{}/{}/{}.png?{}".format(
+        z, x, y, urlencode({"key": key})
+    )
+    request = Request(url, headers={"User-Agent": NOMINATIM_UA, "Accept": "image/png"})
+    try:
+        with urlopen(request, timeout=8) as response:
+            host = (urlsplit(response.geturl()).hostname or "").lower()
+            if not CARTO_TILE_HOST.fullmatch(host):
+                return None
+            etag = response.headers.get("ETag", "")
+            if "wm-" in etag.lower():
+                return None
+            body = response.read(512 * 1024)
+            if len(body) >= 512 * 1024 or not body.startswith(b"\x89PNG"):
+                return None
+    except (OSError, ValueError):
+        return None
+    with TILE_LOCK:
+        if len(TILE_CACHE) >= TILE_CACHE_MAX:
+            oldest = min(TILE_CACHE, key=lambda item: TILE_CACHE[item][0])
+            TILE_CACHE.pop(oldest, None)
+        TILE_CACHE[cache_key] = (now, body)
+    return body
 
 
 def traffic_payload(center: tuple[float, float] | None = None) -> dict:
@@ -1713,6 +1844,7 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     elif settings_place is None:
         return {
             "hasPlace": False,
+            "mapReady": bool(carto_key()),
             "incidentsAvailable": False,
             "incidents": [],
             "speedsAvailable": False,
@@ -1726,6 +1858,7 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     segments, _speed_feed_ok, speeds_ok = traffic_speed_segments_for(lat, lon)
     body = {
         "hasPlace": True,
+        "mapReady": bool(carto_key()),
         "place": {
             "lat": lat,
             "lon": lon,
@@ -2301,6 +2434,7 @@ BLOCKED_FILES = {
     "/calendar-cache.local.json",
     "/server.py",
     "/pin.local",
+    "/carto.local",
     "/atv.local",
     "/gallery.local",
 }
@@ -2927,6 +3061,20 @@ class Handler(SimpleHTTPRequestHandler):
         span = 1.45 if zoom == "near" else 3.5
         return lat, lon, span, lon - span, lat - span * 0.58, lon + span, lat + span * 0.58
 
+    def serve_map_tile(self, path: str):
+        coords = parse_map_tile(path)
+        if coords is None:
+            self.reject()
+            return
+        if not carto_key():
+            self.send_json(503, {"error": "key"})
+            return
+        body = fetch_carto_tile(*coords)
+        if not body:
+            self.send_json(502, {"error": "tile"})
+            return
+        self.send_bytes(200, body, "image/png", cache_control="private, max-age=86400")
+
     def serve_radar(self):
         params = parse_qs(urlsplit(self.path).query)
         zoom = params.get("zoom", ["near"])[0]
@@ -3454,6 +3602,9 @@ class Handler(SimpleHTTPRequestHandler):
             query = parse_qs(urlsplit(self.path).query)
             self.send_json(200, traffic_payload(parse_traffic_center(query)))
             return
+        if MAP_TILE_RE.fullmatch(path or ""):
+            self.serve_map_tile(path)
+            return
         if path in ROUTE_REDIRECTS:
             self.redirect(ROUTE_REDIRECTS[path])
             return
@@ -3860,6 +4011,11 @@ def main() -> None:
     else:
         print("This Mac only. For a phone on the same Wi-Fi, run: python3 server.py --lan")
     print("Do not forward port 8000.")
+    map_key = carto_key_status()
+    if map_key == "missing":
+        print("Traffic map needs a free CARTO key. Save it as one line in carto.local. See README.")
+    elif map_key == "invalid":
+        print("carto.local is not a usable map key. See README.", file=sys.stderr)
     print("The PIN over http is a convenience lock, not security.")
     print("Leave this Mac awake. If it sleeps, the page stops.")
 

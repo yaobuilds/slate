@@ -1,7 +1,8 @@
 const REFRESH_MS = 60 * 1000;
 const MAP_ZOOM = 11;
 const TILE_SIZE = 256;
-const OSM_TILE = "https://tile.openstreetmap.org";
+// Same-origin tiles. The CARTO key stays in carto.local on the server.
+const MAP_TILE = "/map";
 
 const placeEl = document.getElementById("traffic-place");
 const headingEl = document.getElementById("traffic-heading");
@@ -16,9 +17,11 @@ const speedsEl = document.getElementById("traffic-speeds");
 const listEl = document.getElementById("traffic-incident-list");
 const noteEl = document.getElementById("traffic-incidents-note");
 const speedsNoteEl = document.getElementById("traffic-speeds-note");
+const mapNoteEl = document.getElementById("traffic-map-note");
 const shellEl = document.getElementById("traffic-shell");
 
 let mapCenter = null;
+let mapTilesReady = false;
 let lastIncidents = [];
 let lastSegments = [];
 let refreshTimer = 0;
@@ -81,6 +84,17 @@ function renderIncidents(incidents, available) {
   }
 }
 
+function renderMapNote(ready, message) {
+  if (!mapNoteEl) return;
+  if (ready) {
+    mapNoteEl.hidden = true;
+    mapNoteEl.textContent = "";
+    return;
+  }
+  mapNoteEl.hidden = false;
+  mapNoteEl.textContent = message || "Street tiles need a map key on this computer.";
+}
+
 function renderSpeedsNote(speedsAvailable) {
   if (!speedsNoteEl) return;
   if (speedsAvailable) {
@@ -92,11 +106,26 @@ function renderSpeedsNote(speedsAvailable) {
   speedsNoteEl.textContent = "Live speeds are not available here.";
 }
 
-function layoutMap(lat, lon, incidents, segments) {
+function paintMap() {
+  if (!mapCenter) return;
+  layoutMap(mapCenter.lat, mapCenter.lon, lastIncidents, lastSegments, mapTilesReady);
+}
+
+function layoutMap(lat, lon, incidents, segments, tilesReady) {
   if (!mapEl || !tilesEl || !centerEl) return;
   const width = mapEl.clientWidth;
   const height = mapEl.clientHeight;
-  if (!width || !height) return;
+  // The first frame can run before the map has a box. Wait for the next one.
+  if (!width || !height) {
+    if (!layoutMap.waiting) {
+      layoutMap.waiting = true;
+      requestAnimationFrame(() => {
+        layoutMap.waiting = false;
+        paintMap();
+      });
+    }
+    return;
+  }
 
   const centerPx = project(lat, lon, MAP_ZOOM);
   centerEl.style.left = `${width / 2}px`;
@@ -107,18 +136,45 @@ function layoutMap(lat, lon, incidents, segments) {
   const startTileY = Math.floor(centerPx.y / TILE_SIZE) - Math.ceil(height / TILE_SIZE / 2) - 1;
   const endTileY = Math.floor(centerPx.y / TILE_SIZE) + Math.ceil(height / TILE_SIZE / 2) + 1;
 
-  tilesEl.innerHTML = "";
-  for (let x = startTileX; x <= endTileX; x += 1) {
-    for (let y = startTileY; y <= endTileY; y += 1) {
-      const img = document.createElement("img");
-      img.alt = "";
-      img.loading = "lazy";
-      img.decoding = "async";
-      img.src = `${OSM_TILE}/${MAP_ZOOM}/${x}/${y}.png`;
-      img.style.left = `${width / 2 + (x * TILE_SIZE - centerPx.x)}px`;
-      img.style.top = `${height / 2 + (y * TILE_SIZE - centerPx.y)}px`;
-      tilesEl.appendChild(img);
+  const wanted = new Map();
+  if (tilesReady) {
+    for (let x = startTileX; x <= endTileX; x += 1) {
+      for (let y = startTileY; y <= endTileY; y += 1) {
+        const src = `${MAP_TILE}/${MAP_ZOOM}/${x}/${y}.png`;
+        wanted.set(src, {
+          left: `${width / 2 + (x * TILE_SIZE - centerPx.x)}px`,
+          top: `${height / 2 + (y * TILE_SIZE - centerPx.y)}px`,
+        });
+      }
     }
+  }
+  for (const img of [...tilesEl.querySelectorAll("img")]) {
+    const place = wanted.get(img.getAttribute("src") || "");
+    if (!place) {
+      img.remove();
+      continue;
+    }
+    img.style.left = place.left;
+    img.style.top = place.top;
+    wanted.delete(img.getAttribute("src") || "");
+  }
+  for (const [src, place] of wanted) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.src = src;
+    img.style.left = place.left;
+    img.style.top = place.top;
+    img.addEventListener("load", () => {
+      img.dataset.ok = "1";
+      renderMapNote(true);
+    });
+    img.addEventListener("error", () => {
+      if (!tilesEl.querySelector("img[data-ok]")) {
+        renderMapNote(false, "Street tiles did not load.");
+      }
+    });
+    tilesEl.appendChild(img);
   }
 
   if (speedsEl) {
@@ -185,6 +241,67 @@ function showNoPlace() {
   placeEl.textContent = "Location";
 }
 
+function detectHere() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve(null);
+      return;
+    }
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        resolve({
+          lat: Math.round(pos.coords.latitude * 100) / 100,
+          lon: Math.round(pos.coords.longitude * 100) / 100,
+        });
+      },
+      () => resolve(null),
+      { enableHighAccuracy: false, timeout: 4000, maximumAge: 10 * 60 * 1000 },
+    );
+  });
+}
+
+let placePromise = null;
+
+function ensureDetectedPlace() {
+  // Do not block the first paint on GPS. A permission prompt can sit there for a long time.
+  if (!placePromise) placePromise = detectAndStore();
+  return placePromise;
+}
+
+async function detectAndStore() {
+  const surface = document.documentElement.dataset.slateSurface;
+  if (surface === "tv" || window.SlateTV || !window.SlatePlace) return false;
+  const before = window.SlatePlace.readDevicePlace();
+  try {
+    const settings = await fetch("settings.json", { cache: "no-store" });
+    if (settings.ok) {
+      const body = await settings.json();
+      if (body.location && body.location.locked === true) return false;
+    }
+  } catch (err) {
+    /* An unread settings file still allows a device fix. */
+  }
+  const detected = await detectHere();
+  if (!detected) return false;
+  let label = `${detected.lat.toFixed(2)}, ${detected.lon.toFixed(2)}`;
+  try {
+    const named = await fetch(
+      "place.json?lat=" + encodeURIComponent(String(detected.lat)) +
+        "&lon=" + encodeURIComponent(String(detected.lon)),
+      { cache: "no-store" },
+    );
+    if (named.ok) {
+      const body = await named.json();
+      if (typeof body.label === "string" && body.label.trim()) label = body.label.trim();
+    }
+  } catch (err) {
+    /* Coordinates are enough to center the map. */
+  }
+  window.SlatePlace.writeDevicePlace({ ...detected, label });
+  if (!before) return true;
+  return Math.abs(before.lat - detected.lat) > 0.009 || Math.abs(before.lon - detected.lon) > 0.009;
+}
+
 async function refreshTraffic() {
   try {
     const trafficUrl =
@@ -214,7 +331,9 @@ async function refreshTraffic() {
     lastSegments = Array.isArray(data.segments) ? data.segments : [];
     renderIncidents(lastIncidents, data.incidentsAvailable !== false);
     renderSpeedsNote(data.speedsAvailable === true);
-    requestAnimationFrame(() => layoutMap(place.lat, place.lon, lastIncidents, lastSegments));
+    mapTilesReady = data.mapReady === true;
+    renderMapNote(mapTilesReady);
+    requestAnimationFrame(paintMap);
   } catch (error) {
     if (!mapCenter) {
       showNoPlace();
@@ -251,12 +370,16 @@ function installBackKeys() {
   });
 }
 
-window.addEventListener("resize", () => {
-  if (mapCenter) layoutMap(mapCenter.lat, mapCenter.lon, lastIncidents, lastSegments);
-});
+window.addEventListener("resize", paintMap);
+if (window.ResizeObserver && mapEl) {
+  new ResizeObserver(paintMap).observe(mapEl);
+}
 
 installBackKeys();
 refreshTraffic();
+ensureDetectedPlace().then((moved) => {
+  if (moved) refreshTraffic();
+});
 scheduleRefresh();
 if (document.documentElement.dataset.slateSurface === "tv") {
   driftTimer = window.setInterval(applyDrift, 3 * 60 * 1000);

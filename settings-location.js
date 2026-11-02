@@ -45,8 +45,10 @@ function detectDeviceLocation() {
         lat: Math.round(pos.coords.latitude * 100) / 100,
         lon: Math.round(pos.coords.longitude * 100) / 100,
       }),
-      () => resolve(null),
-      { enableHighAccuracy: false, timeout: 12000, maximumAge: 0 },
+      (err) => {
+        resolve(err && err.code ? { code: err.code } : null);
+      },
+      { enableHighAccuracy: false, timeout: 20000, maximumAge: 10 * 60 * 1000 },
     );
   });
 }
@@ -54,15 +56,21 @@ function detectDeviceLocation() {
 async function detectNow() {
   if (msgEl) msgEl.textContent = "Finding location…";
   const hit = await detectDeviceLocation();
-  if (!hit) {
-    if (msgEl) msgEl.textContent = "Could not detect location. Check browser permission.";
+  if (!hit || typeof hit.lat !== "number") {
+    if (msgEl) {
+      msgEl.textContent = hit && hit.code === 3 && window.isSecureContext
+        ? "This browser may ask for location, but macOS did not return a place. Allow the browser in System Settings, Privacy & Security, Location Services."
+        : window.isSecureContext
+          ? "Could not detect location. Check browser permission."
+          : "This Wi-Fi address blocks location. On this computer, open Slate at 127.0.0.1.";
+    }
     return;
   }
   draft.lat = hit.lat;
   draft.lon = hit.lon;
   draft.label = await reversePlaceLabel(hit.lat, hit.lon);
-  if (msgEl) msgEl.textContent = "";
   showDraft();
+  await persistLocation();
 }
 
 async function persistLocation() {
@@ -90,6 +98,7 @@ async function init() {
       draft = { ...draft, ...settings.location };
     }
     showDraft();
+    if (!draft.locked) detectNow();
   } catch (err) {
     if (readout) readout.textContent = "Could not load settings.";
   }

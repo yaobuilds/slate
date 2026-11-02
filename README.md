@@ -34,7 +34,7 @@ The first start creates the local files that are not in the repository:
 
 Files that already exist are left as they are. Delete `pin.local` and start again to print a new PIN.
 
-The default place is New York, NY. Change it in **Settings → Location**. Until you lock the location, the browser may share its place for weather and the clock time zone.
+The default place is New York, NY. Change it in **Settings → Location**. Until you lock the location, the browser may share its place for weather and the clock time zone. On the computer running Slate, the Wi-Fi address continues at 127.0.0.1 so that browser can read location. A phone stays on the Wi-Fi address.
 
 ## Phone, tablet, or TV on the same Wi-Fi
 

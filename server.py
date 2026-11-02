@@ -1119,23 +1119,30 @@ def guest_calendar(payload: dict) -> dict:
 def label_from_nominatim(payload: dict) -> str:
     address = payload.get("address") if isinstance(payload, dict) else None
     if isinstance(address, dict):
+        def text(key: str) -> str:
+            value = address.get(key)
+            return value.strip() if isinstance(value, str) and value.strip() else ""
+
+        neighbourhood = text("neighbourhood") or text("quarter")
+        suburb = text("suburb") or text("borough") or text("city_district")
         city = (
-            address.get("city")
-            or address.get("town")
-            or address.get("village")
-            or address.get("hamlet")
-            or address.get("municipality")
-            or address.get("county")
-            or address.get("borough")
+            text("city") or text("town") or text("village")
+            or text("hamlet") or text("municipality") or text("county")
         )
-        state = address.get("state") or address.get("region") or address.get("state_district")
-        if isinstance(city, str) and isinstance(state, str):
-            return f"{city.strip()}, {state.strip()}"
-        if isinstance(city, str) and city.strip():
-            return city.strip()
-        country = address.get("country")
-        if isinstance(country, str) and country.strip():
-            return country.strip()
+        state = text("state") or text("region") or text("state_district")
+        if neighbourhood and suburb and neighbourhood.lower() != suburb.lower():
+            return f"{neighbourhood}, {suburb}"
+        if suburb and city and suburb.lower() != city.lower():
+            return f"{suburb}, {city}"
+        if suburb and state and suburb.lower() != state.lower():
+            return f"{suburb}, {state}"
+        if city and state and city.lower() != state.lower():
+            return f"{city}, {state}"
+        if city:
+            return city
+        country = text("country")
+        if country:
+            return country
     name = payload.get("display_name") if isinstance(payload, dict) else ""
     if isinstance(name, str) and name.strip():
         parts = [part.strip() for part in name.split(",") if part.strip()]
@@ -2406,6 +2413,7 @@ ALLOWED_FILES = {
     "/traffic.js",
     "/slate-surface.js",
     "/slate-place.js",
+    "/slate-locate.js",
     "/network.js",
     "/calendar.css",
     "/weather.css",
@@ -2440,6 +2448,7 @@ ALLOWED_FILES = {
     "/gallery.js",
     "/slate-surface.js",
     "/slate-place.js",
+    "/slate-locate.js",
 }
 FONT_FILE = re.compile(r"^/assets/fonts/[a-z0-9][a-z0-9.-]*\.ttf$")
 ICON_FILE = re.compile(r"^/assets/icons/[a-z0-9][a-z0-9-]*\.svg$")
@@ -2799,6 +2808,16 @@ def remote_client_is_tv(handler, obj) -> bool:
     return bool(known) and known == handler.client_address[0]
 
 
+def client_is_this_mac(ip: str) -> bool:
+    """True when the browser is this computer opening its own Wi-Fi address."""
+    if ip.startswith("::ffff:"):
+        ip = ip[7:]
+    if ip in ("127.0.0.1", "::1") or ip.startswith("127."):
+        return False
+    host_ip = lan_address()
+    return bool(host_ip) and ip == host_ip
+
+
 def remote_tv_online() -> bool:
     return (time.time() - REMOTE_TV_LAST) <= REMOTE_TV_ONLINE_S
 
@@ -2843,6 +2862,8 @@ class Handler(SimpleHTTPRequestHandler):
     def end_headers(self):
         self.send_header("X-Content-Type-Options", "nosniff")
         path = public_path(self.path) or ""
+        if client_is_this_mac(self.client_address[0]):
+            self.send_header("Set-Cookie", "slate-host=1; Path=/; Max-Age=86400; SameSite=Lax")
         if getattr(self, "_response_code", 0) in (200, 304):
             if path.startswith("/assets/"):
                 self.send_header("Cache-Control", "public, max-age=3600")

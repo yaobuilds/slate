@@ -8,3 +8,7 @@ atv.local
 gallery.local/
 __pycache__/
 .DS_Store
+AGENTS.md
+STATUS.md
+TASKS.md
+private-docs/

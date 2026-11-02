@@ -2,7 +2,9 @@
 
 A local dashboard for a computer, phone, tablet, or TV: clock, weather, calendar, app tiles, and settings. Plain HTML, CSS, and JavaScript. Python serves the files. No build step and no dependencies.
 
-Setup is this page. Design notes live in `docs/design/`. The working log is `STATUS.md`. The task list is `TASKS.md`.
+Setup is on this page. [How it is built](docs/ARCHITECTURE.md) and [security notes](docs/SECURITY.md) are in `docs/`.
+
+<!-- SCREENSHOT: add docs/screenshot-home.png here after Alex approves it -->
 
 ## What you need
 
@@ -125,3 +127,15 @@ adb shell settings put secure screensaver_components dev.slate.home/.SlateDream
 | `gallery.local/` | Uploaded photos |
 
 If you forget the PIN, delete `pin.local` and start Slate again. The new PIN is printed once. You can also set a different one in Settings.
+
+## Run the tests
+
+```bash
+python3 -m unittest discover -s tests
+```
+
+The tests use only the standard library. Some page tests drive Chrome when it is installed. The gallery tests expect no `gallery.local/` folder, so run them on a fresh checkout.
+
+## License
+
+[MIT](LICENSE).

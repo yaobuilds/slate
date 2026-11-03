@@ -70,7 +70,7 @@ async function loadSettings() {
 async function loadWeather() {
   try {
     const settings = await fetch("settings.json", { cache: "no-store" }).then((r) => r.json());
-    const loc = settings.location || { lat: 40.7128, lon: -74.0060, label: "Weather" };
+    const loc = settings.location || { lat: 40.7128, lon: -74.0060, label: "New York, NY" };
     const url =
       "https://api.open-meteo.com/v1/forecast?latitude=" +
       encodeURIComponent(String(loc.lat)) +

@@ -4,7 +4,7 @@ A local dashboard for a computer, phone, tablet, or TV: clock, weather, calendar
 
 Setup is on this page. [How it is built](docs/ARCHITECTURE.md) and [security notes](docs/SECURITY.md) are in `docs/`.
 
-<!-- SCREENSHOT: add docs/screenshot-home.png here after Alex approves it -->
+![Slate Home screen](docs/screenshot-home.png)
 
 ## What you need
 
@@ -17,8 +17,8 @@ Calendar connect stores its secrets in the macOS Keychain, so that step is for a
 ## Set it up
 
 ```bash
-git clone https://github.com/yaobuilds/tv-dashboard.git
-cd tv-dashboard
+git clone https://github.com/yaobuilds/slate.git
+cd slate
 python3 server.py
 ```
 
@@ -56,7 +56,7 @@ The PIN over HTTP is a convenience lock, not strong security.
 - **Weather:** seven days, hourly detail, a today rain chart, and recent radar fetched by the server. Radar plays from oldest to newest, then repeats. Weather uses [Open-Meteo](https://open-meteo.com/) and needs no key.
 - **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents appear when a public feed covers that area.
 - **Gallery:** photos you upload. They stay in `gallery.local/`.
-- **Keel:** the reading page.
+- **Keel:** a small arrow-key game.
 - **Wi-Fi / LAN:** devices seen from the host, linked from the Dashboard footer.
 - **Settings:** home apps, appearance, location, news sources, PIN, calendar, the Wi-Fi remote, and the optional credit link.
 

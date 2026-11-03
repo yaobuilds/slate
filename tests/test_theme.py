@@ -19,7 +19,11 @@ from datetime import datetime, timedelta, timezone
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import isolate
 import server
+
+# Pin, settings, schedule, gallery, and the map key stay out of this checkout.
+isolate.install(server)
 from test_fix import Cdp, chrome_bin, wait_until
 
 

@@ -35,6 +35,8 @@ from urllib.request import Request, urlopen
 import atv_remote
 
 ROOT = Path(__file__).resolve().parent
+# Private files stay here unless use_state_dir() points them at a temp folder.
+STATE_DIR = ROOT
 PORT = 8000
 DISCOVERY_PORT = 8001
 LOCAL = ROOT / "data.local.json"
@@ -288,6 +290,39 @@ PLACE_LAST_CALL = 0.0
 PLACE_LOCK = threading.Lock()
 
 GALLERY_DIR = ROOT / "gallery.local"
+
+
+def use_state_dir(folder) -> None:
+    """Keep pin, settings, schedule, gallery, and the map key in folder.
+
+    SLATE_STATE_DIR is how tests pass a throwaway folder. A normal start
+    leaves it unset, so those files stay next to this program.
+    """
+    global STATE_DIR, LOCAL, PUBLIC, SETTINGS_LOCAL, CALENDAR_CACHE_LOCAL
+    global PIN_PATH, CARTO_KEY_PATH, GALLERY_DIR, APPS_PUBLIC
+    folder = Path(folder).expanduser()
+    # The folder itself, not gallery.local. The gallery is created when a photo is saved.
+    folder.mkdir(parents=True, exist_ok=True)
+    STATE_DIR = folder
+    LOCAL = folder / "data.local.json"
+    PUBLIC = folder / "data.json"
+    SETTINGS_LOCAL = folder / "settings.local.json"
+    CALENDAR_CACHE_LOCAL = folder / "calendar-cache.local.json"
+    PIN_PATH = folder / "pin.local"
+    CARTO_KEY_PATH = folder / "carto.local"
+    GALLERY_DIR = folder / "gallery.local"
+    # Saving settings also rewrites apps.json, so that copy follows the same folder.
+    APPS_PUBLIC = folder / "apps.json"
+    # The TV pairing file is private too. The next remote client opens this path.
+    atv_remote.set_atv_path_for_tests(folder / "atv.local")
+
+
+# Applied at import so a test cannot open the checkout copies first.
+_state_env = os.environ.get("SLATE_STATE_DIR", "").strip()
+if _state_env:
+    use_state_dir(_state_env)
+
+
 GALLERY_MAX_UPLOAD = 40 * 1024 * 1024
 GALLERY_MAX_COUNT = 200
 GALLERY_MAX_TOTAL = 500 * 1024 * 1024

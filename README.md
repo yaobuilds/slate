@@ -134,7 +134,7 @@ If you forget the PIN, delete `pin.local` and start Slate again. The new PIN is 
 python3 -m unittest discover -s tests
 ```
 
-The tests use only the standard library. Some page tests drive Chrome when it is installed. The gallery tests expect no `gallery.local/` folder, so run them on a fresh checkout.
+The tests use only the standard library. Some page tests drive Chrome when it is installed. Private files are opened in a temporary folder, not in this checkout.
 
 ## License
 

@@ -24,7 +24,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+import isolate  # noqa: E402
 import server  # noqa: E402
+
+# Pin, settings, schedule, gallery, and the map key stay out of this checkout.
+isolate.install(server)
 
 TITLE = "Piano lesson EXAMPLE"
 DEADLINE = "Secret bill EXAMPLE"
@@ -1448,11 +1452,15 @@ class GalleryTests(unittest.TestCase):
     def tearDown(self):
         self.httpd.shutdown()
         self.httpd.server_close()
+        used = server.GALLERY_DIR
         server.GALLERY_DIR = self.old_gallery
         server.GALLERY_MAX_COUNT = self.old_max_count
         server.EXPECTED_PIN = self.old_pin
         self.tmp.cleanup()
-        self.assertFalse((ROOT / "gallery.local").exists())
+        # Both folders are throwaway paths, so the checkout gallery is never opened.
+        checkout = ROOT / "gallery.local"
+        self.assertNotEqual(used, checkout)
+        self.assertNotEqual(self.old_gallery, checkout)
 
     def _raw(self, method, path, body=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)

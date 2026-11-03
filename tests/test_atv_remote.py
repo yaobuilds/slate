@@ -20,7 +20,11 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
 import atv_remote  # noqa: E402
+import isolate  # noqa: E402
 import server  # noqa: E402
+
+# Pin, settings, schedule, gallery, and the map key stay out of this checkout.
+isolate.install(server)
 
 
 class FakeTv:
@@ -162,6 +166,7 @@ class RemoteHttpTests(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         root = Path(self.tmp.name)
         self.atv_path = root / "atv.local"
+        self._atv_saved = atv_remote.ATV_PATH
         atv_remote.set_atv_path_for_tests(self.atv_path)
         self._old = (
             server.REMOTE_EVENTS,
@@ -190,7 +195,7 @@ class RemoteHttpTests(unittest.TestCase):
         server.REMOTE_SESSIONS.clear()
         server.REMOTE_PAIRINGS.clear()
         self.tmp.cleanup()
-        atv_remote.set_atv_path_for_tests(ROOT / "atv.local")
+        atv_remote.set_atv_path_for_tests(self._atv_saved)
 
     def _post(self, path, body=None, headers=None):
         conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
@@ -294,6 +299,7 @@ class AtvIntegrationTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
+        self._atv_saved = atv_remote.ATV_PATH
         atv_remote.set_atv_path_for_tests(self.root / "atv.local")
         atv_remote.PAIR_PORT = 6477
         atv_remote.COMMAND_PORT = 6476
@@ -309,7 +315,7 @@ class AtvIntegrationTests(unittest.TestCase):
         self.fake.close()
         atv_remote.PAIR_PORT = 6467
         atv_remote.COMMAND_PORT = 6466
-        atv_remote.set_atv_path_for_tests(ROOT / "atv.local")
+        atv_remote.set_atv_path_for_tests(self._atv_saved)
         self.tmp.cleanup()
 
     def test_pair_and_key_inject(self):

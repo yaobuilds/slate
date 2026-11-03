@@ -503,6 +503,9 @@
   });
   addEventListener('pagehide', () => { stopBackdrop(); setHidden(true); });
   document.addEventListener('visibilitychange', () => setHidden(document.hidden));
+  // Pause CSS drift when the window loses focus (e.g. another app on the TV).
+  addEventListener('blur', () => setHidden(true));
+  addEventListener('focus', () => setHidden(document.hidden));
   addEventListener('pageshow', event => {
     setHidden(document.hidden);
     if (event.persisted) apply(config);

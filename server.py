@@ -197,8 +197,9 @@ OAUTH_PENDING: dict[str, float] = {}
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
 OAUTH_REDIRECT = "http://127.0.0.1:8000/oauth/callback"
 TRAFFIC_LOCK = threading.Lock()
-TRAFFIC_CACHE = None
-TRAFFIC_CACHE_AT = 0.0
+# Per-region incident cache. Each part is {"at", "rows", "feed"}.
+# One region must never read or write another region's parts.
+TRAFFIC_CACHE: dict[str, dict] = {}
 TRAFFIC_CACHE_TTL = 180
 TRAFFIC_INCIDENT_MAX_AGE = timedelta(hours=36)
 TRAFFIC_INCIDENT_MAX_KM = 160.0
@@ -214,6 +215,12 @@ SPEED_CELL_DEG = 0.02
 # Public OpenConditions emitter (README: GET /observations.geojson and /segments.geojson, bbox-filterable).
 OPENCONDITIONS_EMITTER = os.environ.get("SLATE_OPENCONDITIONS_URL", "https://ingest.openconditions.org").rstrip("/")
 NY_STATE_BOUNDS = (40.49, 45.12, -79.76, -71.85)
+# DC, Maryland, and Northern Virginia. Edges count as inside. Tuple order matches NY_STATE_BOUNDS.
+DMV_MIN_LAT = 38.60
+DMV_MAX_LAT = 39.35
+DMV_MIN_LON = -77.60
+DMV_MAX_LON = -76.70
+DMV_BOUNDS = (DMV_MIN_LAT, DMV_MAX_LAT, DMV_MIN_LON, DMV_MAX_LON)
 GEORSS_NS = {"g": "http://www.georss.org/georss"}
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
@@ -1245,6 +1252,20 @@ def in_new_york_state(lat: float, lon: float) -> bool:
     return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
 
 
+def region_for(lat: float, lon: float) -> str:
+    """Return dmv inside the DC and nearby box, otherwise ny."""
+    if isinstance(lat, bool) or isinstance(lon, bool):
+        return "ny"
+    if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
+        return "ny"
+    if not math.isfinite(lat) or not math.isfinite(lon):
+        return "ny"
+    min_lat, max_lat, min_lon, max_lon = DMV_BOUNDS
+    if min_lat <= float(lat) <= max_lat and min_lon <= float(lon) <= max_lon:
+        return "dmv"
+    return "ny"
+
+
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     r = 6371.0
     p1, p2 = math.radians(lat1), math.radians(lat2)
@@ -1422,27 +1443,60 @@ def incident_datetime(when: str) -> datetime | None:
         return None
 
 
-def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str]:
+def traffic_part(region: str, name: str) -> dict | None:
+    """One feed's cached rows, or None when that part has never been stored."""
+    region_entry = TRAFFIC_CACHE.get(region)
+    if not isinstance(region_entry, dict):
+        return None
+    parts = region_entry.get("parts")
+    if not isinstance(parts, dict):
+        return None
+    part = parts.get(name)
+    return part if isinstance(part, dict) else None
+
+
+def store_traffic_part(region: str, name: str, rows: list, feed: str, now: float) -> None:
+    """Write one part under the lock. This does not touch any other region or part."""
+    region_entry = TRAFFIC_CACHE.get(region)
+    if not isinstance(region_entry, dict):
+        region_entry = {"parts": {}}
+        TRAFFIC_CACHE[region] = region_entry
+    parts = region_entry.get("parts")
+    if not isinstance(parts, dict):
+        parts = {}
+        region_entry["parts"] = parts
+    parts[name] = {"at": now, "rows": rows, "feed": feed}
+
+
+def traffic_ny_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str]:
+    """New York incidents from the ny cache part. A failed read keeps the last good list."""
     if not in_new_york_state(lat, lon):
         return [], False, ""
     now = time.monotonic()
-    global TRAFFIC_CACHE, TRAFFIC_CACHE_AT
     with TRAFFIC_LOCK:
-        fresh = TRAFFIC_CACHE and now - TRAFFIC_CACHE_AT < TRAFFIC_CACHE_TTL
-        if fresh:
-            cached_rows, feed = TRAFFIC_CACHE
-        else:
-            cached_rows, feed = None, ""
+        part = traffic_part("ny", "ny")
+        fresh = False
+        cached_rows, feed = None, ""
+        if part is not None:
+            try:
+                fresh = now - float(part.get("at")) < TRAFFIC_CACHE_TTL
+            except (TypeError, ValueError):
+                fresh = False
+            if fresh:
+                cached_rows = part.get("rows") if isinstance(part.get("rows"), list) else []
+                feed = part.get("feed") if isinstance(part.get("feed"), str) else ""
     if not fresh:
         # A failed read must not replace the last good list, and must not stick for the whole cache time.
         cached_rows, feed = load_ny_incidents()
         if feed:
             with TRAFFIC_LOCK:
-                TRAFFIC_CACHE = (cached_rows, feed)
-                TRAFFIC_CACHE_AT = now
-        elif TRAFFIC_CACHE:
+                store_traffic_part("ny", "ny", cached_rows, feed, now)
+        else:
             with TRAFFIC_LOCK:
-                cached_rows, feed = TRAFFIC_CACHE
+                part = traffic_part("ny", "ny")
+                if part:
+                    cached_rows = part.get("rows") if isinstance(part.get("rows"), list) else []
+                    feed = part.get("feed") if isinstance(part.get("feed"), str) else ""
     if not cached_rows:
         return [], bool(feed), feed
     cutoff = datetime.now(timezone.utc) - TRAFFIC_INCIDENT_MAX_AGE
@@ -1468,6 +1522,18 @@ def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str
         if len(picked) >= 8:
             break
     return picked, True, feed
+
+
+def traffic_dmv_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str]:
+    """DMV incidents. Readers land later, so this stays empty and does not touch the cache."""
+    return [], False, ""
+
+
+def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str]:
+    """Incidents for one place. ny and dmv never share a cache entry."""
+    if region_for(lat, lon) == "dmv":
+        return traffic_dmv_incidents(lat, lon)
+    return traffic_ny_incidents(lat, lon)
 
 
 def traffic_speed_bbox(lat: float, lon: float, radius_km: float = 32.0) -> tuple[float, float, float, float]:

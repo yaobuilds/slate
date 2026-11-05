@@ -76,6 +76,24 @@ def tomtom_body(now=None):
     return json.dumps(payload)
 
 
+def tomtom_point_body(lat, lon, road="I-75", now=None):
+    """One Incident Details point at the coordinates this test asks for."""
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    payload = {
+        "incidents": [{
+            "type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            "properties": {
+                "id": "cell-1",
+                "startTime": stamp,
+                "roadNumbers": [road],
+                "events": [{"description": "Slow traffic"}],
+            },
+        }]
+    }
+    return json.dumps(payload)
+
+
 def move_north(lat, lon, km):
     """A latitude that is about km north of lat. The distance uses the server's own formula."""
     step = km / 110.574
@@ -139,6 +157,8 @@ class TrafficRegionTests(unittest.TestCase):
 
     def test_region_for_new_york(self):
         self.assertEqual(server.region_for(NY_LAT, NY_LON), "ny")
+        self.assertEqual(server.region_for(40.74, -74.17), "ny")
+        self.assertEqual(server.region_for(40.48, -74.00), "grid:40.0,-74.0")
 
     def test_region_for_dmv_cities(self):
         self.assertEqual(server.region_for(DC_LAT, DC_LON), "dmv")
@@ -148,11 +168,18 @@ class TrafficRegionTests(unittest.TestCase):
     def test_region_for_box_edges(self):
         self.assertEqual(server.region_for(38.60, -77.60), "dmv")
         self.assertEqual(server.region_for(39.35, -76.70), "dmv")
-        self.assertEqual(server.region_for(38.59, -77.00), "ny")
-        self.assertEqual(server.region_for(39.36, -77.00), "ny")
+        self.assertEqual(server.region_for(38.59, -77.00), "grid:38.5,-77.0")
+        self.assertEqual(server.region_for(39.36, -77.00), "grid:39.0,-77.0")
         self.assertEqual(server.region_for("nope", DC_LON), "ny")
         self.assertEqual(server.region_for(True, DC_LON), "ny")
         self.assertEqual(server.region_for(float("nan"), DC_LON), "ny")
+
+    def test_region_for_other_us_cities(self):
+        self.assertEqual(server.region_for(33.749, -84.388), "grid:33.5,-84.5")
+        self.assertEqual(server.region_for(33.60, -84.10), "grid:33.5,-84.5")
+        self.assertEqual(server.region_for(33.60, -84.00), "grid:33.5,-84.0")
+        self.assertEqual(server.region_for(41.8781, -87.6298), "grid:41.5,-88.0")
+        self.assertEqual(server.region_for(34.0522, -118.2437), "grid:34.0,-118.5")
 
     def test_dmv_does_not_touch_ny_cache(self):
         stamp = 50.0
@@ -256,7 +283,7 @@ class TrafficRegionTests(unittest.TestCase):
         self.assertEqual(feed, "dmv")
         self.assertEqual(
             [row["road"] for row in rows],
-            ["I-95 OUTER LOOP", "Georgia Ave", "I-495"],
+            ["I-95 OUTER LOOP", "Local Name Without Marker", "I-495"],
         )
         self.assertEqual(rows[0]["description"], "Crash Right lane blocked")
         self.assertEqual(rows[1]["description"], "Disabled vehicle Shoulder")
@@ -448,6 +475,17 @@ class TrafficRegionTests(unittest.TestCase):
         self.assertLessEqual(len(long_row["road"]), 120)
         self.assertLessEqual(len(long_row["description"]), 220)
         self.assertTrue(long_row["description"].startswith("Crash "))
+
+    def test_chart_road_cuts_between(self):
+        road = server.chart_road(
+            "Planned Closure @ MD 191 EAST/WEST BETWEEN HOWELL RD AND MAPLE",
+            "Fallback Name",
+        )
+        self.assertEqual(road, "MD 191 EAST/WEST")
+        plain = server.chart_road("Closure @ US 1", "Fallback Name")
+        self.assertEqual(plain, "US 1")
+        named = server.chart_road("Closure on the beltway", "I-495")
+        self.assertEqual(named, "I-495")
 
     def test_tomtom_maps_point_and_line(self):
         now = datetime.now(timezone.utc)
@@ -755,6 +793,102 @@ class TrafficRegionTests(unittest.TestCase):
         self.assertTrue(available)
         self.assertEqual([item["road"] for item in got], ["Kept"])
 
+    def test_grid_without_key_does_not_call(self):
+        self.assertNotIn("SLATE_TOMTOM_KEY", os.environ)
+        rows, available, feed = server.traffic_incidents_for(33.749, -84.388)
+        self.assertEqual((rows, available, feed), ([], False, ""))
+        self.urlopen_mock.assert_not_called()
+        payload = server.traffic_payload((33.749, -84.388))
+        self.assertFalse(payload["incidentsAvailable"])
+        self.assertNotIn("sources", payload)
+        self.assertNotIn("tomtomCredit", payload)
+        self.assertNotIn("feed", payload)
+
+    def test_grid_cell_is_cached_and_isolated(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        calls = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            if "incidentDetails" in url:
+                bbox = parse_qs(urlsplit(url).query)["bbox"][0]
+                calls.append(bbox)
+                west, south, east, north = [float(part) for part in bbox.split(",")]
+                return JsonResponse(tomtom_point_body((south + north) / 2, (west + east) / 2))
+            if "caption.json" in url:
+                return JsonResponse('{"copyrightsCaption":"©TomTom"}')
+            raise urllib.error.URLError("unexpected")
+
+        with mock.patch.object(server, "urlopen", fake_open):
+            first, ok1, feed1 = server.traffic_incidents_for(33.749, -84.388)
+            second, ok2, feed2 = server.traffic_incidents_for(33.60, -84.10)
+            third, ok3, feed3 = server.traffic_incidents_for(33.60, -84.00)
+            payload = server.traffic_payload((33.749, -84.388))
+        self.assertEqual(calls, ["-84.5,33.5,-84.0,34.0", "-84.0,33.5,-83.5,34.0"])
+        self.assertNotIn("33.749", "".join(calls))
+        self.assertTrue(ok1 and ok2 and ok3)
+        self.assertEqual(feed1, "grid:33.5,-84.5")
+        self.assertEqual(feed2, feed1)
+        self.assertEqual(feed3, "grid:33.5,-84.0")
+        self.assertEqual(first[0]["road"], "I-75")
+        self.assertEqual(first[0]["feed"], "tomtom")
+        self.assertEqual(second[0]["road"], "I-75")
+        self.assertEqual(third[0]["road"], "I-75")
+        self.assertEqual(set(server.TRAFFIC_CACHE), {"grid:33.5,-84.5", "grid:33.5,-84.0"})
+        self.assertNotIn("dmv", server.TRAFFIC_CACHE)
+        self.assertEqual(payload["sources"], ["tomtom"])
+        self.assertEqual(payload["tomtomCredit"], "©TomTom")
+        self.assertEqual(payload["feed"], "grid:33.5,-84.5")
+        self.assertNotIn("SLATEKEYENV1234", json.dumps(payload))
+
+    def test_grid_drops_points_outside_the_cell(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        seen = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            seen.append(url)
+            if "incidentDetails" in url:
+                return JsonResponse(tomtom_body())
+            raise urllib.error.URLError("unexpected")
+
+        with mock.patch.object(server, "urlopen", fake_open):
+            payload = server.traffic_payload((33.749, -84.388))
+        self.assertEqual(payload["incidents"], [])
+        self.assertTrue(payload["incidentsAvailable"])
+        self.assertEqual(payload["feed"], "grid:33.5,-84.5")
+        self.assertNotIn("sources", payload)
+        self.assertNotIn("tomtomCredit", payload)
+        self.assertFalse(any("caption.json" in url for url in seen))
+
+    def test_grid_shares_the_daily_cap(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        calls = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            if "incidentDetails" in url:
+                calls.append(parse_qs(urlsplit(url).query)["bbox"][0])
+                return JsonResponse(tomtom_body())
+            if url in (server.CHART_EVENTS_URL, server.CHART_CLOSURES_URL):
+                return JsonResponse('{"success": true, "data": []}')
+            raise urllib.error.URLError("unexpected")
+
+        moment = 50000.0
+        with mock.patch.object(server, "tomtom_utc_day", return_value="2026-11-05"):
+            with mock.patch.object(server, "urlopen", fake_open):
+                with mock.patch.object(server.time, "monotonic", return_value=moment):
+                    server.traffic_incidents_for(33.749, -84.388)
+                    server.traffic_incidents_for(DC_LAT, DC_LON)
+                self.assertEqual(server.TOMTOM_QUOTA["count"], 2)
+                self.assertEqual(calls, ["-84.5,33.5,-84.0,34.0", "-77.60,38.60,-76.70,39.35"])
+                server.TOMTOM_QUOTA["count"] = server.TOMTOM_DAILY_CAP
+                blocked = moment + server.TOMTOM_CACHE_TTL + 5
+                with mock.patch.object(server.time, "monotonic", return_value=blocked):
+                    rows, available, feed = server.traffic_incidents_for(34.0522, -118.2437)
+                self.assertEqual(calls, ["-84.5,33.5,-84.0,34.0", "-77.60,38.60,-76.70,39.35"])
+                self.assertEqual((rows, available, feed), ([], False, ""))
+
 
 class TrafficDocsTests(unittest.TestCase):
     def test_readme_links_the_city_guide(self):
@@ -764,6 +898,9 @@ class TrafficDocsTests(unittest.TestCase):
         self.assertTrue(guide_path.is_file())
         self.assertIn("docs/add-your-city.md", readme)
         self.assertIn("`tomtom.local`", readme)
+        self.assertIn("grid:33.5,-84.5", guide)
+        self.assertNotIn("flow tile", readme.lower())
+        self.assertNotIn("flow tile", guide.lower())
         self.assertNotIn("Queens", readme)
         self.assertNotIn("Queens", guide)
 

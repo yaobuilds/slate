@@ -54,7 +54,7 @@ The PIN over HTTP is a convenience lock, not strong security.
 - **Dashboard:** guest mode on every load. **Now / Next** and **Upcoming** come from Google Calendar when it is connected. **G** or **Show all** reveals real titles.
 - **Calendar:** Today, Week, and Month from the same calendar.
 - **Weather:** seven days, hourly detail, a today rain chart, and recent radar fetched by the server. Radar plays from oldest to newest, then repeats. Weather uses [Open-Meteo](https://open-meteo.com/) and needs no key.
-- **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents appear when a public feed covers that area.
+- **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents come from the built-in feeds, or from TomTom when that key is set.
 - **Gallery:** photos you upload. They stay in `gallery.local/`.
 - **Keel:** a small arrow-key game.
 - **Wi-Fi / LAN:** devices seen from the host, linked from the Dashboard footer.
@@ -72,7 +72,7 @@ python3 server.py
 
 You can set `SLATE_CARTO_KEY` instead of the file. The key stays on this computer. The page asks Slate for tiles, so the key is not sent to the browser. Without a key, the page still centers on the detected place. The streets stay blank until the key is there.
 
-Use your own CARTO key. For incidents outside the built-in feeds, use your own TomTom key too. Do not share either key, and do not commit them.
+Use your own CARTO key. With a TomTom key, the incident list works across the country. New York still uses the 511 feeds, and the DC area still adds Maryland CHART. Those two need no key. Do not share either key, and do not commit them.
 
 Set `SLATE_TOMTOM_KEY`, or save the key as the only line of `tomtom.local` and start Slate again:
 
@@ -82,7 +82,7 @@ printf '%s\n' 'paste-the-key-here' > tomtom.local
 python3 server.py
 ```
 
-When both are set, `SLATE_TOMTOM_KEY` is the one Slate uses. [Add a traffic region](docs/add-your-city.md) explains how to cover another city.
+When both are set, `SLATE_TOMTOM_KEY` is the one Slate uses. [Add a traffic region](docs/add-your-city.md) is for a keyless city or state feed. The grid already covers the rest of the country.
 
 ## Wi-Fi remote
 

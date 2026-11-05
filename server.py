@@ -1299,17 +1299,43 @@ def in_dmv_bounds(lat: float, lon: float) -> bool:
     return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
 
 
+def snap_half_degree(value: float) -> float:
+    """Lower edge of the 0.5 degree cell that holds this number."""
+    return math.floor(float(value) * 2.0) / 2.0
+
+
+def grid_region(lat: float, lon: float) -> str:
+    """Cache key for one 0.5 degree cell. The exact place is not in the key."""
+    return f"grid:{snap_half_degree(lat):.1f},{snap_half_degree(lon):.1f}"
+
+
+def grid_bounds(lat: float, lon: float) -> tuple[float, float, float, float]:
+    """Inclusive min lat, max lat, min lon, max lon for that cell."""
+    south = snap_half_degree(lat)
+    west = snap_half_degree(lon)
+    return south, south + 0.5, west, west + 0.5
+
+
+def grid_bbox(lat: float, lon: float) -> str:
+    """TomTom bbox for the cell: minLon,minLat,maxLon,maxLat."""
+    south, north, west, east = grid_bounds(lat, lon)
+    return f"{west:.1f},{south:.1f},{east:.1f},{north:.1f}"
+
+
 def region_for(lat: float, lon: float) -> str:
-    """Return dmv inside the DC and nearby box, otherwise ny."""
+    """dmv in the DC box, ny in the New York rectangle, otherwise a 0.5 degree cell."""
     if isinstance(lat, bool) or isinstance(lon, bool):
         return "ny"
     if not isinstance(lat, (int, float)) or not isinstance(lon, (int, float)):
         return "ny"
     if not math.isfinite(lat) or not math.isfinite(lon):
         return "ny"
-    if in_dmv_bounds(float(lat), float(lon)):
+    lat_f, lon_f = float(lat), float(lon)
+    if in_dmv_bounds(lat_f, lon_f):
         return "dmv"
-    return "ny"
+    if in_new_york_state(lat_f, lon_f):
+        return "ny"
+    return grid_region(lat_f, lon_f)
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -1612,12 +1638,11 @@ def chart_road(description, name) -> str:
         slice_ = description.split("@ ", 1)[1]
         upper = slice_.upper()
         cut = None
-        for token in (" AT", " PRIOR TO", " PAST"):
+        for token in (" AT", " PRIOR TO", " PAST", " BETWEEN", " FROM", " NEAR"):
             at = upper.find(token)
             if at >= 0 and (cut is None or at < cut):
                 cut = at
-        if cut is not None:
-            road = slice_[:cut]
+        road = slice_[:cut] if cut is not None else slice_
     if not isinstance(road, str) or not road.strip():
         road = name if isinstance(name, str) else ""
     road = clip_text(road, 120)
@@ -1861,12 +1886,12 @@ def tomtom_bbox() -> str:
     return f"{DMV_MIN_LON:.2f},{DMV_MIN_LAT:.2f},{DMV_MAX_LON:.2f},{DMV_MAX_LAT:.2f}"
 
 
-def tomtom_incident_url(key: str) -> str:
+def tomtom_incident_url(key: str, bbox: str | None = None) -> str:
     """Incident Details URL. The key stays in this process and is not logged."""
     query = urlencode(
         {
             "key": key,
-            "bbox": tomtom_bbox(),
+            "bbox": bbox or tomtom_bbox(),
             "fields": TOMTOM_FIELDS,
             "language": "en-US",
             "timeValidityFilter": "present",
@@ -1904,10 +1929,10 @@ def tomtom_over_cap() -> bool:
         return _tomtom_at_cap()
 
 
-def tomtom_part_fresh(now: float) -> bool:
-    """True when the TomTom part is still inside its five-minute window."""
+def tomtom_part_fresh(now: float, region: str = "dmv") -> bool:
+    """True when this region's TomTom part is still inside its five-minute window."""
     with TRAFFIC_LOCK:
-        part = traffic_part("dmv", "tomtom")
+        part = traffic_part(region, "tomtom")
         if part is None:
             return False
         try:
@@ -1916,10 +1941,10 @@ def tomtom_part_fresh(now: float) -> bool:
             return False
 
 
-def note_tomtom_failure(paused: bool) -> None:
+def note_tomtom_failure(paused: bool, region: str = "dmv") -> None:
     """One line a minute when a failed TomTom read leaves the previous list in place."""
     with TRAFFIC_LOCK:
-        part = traffic_part("dmv", "tomtom")
+        part = traffic_part(region, "tomtom")
         kept = isinstance(part, dict) and isinstance(part.get("feed"), str) and bool(part.get("feed"))
     if not kept:
         return
@@ -1948,15 +1973,22 @@ def tomtom_coord(pair) -> tuple[float, float] | None:
     return lat_f, lon_f
 
 
-def tomtom_lat_lon(geometry) -> tuple[float, float] | None:
-    """A point inside the DMV box. A line uses its middle, then the first vertex inside."""
+def tomtom_lat_lon(geometry, bounds=None) -> tuple[float, float] | None:
+    """A point inside the box. A line uses its middle, then the first vertex inside."""
+    box = DMV_BOUNDS if bounds is None else bounds
+    min_lat, max_lat, min_lon, max_lon = box
+
+    def inside(point) -> bool:
+        lat, lon = point
+        return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
+
     if not isinstance(geometry, dict):
         return None
     kind = geometry.get("type")
     coords = geometry.get("coordinates")
     if kind == "Point":
         point = tomtom_coord(coords)
-        if point and in_dmv_bounds(point[0], point[1]):
+        if point and inside(point):
             return point
         return None
     if kind != "LineString" or not isinstance(coords, list):
@@ -1965,11 +1997,11 @@ def tomtom_lat_lon(geometry) -> tuple[float, float] | None:
         mid = line_midpoint(coords)
     except (TypeError, ValueError):
         mid = None
-    if mid and in_dmv_bounds(mid[0], mid[1]):
+    if mid and inside(mid):
         return mid
     for vertex in coords:
         point = tomtom_coord(vertex)
-        if point and in_dmv_bounds(point[0], point[1]):
+        if point and inside(point):
             return point
     return None
 
@@ -2006,11 +2038,11 @@ def tomtom_description(props: dict) -> str:
     return description or "Incident"
 
 
-def normalize_tomtom_incident(feature: dict) -> dict | None:
+def normalize_tomtom_incident(feature: dict, bounds=None) -> dict | None:
     """One TomTom feature, or None when it has no point inside the box or no time."""
     if not isinstance(feature, dict):
         return None
-    point = tomtom_lat_lon(feature.get("geometry"))
+    point = tomtom_lat_lon(feature.get("geometry"), bounds)
     if point is None:
         return None
     props = feature.get("properties")
@@ -2031,7 +2063,7 @@ def normalize_tomtom_incident(feature: dict) -> dict | None:
     }
 
 
-def parse_tomtom_body(body: str, content_type: str) -> list | None:
+def parse_tomtom_body(body: str, content_type: str, bounds=None) -> list | None:
     """Rows from one Incident Details body. None means this attempt failed."""
     if "json" not in content_type and not body.lstrip().startswith("{"):
         return None
@@ -2052,17 +2084,17 @@ def parse_tomtom_body(body: str, content_type: str) -> list | None:
             if ident in seen:
                 continue
             seen.add(ident)
-        row = normalize_tomtom_incident(feature)
+        row = normalize_tomtom_incident(feature, bounds)
         if row:
             rows.append(row)
     return rows
 
 
-def load_tomtom_part(key: str) -> tuple[list | None, bool]:
+def load_tomtom_part(key: str, bbox: str | None = None, bounds=None) -> tuple[list | None, bool]:
     """Fetch Incident Details. None keeps the previous list. The bool is a 429 pause."""
     try:
         body, content_type = fetch_http_text(
-            tomtom_incident_url(key),
+            tomtom_incident_url(key, bbox),
             accept="application/json",
             timeout=TOMTOM_TIMEOUT_S,
         )
@@ -2073,19 +2105,19 @@ def load_tomtom_part(key: str) -> tuple[list | None, bool]:
         return None, False
     except (OSError, ValueError):
         return None, False
-    return parse_tomtom_body(body, content_type), False
+    return parse_tomtom_body(body, content_type, bounds), False
 
 
-def ensure_tomtom_part(now: float) -> None:
+def ensure_tomtom_part(now: float, region: str = "dmv", bbox: str | None = None, bounds=None) -> None:
     """Fill a stale TomTom part. A second caller waits and then reuses the result."""
     if not tomtom_key():
         return
-    if tomtom_part_fresh(now):
+    if tomtom_part_fresh(now, region):
         return
     with TOMTOM_FETCH_LOCK:
         if not tomtom_key():
             return
-        if tomtom_part_fresh(now):
+        if tomtom_part_fresh(now, region):
             return
         if now < float(TOMTOM_PAUSE.get("until") or 0.0) or _tomtom_at_cap():
             return
@@ -2093,12 +2125,12 @@ def ensure_tomtom_part(now: float) -> None:
         if not key:
             return
         _tomtom_count_attempt()
-        rows, paused = load_tomtom_part(key)
+        rows, paused = load_tomtom_part(key, bbox, bounds)
         if rows is None:
-            note_tomtom_failure(paused)
+            note_tomtom_failure(paused, region)
             return
         with TRAFFIC_LOCK:
-            store_traffic_part("dmv", "tomtom", rows, "tomtom", now)
+            store_traffic_part(region, "tomtom", rows, "tomtom", now)
 
 
 def load_tomtom_caption(key: str) -> str:
@@ -2204,9 +2236,9 @@ def merge_dmv_incidents(events: list, closures: list, tomtom: list) -> list:
     return merged
 
 
-def read_tomtom_rows(now: float, over_cap: bool) -> tuple[list, bool]:
+def read_tomtom_rows(now: float, over_cap: bool, region: str = "dmv") -> tuple[list, bool]:
     """A copy of the TomTom part. Past the daily cap, rows older than 30 minutes are left out."""
-    part = traffic_part("dmv", "tomtom")
+    part = traffic_part(region, "tomtom")
     if not isinstance(part, dict) or not isinstance(part.get("feed"), str) or not part.get("feed"):
         return [], False
     if over_cap:
@@ -2251,11 +2283,32 @@ def traffic_dmv_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str
     return picked, True, "dmv"
 
 
+def traffic_grid_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str]:
+    """TomTom incidents for one 0.5 degree cell. No key means an empty list and no request."""
+    if not tomtom_key():
+        return [], False, ""
+    region = grid_region(lat, lon)
+    now = time.monotonic()
+    try:
+        ensure_tomtom_part(now, region, grid_bbox(lat, lon), grid_bounds(lat, lon))
+    except Exception:
+        note_tomtom_failure(False, region)
+    over_cap = tomtom_over_cap()
+    with TRAFFIC_LOCK:
+        rows, ok = read_tomtom_rows(now, over_cap, region)
+    if not ok:
+        return [], False, ""
+    return pick_dmv_rows(rows, lat, lon), True, region
+
+
 def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str]:
-    """Incidents for one place. ny and dmv never share a cache entry."""
-    if region_for(lat, lon) == "dmv":
+    """Incidents for one place. Each region keeps its own cache entry."""
+    region = region_for(lat, lon)
+    if region == "dmv":
         return traffic_dmv_incidents(lat, lon)
-    return traffic_ny_incidents(lat, lon)
+    if region == "ny":
+        return traffic_ny_incidents(lat, lon)
+    return traffic_grid_incidents(lat, lon)
 
 
 def traffic_speed_bbox(lat: float, lon: float, radius_km: float = 32.0) -> tuple[float, float, float, float]:
@@ -2728,7 +2781,8 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     }
     if feed:
         body["feed"] = feed
-    if region_for(lat, lon) == "dmv":
+    region = region_for(lat, lon)
+    if region == "dmv":
         sources = [
             name
             for name in ("md-chart", "tomtom")
@@ -2737,6 +2791,10 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
         if sources:
             body["sources"] = sources
         if "tomtom" in sources:
+            body["tomtomCredit"] = tomtom_credit_text()
+    elif region.startswith("grid:"):
+        if any(isinstance(row, dict) and row.get("feed") == "tomtom" for row in incidents):
+            body["sources"] = ["tomtom"]
             body["tomtomCredit"] = tomtom_credit_text()
     return body
 

@@ -65,6 +65,12 @@ printf '%s\n' 'paste-the-key-here' > tomtom.local
 
 Start Slate again after saving it. The server calls TomTom. The page never receives the key. Do not share the key, and do not commit the file.
 
+## Colored roads
+
+New York City speed lines need no key. They color roads in the city on their own clock.
+
+With a TomTom key, Slate also fetches flow tiles for the map on screen. Those tiles color roads outside New York City. While a city speed line is on screen, the flow tiles stay off, so a road is not colored twice. Panning until the city lines leave the map shows the tiles for the area around the city. The footer names TomTom when a flow tile is on screen, even if the incident list is empty. The tiles use their own counter: about 4 minutes, and at most 4,000 tiles per UTC day.
+
 ## Clocks
 
 Each feed has its own timer, kept in memory. A fresh read waits until the timer ends. A failed read keeps the previous list.
@@ -74,7 +80,8 @@ Each feed has its own timer, kept in memory. A fresh read waits until the timer 
 | New York incidents | Every 3 minutes |
 | Maryland CHART | Every 4 minutes |
 | TomTom incidents | Every 5 minutes, and at most 80 calls per UTC day, shared by the DMV and the grid |
-| TomTom caption | Once a day, and only when a TomTom row is shown |
+| TomTom flow tiles | Every 4 minutes, and at most 4,000 tiles per UTC day |
+| TomTom caption | Once a day, and only when a TomTom row or a flow tile is shown |
 | New York speeds | Every 4 minutes |
 
 ## When the footer names a feed
@@ -83,4 +90,4 @@ The footer always credits OpenStreetMap and CARTO for the tiles.
 
 It adds Maryland CHART when a shown row has feed `md-chart`, with a link to [chart.maryland.gov](https://chart.maryland.gov/). It adds the TomTom line when a shown row has feed `tomtom`. Those words come from TomTom's caption, or `© TomTom` when the caption is missing. The link is TomTom's [third-party product terms](https://www.tomtom.com/en_gb/thirdpartyproductterms/).
 
-A New York response has no `sources` list, so the footer stays OpenStreetMap and CARTO. A grid response adds the TomTom line only when a shown row has feed `tomtom`. A feed that is configured but did not contribute a shown row is left off the line.
+A New York response has no `sources` list, so the footer stays OpenStreetMap and CARTO until a flow tile is on screen. A grid response adds the TomTom line only when a shown row has feed `tomtom`. A flow tile on screen adds that same line even when no incident row was shown. A feed that is configured but did not contribute a shown row, and is not on screen as a flow tile, is left off the line.

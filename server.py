@@ -62,6 +62,7 @@ TOMTOM_KEY_PATH = ROOT / "tomtom.local"
 CARTO_KEY_RE = re.compile(r"^[A-Za-z0-9._~-]{8,200}$")
 CARTO_TILE_HOST = re.compile(r"^(?:[a-d]\.)?basemaps\.cartocdn\.com$")
 MAP_TILE_RE = re.compile(r"^/map/(\d{1,2})/(\d{1,7})/(\d{1,7})\.png$")
+FLOW_TILE_RE = re.compile(r"^/flow/(\d{1,2})/(\d{1,7})/(\d{1,7})\.png$")
 FAIL_LIMIT = 5
 LOCKOUT_S = 60
 COOKIE_MAX_AGE = 7 * 24 * 60 * 60
@@ -193,6 +194,15 @@ TILE_LOCK = threading.Lock()
 TILE_CACHE = {}
 TILE_CACHE_TTL = 24 * 60 * 60
 TILE_CACHE_MAX = 240
+# Flow tiles are a separate cache and a separate daily counter from incidents.
+FLOW_FETCH_LOCK = threading.Lock()
+FLOW_TILE_LOCK = threading.Lock()
+FLOW_TILE_CACHE = {}
+FLOW_TILE_TTL = 240
+FLOW_TILE_MAX = 240
+FLOW_DAILY_CAP = 4000
+FLOW_QUOTA = {"day": "", "count": 0}
+FLOW_PAUSE = {"until": 0.0}
 OAUTH_LOCK = threading.Lock()
 OAUTH_PENDING: dict[str, float] = {}
 GOOGLE_CALENDAR_SCOPE = "https://www.googleapis.com/auth/calendar.readonly"
@@ -260,6 +270,10 @@ TOMTOM_NEAR_KM = 0.40
 TOMTOM_NEAR_CLOSE_KM = 0.15
 TOMTOM_NEAR_S = 30 * 60
 TOMTOM_CREDIT_FALLBACK = "© TomTom"
+# Dark-basemap Raster Flow style. One live tile over DC confirmed a transparent PNG.
+FLOW_STYLE = "relative0-dark"
+FLOW_TILE_HOST = re.compile(r"^api\.tomtom\.com$")
+FLOW_TILE_URL = "https://api.tomtom.com/traffic/map/4/tile/flow"
 TOMTOM_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 GEORSS_NS = {"g": "http://www.georss.org/georss"}
 PLACEHOLDER = {
@@ -2735,6 +2749,121 @@ def fetch_carto_tile(z: int, x: int, y: int) -> bytes | None:
     return body
 
 
+def parse_flow_tile(path: str) -> tuple[int, int, int] | None:
+    """z, x, and y for a flow tile, using the same limits as a street tile."""
+    if not FLOW_TILE_RE.fullmatch(path or ""):
+        return None
+    return parse_map_tile("/map/" + path[len("/flow/") :])
+
+
+def flow_tile_url(key: str, z: int, x: int, y: int) -> str:
+    """Raster Flow URL. The key stays in this process and is not logged."""
+    query = urlencode({"tileSize": "256", "key": key})
+    return f"{FLOW_TILE_URL}/{FLOW_STYLE}/{z}/{x}/{y}.png?{query}"
+
+
+def _flow_at_cap() -> bool:
+    """True when today's flow-tile attempts have reached the cap. Caller holds FLOW_FETCH_LOCK."""
+    day = tomtom_utc_day()
+    if FLOW_QUOTA["day"] != day:
+        FLOW_QUOTA["day"] = day
+        FLOW_QUOTA["count"] = 0
+    return FLOW_QUOTA["count"] >= FLOW_DAILY_CAP
+
+
+def _flow_count_attempt() -> None:
+    """Count a flow tile that is about to be sent. Caller holds FLOW_FETCH_LOCK."""
+    day = tomtom_utc_day()
+    if FLOW_QUOTA["day"] != day:
+        FLOW_QUOTA["day"] = day
+        FLOW_QUOTA["count"] = 0
+    FLOW_QUOTA["count"] += 1
+
+
+def read_flow_tile(z: int, x: int, y: int, now: float, max_age: float | None) -> bytes | None:
+    """Cached PNG no older than max_age. None for max_age keeps a tile of any age."""
+    with FLOW_TILE_LOCK:
+        item = FLOW_TILE_CACHE.get((z, x, y))
+        if not isinstance(item, tuple) or len(item) != 2:
+            return None
+        at, body = item
+        if not isinstance(body, bytes):
+            return None
+        if max_age is None:
+            return body
+        try:
+            age = now - float(at)
+        except (TypeError, ValueError):
+            return None
+        if age >= max_age:
+            return None
+        return body
+
+
+def store_flow_tile(z: int, x: int, y: int, now: float, body: bytes) -> None:
+    """Keep one tile. Drop the oldest when the cache is full."""
+    with FLOW_TILE_LOCK:
+        key = (z, x, y)
+        if key not in FLOW_TILE_CACHE and len(FLOW_TILE_CACHE) >= FLOW_TILE_MAX:
+            oldest = min(FLOW_TILE_CACHE, key=lambda item: FLOW_TILE_CACHE[item][0])
+            FLOW_TILE_CACHE.pop(oldest, None)
+        FLOW_TILE_CACHE[key] = (now, body)
+
+
+def load_flow_tile(key: str, z: int, x: int, y: int) -> tuple[bytes | None, bool]:
+    """Fetch one Raster Flow tile. None keeps the previous copy. The bool is a 429 pause."""
+    request = Request(
+        flow_tile_url(key, z, x, y),
+        headers={"User-Agent": NOMINATIM_UA, "Accept": "image/png"},
+    )
+    try:
+        with urlopen(request, timeout=TOMTOM_TIMEOUT_S) as response:
+            host = (urlsplit(response.geturl()).hostname or "").lower()
+            if not FLOW_TILE_HOST.fullmatch(host):
+                return None, False
+            body = response.read(512 * 1024)
+            if len(body) >= 512 * 1024 or not body.startswith(b"\x89PNG"):
+                return None, False
+    except HTTPError as exc:
+        if getattr(exc, "code", None) == 429:
+            return None, True
+        return None, False
+    except (OSError, ValueError):
+        return None, False
+    return body, False
+
+
+def fetch_flow_tile(z: int, x: int, y: int) -> bytes | None:
+    """One flow tile from the cache or TomTom. A pause or the daily cap keeps a saved tile."""
+    if not tomtom_key():
+        return None
+    now = time.monotonic()
+    fresh = read_flow_tile(z, x, y, now, FLOW_TILE_TTL)
+    if fresh is not None:
+        return fresh
+    with FLOW_FETCH_LOCK:
+        now = time.monotonic()
+        fresh = read_flow_tile(z, x, y, now, FLOW_TILE_TTL)
+        if fresh is not None:
+            return fresh
+        capped = _flow_at_cap()
+        paused = now < float(FLOW_PAUSE.get("until") or 0.0)
+        if paused or capped:
+            limit = TOMTOM_GRACE_S if capped else None
+            return read_flow_tile(z, x, y, now, limit)
+        key = tomtom_key()
+        if not key:
+            return None
+        _flow_count_attempt()
+        body, pause = load_flow_tile(key, z, x, y)
+        if pause:
+            FLOW_PAUSE["until"] = now + TOMTOM_PAUSE_S
+        if body is None:
+            return read_flow_tile(z, x, y, now, None)
+        store_flow_tile(z, x, y, now, body)
+        return body
+
+
 def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     updated = datetime.now(timezone.utc).isoformat()
     settings_place = slate_settings_place()
@@ -2753,6 +2882,7 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
         return {
             "hasPlace": False,
             "mapReady": bool(carto_key()),
+            "flowReady": bool(tomtom_key()),
             "incidentsAvailable": False,
             "incidents": [],
             "speedsAvailable": False,
@@ -2767,6 +2897,7 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     body = {
         "hasPlace": True,
         "mapReady": bool(carto_key()),
+        "flowReady": bool(tomtom_key()),
         "place": {
             "lat": lat,
             "lon": lon,
@@ -2796,6 +2927,9 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
         if any(isinstance(row, dict) and row.get("feed") == "tomtom" for row in incidents):
             body["sources"] = ["tomtom"]
             body["tomtomCredit"] = tomtom_credit_text()
+    # Empty speed lines mean the flow layer can draw, so the caption is due even with no incidents.
+    if tomtom_key() and not segments and "tomtomCredit" not in body:
+        body["tomtomCredit"] = tomtom_credit_text()
     return body
 
 
@@ -4011,6 +4145,21 @@ class Handler(SimpleHTTPRequestHandler):
             return
         self.send_bytes(200, body, "image/png", cache_control="private, max-age=86400")
 
+    def serve_flow_tile(self, path: str):
+        """Proxy one Raster Flow tile. The TomTom key stays on this computer."""
+        coords = parse_flow_tile(path)
+        if coords is None:
+            self.reject()
+            return
+        if not tomtom_key():
+            self.send_json(503, {"error": "key"})
+            return
+        body = fetch_flow_tile(*coords)
+        if not body:
+            self.send_json(502, {"error": "tile"})
+            return
+        self.send_bytes(200, body, "image/png", cache_control="private, max-age=180")
+
     def serve_radar(self):
         params = parse_qs(urlsplit(self.path).query)
         zoom = params.get("zoom", ["near"])[0]
@@ -4541,6 +4690,9 @@ class Handler(SimpleHTTPRequestHandler):
             return
         if MAP_TILE_RE.fullmatch(path or ""):
             self.serve_map_tile(path)
+            return
+        if FLOW_TILE_RE.fullmatch(path or ""):
+            self.serve_flow_tile(path)
             return
         if path in ROUTE_REDIRECTS:
             self.redirect(ROUTE_REDIRECTS[path])

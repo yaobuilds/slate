@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Traffic region and cache checks. No live network."""
 
+import http.client
 import io
 import json
 import os
 import socket
 import sys
+import threading
+import time
 import unittest
 import urllib.error
 from datetime import datetime, timedelta, timezone
@@ -734,7 +737,9 @@ class TrafficRegionTests(unittest.TestCase):
                     expired = server.traffic_payload((DC_LAT, DC_LON))
                 self.assertEqual(calls, ["incident"] * server.TOMTOM_DAILY_CAP)
                 self.assertNotIn("tomtom", expired.get("sources", []))
-                self.assertNotIn("tomtomCredit", expired)
+                self.assertEqual(expired["segments"], [])
+                self.assertEqual(expired["tomtomCredit"], "©TomTom")
+                self.assertTrue(expired["flowReady"])
                 self.assertFalse(any(row.get("feed") == "tomtom" for row in expired["incidents"]))
 
     def test_tomtom_failure_keeps_part(self):
@@ -858,8 +863,10 @@ class TrafficRegionTests(unittest.TestCase):
         self.assertTrue(payload["incidentsAvailable"])
         self.assertEqual(payload["feed"], "grid:33.5,-84.5")
         self.assertNotIn("sources", payload)
-        self.assertNotIn("tomtomCredit", payload)
-        self.assertFalse(any("caption.json" in url for url in seen))
+        self.assertEqual(payload["segments"], [])
+        self.assertTrue(payload["flowReady"])
+        self.assertEqual(payload["tomtomCredit"], server.TOMTOM_CREDIT_FALLBACK)
+        self.assertNotIn("SLATEKEYENV1234", json.dumps(payload))
 
     def test_grid_shares_the_daily_cap(self):
         os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
@@ -899,10 +906,259 @@ class TrafficDocsTests(unittest.TestCase):
         self.assertIn("docs/add-your-city.md", readme)
         self.assertIn("`tomtom.local`", readme)
         self.assertIn("grid:33.5,-84.5", guide)
-        self.assertNotIn("flow tile", readme.lower())
-        self.assertNotIn("flow tile", guide.lower())
+        self.assertIn("flow tile", readme.lower())
+        self.assertIn("flow tile", guide.lower())
         self.assertNotIn("Queens", readme)
         self.assertNotIn("Queens", guide)
+
+
+PNG = b"\x89PNG\r\n\x1a\nflow"
+
+
+class FlowTileTests(unittest.TestCase):
+    def setUp(self):
+        self._saved_cache = dict(server.FLOW_TILE_CACHE)
+        self._saved_quota = (server.FLOW_QUOTA["day"], server.FLOW_QUOTA["count"])
+        self._saved_pause = server.FLOW_PAUSE["until"]
+        self._saved_incidents = (server.TOMTOM_QUOTA["day"], server.TOMTOM_QUOTA["count"])
+        self._saved_caption = (server.TOMTOM_CAPTION["at"], server.TOMTOM_CAPTION["text"])
+        self._saved_tomtom_env = os.environ.pop("SLATE_TOMTOM_KEY", None)
+        server.FLOW_TILE_CACHE.clear()
+        server.FLOW_QUOTA["day"] = ""
+        server.FLOW_QUOTA["count"] = 0
+        server.FLOW_PAUSE["until"] = 0.0
+        server.TOMTOM_CAPTION["at"] = 0.0
+        server.TOMTOM_CAPTION["text"] = ""
+        self.logs = []
+        self._log = server.Handler.log_message
+
+        def capture(handler, fmt, *args):
+            self.logs.append(fmt % args)
+
+        server.Handler.log_message = capture
+        self.httpd = server.Server(("127.0.0.1", 0), server.Handler)
+        self.thread = threading.Thread(target=self.httpd.serve_forever, daemon=True)
+        self.thread.start()
+
+    def tearDown(self):
+        self.httpd.shutdown()
+        self.httpd.server_close()
+        server.Handler.log_message = self._log
+        server.FLOW_TILE_CACHE.clear()
+        server.FLOW_TILE_CACHE.update(self._saved_cache)
+        server.FLOW_QUOTA["day"], server.FLOW_QUOTA["count"] = self._saved_quota
+        server.FLOW_PAUSE["until"] = self._saved_pause
+        server.TOMTOM_QUOTA["day"], server.TOMTOM_QUOTA["count"] = self._saved_incidents
+        server.TOMTOM_CAPTION["at"], server.TOMTOM_CAPTION["text"] = self._saved_caption
+        if self._saved_tomtom_env is None:
+            os.environ.pop("SLATE_TOMTOM_KEY", None)
+        else:
+            os.environ["SLATE_TOMTOM_KEY"] = self._saved_tomtom_env
+
+    def _get(self, path):
+        conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+        try:
+            conn.request("GET", path)
+            resp = conn.getresponse()
+            return resp.status, resp.read(), {k.lower(): v for k, v in resp.getheaders()}
+        finally:
+            conn.close()
+
+    def test_flow_ready_follows_the_key(self):
+        with mock.patch.object(server, "slate_settings_place", return_value=None):
+            quiet = server.traffic_payload()
+        self.assertFalse(quiet["flowReady"])
+        self.assertNotIn("tomtomCredit", quiet)
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        with mock.patch.object(server, "slate_settings_place", return_value=None):
+            ready = server.traffic_payload()
+        self.assertTrue(ready["flowReady"])
+        self.assertNotIn("tomtomCredit", ready)
+
+    def test_flow_credit_when_speed_lines_are_absent(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        server.TOMTOM_CAPTION["at"] = time.monotonic()
+        server.TOMTOM_CAPTION["text"] = "©TomTom"
+        with mock.patch.object(server, "traffic_incidents_for", return_value=([], False, "")):
+            payload = server.traffic_payload((DC_LAT, DC_LON))
+        self.assertTrue(payload["flowReady"])
+        self.assertEqual(payload["segments"], [])
+        self.assertEqual(payload["tomtomCredit"], "©TomTom")
+        segment = {"level": "red", "points": [[40.75, -73.99], [40.76, -73.98]]}
+        with mock.patch.object(server, "traffic_incidents_for", return_value=([], False, "")):
+            with mock.patch.object(server, "traffic_speed_segments_for", return_value=([segment], True, True)):
+                city = server.traffic_payload((NY_LAT, NY_LON))
+        self.assertTrue(city["flowReady"])
+        self.assertEqual(city["segments"], [segment])
+        self.assertNotIn("tomtomCredit", city)
+        self.assertNotIn("sources", city)
+
+    def test_flow_tile_proxies_without_leaking_the_key(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        seen = []
+
+        class Resp:
+            def __init__(self, url):
+                self._url = url
+
+            def geturl(self):
+                return self._url
+
+            def read(self, _limit):
+                return PNG
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_open(request, timeout=8):
+            seen.append((request.full_url, timeout))
+            return Resp(request.full_url)
+
+        with mock.patch.object(server, "tomtom_utc_day", return_value="2026-11-05"):
+            with mock.patch.object(server, "urlopen", fake_open):
+                status, body, headers = self._get("/flow/12/1171/1566.png?b=1")
+                again, again_body, _headers = self._get("/flow/12/1171/1566.png?b=1")
+        self.assertEqual(status, 200)
+        self.assertEqual(body, PNG)
+        self.assertEqual(again, 200)
+        self.assertEqual(again_body, PNG)
+        self.assertEqual(headers["content-type"], "image/png")
+        self.assertEqual(headers["cache-control"], "private, max-age=180")
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0][1], 8)
+        url = seen[0][0]
+        query = parse_qs(urlsplit(url).query)
+        self.assertEqual(query["key"], ["SLATEKEYENV1234"])
+        self.assertEqual(query["tileSize"], ["256"])
+        self.assertIn("/flow/relative0-dark/12/1171/1566.png", url)
+        self.assertEqual(urlsplit(url).hostname, "api.tomtom.com")
+        self.assertNotIn(b"SLATEKEYENV1234", body)
+        self.assertNotIn("SLATEKEYENV1234", " ".join(self.logs))
+        self.assertEqual(server.FLOW_QUOTA["count"], 1)
+        self.assertEqual(server.TOMTOM_QUOTA["count"], self._saved_incidents[1])
+
+    def test_flow_tile_needs_a_key_and_a_real_tile(self):
+        status, body, _headers = self._get("/flow/12/1/2.png")
+        self.assertEqual(status, 503)
+        self.assertIn("key", body.decode())
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        with mock.patch.object(server, "urlopen", side_effect=urllib.error.URLError("blocked")):
+            missing, payload, _headers = self._get("/flow/21/0/0.png")
+            wide, _wide_body, _headers = self._get("/flow/12/4096/0.png")
+            failed, failed_body, _headers = self._get("/flow/12/1/2.png")
+        self.assertEqual(missing, 404)
+        self.assertEqual(wide, 404)
+        self.assertEqual(failed, 502)
+        self.assertIn("tile", failed_body.decode())
+        self.assertNotIn("SLATEKEYENV1234", failed_body.decode())
+        self.assertNotIn("SLATEKEYENV1234", payload.decode())
+        self.assertFalse(any("api.tomtom.com" in line for line in self.logs))
+
+        class Foreign:
+            def geturl(self):
+                return "https://evil.example/tile.png"
+
+            def read(self, _limit):
+                return PNG
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        with mock.patch.object(server, "urlopen", lambda request, timeout=8: Foreign()):
+            foreign, foreign_body, _headers = self._get("/flow/12/8/8.png")
+        self.assertEqual(foreign, 502)
+        self.assertNotIn(b"SLATEKEYENV1234", foreign_body)
+        self.assertNotIn((12, 8, 8), server.FLOW_TILE_CACHE)
+
+    def test_flow_tile_cache_cap_and_pause(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        calls = []
+
+        class Resp:
+            def __init__(self, url):
+                self._url = url
+
+            def geturl(self):
+                return self._url
+
+            def read(self, _limit):
+                return PNG
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_open(request, timeout=8):
+            calls.append(request.full_url)
+            if len(calls) == 2:
+                raise urllib.error.HTTPError(
+                    "https://api.tomtom.com/traffic/map/4/tile/flow/paused.png",
+                    429,
+                    "Too Many Requests",
+                    None,
+                    None,
+                )
+            return Resp(request.full_url)
+
+        moment = 8000.0
+        with mock.patch.object(server, "tomtom_utc_day", return_value="2026-11-05"):
+            with mock.patch.object(server, "urlopen", fake_open):
+                with mock.patch.object(server.time, "monotonic", return_value=moment):
+                    status, body, _headers = self._get("/flow/12/3/4.png")
+                self.assertEqual(status, 200)
+                self.assertEqual(body, PNG)
+                self.assertEqual(len(calls), 1)
+                stale = moment + server.FLOW_TILE_TTL + 1
+                with mock.patch.object(server.time, "monotonic", return_value=stale):
+                    paused, paused_body, _headers = self._get("/flow/12/3/4.png")
+                self.assertEqual(paused, 200)
+                self.assertEqual(paused_body, PNG)
+                self.assertEqual(server.FLOW_TILE_CACHE[(12, 3, 4)][0], moment)
+                self.assertGreaterEqual(server.FLOW_PAUSE["until"], stale + server.TOMTOM_PAUSE_S)
+                with mock.patch.object(server.time, "monotonic", return_value=stale + 10):
+                    held, held_body, _headers = self._get("/flow/12/3/4.png")
+                self.assertEqual(held, 200)
+                self.assertEqual(held_body, PNG)
+                self.assertEqual(len(calls), 2)
+                server.FLOW_PAUSE["until"] = 0.0
+                server.FLOW_QUOTA["count"] = server.FLOW_DAILY_CAP
+                server.FLOW_QUOTA["day"] = "2026-11-05"
+                within = moment + 1000
+                with mock.patch.object(server.time, "monotonic", return_value=within):
+                    capped, capped_body, _headers = self._get("/flow/12/3/4.png")
+                    other, other_body, _headers = self._get("/flow/12/9/9.png")
+                self.assertEqual(capped, 200)
+                self.assertEqual(capped_body, PNG)
+                self.assertEqual(other, 502)
+                self.assertEqual(len(calls), 2)
+                expired = moment + server.TOMTOM_GRACE_S + 5
+                with mock.patch.object(server.time, "monotonic", return_value=expired):
+                    dropped, _dropped_body, _headers = self._get("/flow/12/3/4.png")
+                self.assertEqual(dropped, 502)
+                self.assertEqual(len(calls), 2)
+                self.assertIn((12, 3, 4), server.FLOW_TILE_CACHE)
+                self.assertEqual(server.TOMTOM_QUOTA["count"], self._saved_incidents[1])
+
+    def test_flow_layer_follows_the_street_tiles(self):
+        html = (ROOT / "traffic.html").read_text(encoding="utf-8")
+        css = (ROOT / "traffic.css").read_text(encoding="utf-8")
+        script = (ROOT / "traffic.js").read_text(encoding="utf-8")
+        self.assertLess(html.index('id="traffic-tiles"'), html.index('id="traffic-flow"'))
+        self.assertLess(html.index('id="traffic-flow"'), html.index('id="traffic-center"'))
+        self.assertLess(html.index('id="traffic-flow"'), html.index('id="traffic-markers"'))
+        self.assertLess(html.index('id="traffic-flow"'), html.index('id="traffic-speeds"'))
+        self.assertIn(".traffic-flow", css)
+        self.assertIn("/flow/${zoom}/${x}/${y}.png?b=${bucket}", script)
+        self.assertIn("240000", script)
+        self.assertIn("flowReady", script)
 
 
 if __name__ == "__main__":

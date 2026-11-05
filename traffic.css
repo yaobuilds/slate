@@ -195,6 +195,23 @@ html[data-slate-surface="tv"] .traffic-map {
   user-select: none;
 }
 
+.traffic-flow {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.traffic-flow img {
+  position: absolute;
+  width: 256px;
+  height: 256px;
+  display: block;
+  pointer-events: none;
+  user-select: none;
+}
+
 .traffic-center {
   position: absolute;
   width: 16px;

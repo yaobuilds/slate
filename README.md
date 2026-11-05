@@ -54,7 +54,7 @@ The PIN over HTTP is a convenience lock, not strong security.
 - **Dashboard:** guest mode on every load. **Now / Next** and **Upcoming** come from Google Calendar when it is connected. **G** or **Show all** reveals real titles.
 - **Calendar:** Today, Week, and Month from the same calendar.
 - **Weather:** seven days, hourly detail, a today rain chart, and recent radar fetched by the server. Radar plays from oldest to newest, then repeats. Weather uses [Open-Meteo](https://open-meteo.com/) and needs no key.
-- **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents come from the built-in feeds, or from TomTom when that key is set.
+- **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents come from the built-in feeds, or from TomTom when that key is set. That key also colors roads outside New York City.
 - **Gallery:** photos you upload. They stay in `gallery.local/`.
 - **Keel:** a small arrow-key game.
 - **Wi-Fi / LAN:** devices seen from the host, linked from the Dashboard footer.
@@ -82,7 +82,7 @@ printf '%s\n' 'paste-the-key-here' > tomtom.local
 python3 server.py
 ```
 
-When both are set, `SLATE_TOMTOM_KEY` is the one Slate uses. [Add a traffic region](docs/add-your-city.md) is for a keyless city or state feed. The grid already covers the rest of the country.
+When both are set, `SLATE_TOMTOM_KEY` is the one Slate uses. With that key, roads outside New York City are colored green, yellow, and red from TomTom flow tiles. New York City keeps the speed colors it already has. While those city lines are on the screen, the flow tiles stay hidden. The page asks Slate for the tiles, so the key is not sent to the browser. [Add a traffic region](docs/add-your-city.md) is for a keyless city or state feed. The grid already covers the rest of the country.
 
 ## Wi-Fi remote
 

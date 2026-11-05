@@ -18,6 +18,7 @@ const quietEl = document.getElementById("traffic-quiet");
 const bodyEl = document.getElementById("traffic-body");
 const mapEl = document.getElementById("traffic-map");
 const tilesEl = document.getElementById("traffic-tiles");
+const flowEl = document.getElementById("traffic-flow");
 const centerEl = document.getElementById("traffic-center");
 const markersEl = document.getElementById("traffic-markers");
 const speedsEl = document.getElementById("traffic-speeds");
@@ -30,8 +31,11 @@ const shellEl = document.getElementById("traffic-shell");
 let mapCenter = null;
 let view = null;
 let mapTilesReady = false;
+let flowReady = false;
 let lastIncidents = [];
 let lastSegments = [];
+let lastSources = [];
+let lastCredit = "";
 let refreshTimer = 0;
 let driftTimer = 0;
 let driftIndex = 0;
@@ -151,6 +155,13 @@ function resetView() {
   paintMap();
 }
 
+function flowSources(sources, flowOn) {
+  // Name TomTom when a shown incident or the flow layer needs it.
+  const list = Array.isArray(sources) ? sources.slice() : [];
+  if (flowOn && list.indexOf("tomtom") === -1) list.push("tomtom");
+  return list;
+}
+
 function renderCredits(sources, tomtomCredit) {
   const el = document.getElementById("traffic-attribution");
   if (!el) return;
@@ -241,6 +252,109 @@ function renderSpeedsNote(speedsAvailable) {
   speedsNoteEl.textContent = "Live speeds are not available here.";
 }
 
+function pointInMapBox(x, y, box) {
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom;
+}
+
+function segmentsCross(ax, ay, bx, by, cx, cy, dx, dy) {
+  // True when the two segments meet between their endpoints.
+  function side(px, py, qx, qy, rx, ry) {
+    return (qx - px) * (ry - py) - (qy - py) * (rx - px);
+  }
+  const abC = side(ax, ay, bx, by, cx, cy);
+  const abD = side(ax, ay, bx, by, dx, dy);
+  const cdA = side(cx, cy, dx, dy, ax, ay);
+  const cdB = side(cx, cy, dx, dy, bx, by);
+  return abC * abD < 0 && cdA * cdB < 0;
+}
+
+function speedLineOnScreen(segments, lat, lon, zoom, width, height) {
+  // True when a drawn speed line crosses the map the user can see.
+  const rows = Array.isArray(segments) ? segments : [];
+  if (!rows.length || !width || !height) return false;
+  const center = project(lat, lon, zoom);
+  const box = {
+    left: center.x - width / 2,
+    right: center.x + width / 2,
+    top: center.y - height / 2,
+    bottom: center.y + height / 2,
+  };
+  const edges = [
+    [box.left, box.top, box.right, box.top],
+    [box.right, box.top, box.right, box.bottom],
+    [box.right, box.bottom, box.left, box.bottom],
+    [box.left, box.bottom, box.left, box.top],
+  ];
+  for (const item of rows) {
+    if (!item || (item.level !== "green" && item.level !== "yellow" && item.level !== "red")) continue;
+    const points = Array.isArray(item.points) ? item.points : [];
+    let prev = null;
+    for (const pair of points) {
+      if (!pair) {
+        prev = null;
+        continue;
+      }
+      const pointLat = Number(pair[0]);
+      const pointLon = Number(pair[1]);
+      if (!Number.isFinite(pointLat) || !Number.isFinite(pointLon)) {
+        prev = null;
+        continue;
+      }
+      const xy = project(pointLat, pointLon, zoom);
+      if (pointInMapBox(xy.x, xy.y, box)) return true;
+      if (prev) {
+        for (const edge of edges) {
+          if (segmentsCross(prev.x, prev.y, xy.x, xy.y, edge[0], edge[1], edge[2], edge[3])) return true;
+        }
+      }
+      prev = xy;
+    }
+  }
+  return false;
+}
+
+function layoutFlowTiles(show, zoom, width, height, centerPx, startTileX, endTileX, startTileY, endTileY) {
+  // Same tile window as the street layer. The bucket lets a refresh pick up a new image.
+  if (!flowEl) return;
+  if (!show) {
+    flowEl.hidden = true;
+    flowEl.replaceChildren();
+    return;
+  }
+  flowEl.hidden = false;
+  const bucket = Math.floor(Date.now() / 240000);
+  const wanted = new Map();
+  for (let x = startTileX; x <= endTileX; x += 1) {
+    for (let y = startTileY; y <= endTileY; y += 1) {
+      const src = `/flow/${zoom}/${x}/${y}.png?b=${bucket}`;
+      wanted.set(src, {
+        left: `${width / 2 + (x * TILE_SIZE - centerPx.x)}px`,
+        top: `${height / 2 + (y * TILE_SIZE - centerPx.y)}px`,
+      });
+    }
+  }
+  for (const img of [...flowEl.querySelectorAll("img")]) {
+    const place = wanted.get(img.getAttribute("src") || "");
+    if (!place) {
+      img.remove();
+      continue;
+    }
+    img.style.left = place.left;
+    img.style.top = place.top;
+    wanted.delete(img.getAttribute("src") || "");
+  }
+  for (const [src, place] of wanted) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.decoding = "async";
+    img.src = src;
+    img.style.left = place.left;
+    img.style.top = place.top;
+    img.addEventListener("error", () => img.remove());
+    flowEl.appendChild(img);
+  }
+}
+
 function paintMap() {
   if (!view) return;
   layoutMap(view.lat, view.lon, view.zoom, lastIncidents, lastSegments, mapTilesReady);
@@ -314,6 +428,20 @@ function layoutMap(lat, lon, zoom, incidents, segments, tilesReady) {
     tilesEl.appendChild(img);
   }
 
+  const linesOnScreen = speedLineOnScreen(segments, lat, lon, zoom, width, height);
+  layoutFlowTiles(
+    flowReady && !linesOnScreen,
+    zoom,
+    width,
+    height,
+    centerPx,
+    startTileX,
+    endTileX,
+    startTileY,
+    endTileY,
+  );
+  renderCredits(flowSources(lastSources, flowReady && !linesOnScreen), lastCredit);
+
   if (speedsEl) {
     speedsEl.innerHTML = "";
     const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -376,6 +504,13 @@ function showNoPlace() {
   updatedEl.textContent = "";
   headingEl.textContent = "Traffic";
   placeEl.textContent = "Location";
+  flowReady = false;
+  lastSources = [];
+  lastCredit = "";
+  if (flowEl) {
+    flowEl.hidden = true;
+    flowEl.replaceChildren();
+  }
   renderCredits(null, "");
 }
 
@@ -467,11 +602,14 @@ async function refreshTraffic() {
     mapCenter = { lat: place.lat, lon: place.lon };
     lastIncidents = Array.isArray(data.incidents) ? data.incidents : [];
     lastSegments = Array.isArray(data.segments) ? data.segments : [];
+    lastSources = Array.isArray(data.sources) ? data.sources : [];
+    lastCredit = typeof data.tomtomCredit === "string" ? data.tomtomCredit : "";
+    flowReady = data.flowReady === true;
     renderIncidents(lastIncidents, data.incidentsAvailable !== false);
     renderSpeedsNote(data.speedsAvailable === true);
     mapTilesReady = data.mapReady === true;
     renderMapNote(mapTilesReady);
-    renderCredits(data.sources, data.tomtomCredit);
+    renderCredits(flowSources(lastSources, flowReady && lastSegments.length === 0), lastCredit);
     if (!view || view.userMoved !== true) {
       view = {
         lat: mapCenter.lat,

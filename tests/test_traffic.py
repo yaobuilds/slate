@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
 """Traffic region and cache checks. No live network."""
 
+import io
 import json
+import os
+import socket
 import sys
 import unittest
 import urllib.error
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
+from urllib.parse import parse_qs, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -61,11 +65,58 @@ def chart_body(name, now):
     return json.dumps(payload)
 
 
+def tomtom_body(now=None):
+    """Fixture JSON with NOW markers turned into a current UTC timestamp."""
+    payload = json.loads((FIXTURES / "tomtom_incidents.json").read_text(encoding="utf-8"))
+    stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    for feature in payload["incidents"]:
+        props = feature.get("properties") or {}
+        if props.get("startTime") == "NOW":
+            props["startTime"] = stamp
+    return json.dumps(payload)
+
+
+def move_north(lat, lon, km):
+    """A latitude that is about km north of lat. The distance uses the server's own formula."""
+    step = km / 110.574
+    for _ in range(8):
+        dist = server.haversine_km(lat, lon, lat + step, lon)
+        if dist <= 0:
+            break
+        step = step * (km / dist)
+    return lat + step
+
+
+def incident_row(road, when, lat, lon, feed):
+    return {
+        "road": road,
+        "description": "Crash",
+        "time": when.isoformat(),
+        "lat": lat,
+        "lon": lon,
+        "feed": feed,
+    }
+
+
 class TrafficRegionTests(unittest.TestCase):
     def setUp(self):
         self._saved_cache = server.TRAFFIC_CACHE
         server.TRAFFIC_CACHE = {}
-        # CHART must not open a socket from these tests.
+        self._saved_tomtom_env = os.environ.pop("SLATE_TOMTOM_KEY", None)
+        self._saved_quota = (server.TOMTOM_QUOTA["day"], server.TOMTOM_QUOTA["count"])
+        self._saved_pause = server.TOMTOM_PAUSE["until"]
+        self._saved_log = server.TOMTOM_LOG["at"]
+        self._saved_caption = (server.TOMTOM_CAPTION["at"], server.TOMTOM_CAPTION["text"])
+        server.TOMTOM_QUOTA["day"] = ""
+        server.TOMTOM_QUOTA["count"] = 0
+        server.TOMTOM_PAUSE["until"] = 0.0
+        server.TOMTOM_LOG["at"] = 0.0
+        server.TOMTOM_CAPTION["at"] = 0.0
+        server.TOMTOM_CAPTION["text"] = ""
+        checkout_key = (server.ROOT / "tomtom.local").resolve()
+        if server.TOMTOM_KEY_PATH.resolve() != checkout_key:
+            server.TOMTOM_KEY_PATH.unlink(missing_ok=True)
+        # CHART and TomTom must not open a socket from these tests.
         self._urlopen = mock.patch.object(
             server, "urlopen", side_effect=urllib.error.URLError("blocked")
         )
@@ -74,6 +125,17 @@ class TrafficRegionTests(unittest.TestCase):
     def tearDown(self):
         self._urlopen.stop()
         server.TRAFFIC_CACHE = self._saved_cache
+        server.TOMTOM_QUOTA["day"], server.TOMTOM_QUOTA["count"] = self._saved_quota
+        server.TOMTOM_PAUSE["until"] = self._saved_pause
+        server.TOMTOM_LOG["at"] = self._saved_log
+        server.TOMTOM_CAPTION["at"], server.TOMTOM_CAPTION["text"] = self._saved_caption
+        if self._saved_tomtom_env is None:
+            os.environ.pop("SLATE_TOMTOM_KEY", None)
+        else:
+            os.environ["SLATE_TOMTOM_KEY"] = self._saved_tomtom_env
+        checkout_key = (server.ROOT / "tomtom.local").resolve()
+        if server.TOMTOM_KEY_PATH.resolve() != checkout_key:
+            server.TOMTOM_KEY_PATH.unlink(missing_ok=True)
 
     def test_region_for_new_york(self):
         self.assertEqual(server.region_for(NY_LAT, NY_LON), "ny")
@@ -386,6 +448,312 @@ class TrafficRegionTests(unittest.TestCase):
         self.assertLessEqual(len(long_row["road"]), 120)
         self.assertLessEqual(len(long_row["description"]), 220)
         self.assertTrue(long_row["description"].startswith("Crash "))
+
+    def test_tomtom_maps_point_and_line(self):
+        now = datetime.now(timezone.utc)
+        payload = json.loads(tomtom_body(now))
+        point = server.normalize_tomtom_incident(payload["incidents"][0])
+        line = server.normalize_tomtom_incident(payload["incidents"][1])
+        self.assertEqual(point["lon"], -77.05)
+        self.assertEqual(point["lat"], 38.9)
+        self.assertEqual(point["road"], "US-50")
+        self.assertEqual(point["description"], "Slow traffic")
+        self.assertEqual(point["feed"], "tomtom")
+        self.assertNotIn("id", point)
+        self.assertEqual(line["lon"], -77.1)
+        self.assertEqual(line["lat"], 38.9)
+        self.assertEqual(line["road"], "Cedar Avenue")
+        self.assertEqual(line["description"], "Roadworks; Lane closed")
+        self.assertEqual(line["feed"], "tomtom")
+        parsed = server.parse_tomtom_body(tomtom_body(now), "application/json")
+        self.assertEqual([row["road"] for row in parsed], ["US-50", "Cedar Avenue"])
+        shifted = {
+            "type": "Feature",
+            "geometry": {
+                "type": "LineString",
+                "coordinates": [[-77.04, 38.92], [-80.0, 30.0], [-79.0, 31.0]],
+            },
+            "properties": {
+                "startTime": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "from": "Oak Lane",
+                "events": [{"description": "Crash"}],
+            },
+        }
+        moved = server.normalize_tomtom_incident(shifted)
+        self.assertEqual(moved["lat"], 38.92)
+        self.assertEqual(moved["lon"], -77.04)
+        outside = {
+            "type": "Feature",
+            "geometry": {"type": "LineString", "coordinates": [[-80.0, 30.0], [-79.0, 31.0]]},
+            "properties": {
+                "startTime": now.strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "from": "Far Road",
+                "events": [{"description": "Crash"}],
+            },
+        }
+        self.assertIsNone(server.normalize_tomtom_incident(outside))
+
+    def test_tomtom_drops_row_without_start(self):
+        payload = json.loads(tomtom_body())
+        feature = payload["incidents"][0]
+        feature["properties"].pop("startTime")
+        self.assertIsNone(server.normalize_tomtom_incident(feature))
+
+    def test_near_duplicate_keeps_chart(self):
+        now = datetime.now(timezone.utc)
+        chart = incident_row("I-95", now, DC_LAT, DC_LON, "md-chart")
+        chart["_id"] = "c1"
+        tom_lat = move_north(DC_LAT, DC_LON, 0.20)
+        dist = server.haversine_km(DC_LAT, DC_LON, tom_lat, DC_LON)
+        self.assertGreater(dist, 0.15)
+        self.assertLessEqual(dist, 0.40)
+        tom = incident_row("I 95", now - timedelta(minutes=10), tom_lat, DC_LON, "tomtom")
+        merged = server.merge_dmv_incidents([chart], [], [tom])
+        self.assertEqual([row["feed"] for row in merged], ["md-chart"])
+        self.assertEqual(merged[0]["road"], "I-95")
+        other = incident_row("Georgia Ave", now, move_north(DC_LAT, DC_LON, 0.10), DC_LON, "md-chart")
+        other["_id"] = "c2"
+        both = server.merge_dmv_incidents([chart, other], [], [])
+        self.assertEqual([row["road"] for row in both], ["I-95", "Georgia Ave"])
+
+    def test_near_duplicate_keeps_both_when_time_or_road_differs(self):
+        now = datetime.now(timezone.utc)
+        chart = incident_row("I-95", now, DC_LAT, DC_LON, "md-chart")
+        far_time = incident_row(
+            "I 95",
+            now - timedelta(hours=2),
+            move_north(DC_LAT, DC_LON, 0.20),
+            DC_LON,
+            "tomtom",
+        )
+        kept = server.merge_dmv_incidents([chart], [], [far_time])
+        self.assertEqual([row["feed"] for row in kept], ["md-chart", "tomtom"])
+        unrelated = incident_row(
+            "Cedar Avenue",
+            now - timedelta(minutes=5),
+            move_north(DC_LAT, DC_LON, 0.30),
+            DC_LON,
+            "tomtom",
+        )
+        dist = server.haversine_km(DC_LAT, DC_LON, unrelated["lat"], DC_LON)
+        self.assertGreater(dist, 0.15)
+        self.assertLessEqual(dist, 0.40)
+        both = server.merge_dmv_incidents([chart], [], [unrelated])
+        self.assertEqual([row["feed"] for row in both], ["md-chart", "tomtom"])
+        close = incident_row(
+            "Maple Street",
+            now - timedelta(minutes=5),
+            move_north(DC_LAT, DC_LON, 0.10),
+            DC_LON,
+            "tomtom",
+        )
+        close_dist = server.haversine_km(DC_LAT, DC_LON, close["lat"], DC_LON)
+        self.assertLessEqual(close_dist, 0.15)
+        dropped = server.merge_dmv_incidents([chart], [], [close])
+        self.assertEqual([row["feed"] for row in dropped], ["md-chart"])
+
+    def test_tomtom_skipped_without_key(self):
+        now = datetime.now(timezone.utc)
+        events = {
+            "success": True,
+            "data": [{
+                "id": 1,
+                "type": 1,
+                "description": "Incident @ Georgia Ave AT PINE",
+                "name": "Georgia Ave",
+                "incidentType": "Crash",
+                "lanesStatus": "Right lane",
+                "lat": DC_LAT,
+                "lon": DC_LON,
+                "startDateTime": int(now.timestamp() * 1000),
+            }],
+        }
+        seen = []
+
+        def fake_open(request, timeout=8):
+            seen.append(request.full_url)
+            if request.full_url == server.CHART_EVENTS_URL:
+                return JsonResponse(json.dumps(events))
+            if request.full_url == server.CHART_CLOSURES_URL:
+                return JsonResponse('{"success": true, "data": []}')
+            raise urllib.error.URLError("unexpected")
+
+        with mock.patch.object(server, "urlopen", fake_open):
+            rows, available, feed = server.traffic_incidents_for(DC_LAT, DC_LON)
+        self.assertTrue(available)
+        self.assertEqual(feed, "dmv")
+        self.assertEqual([row["road"] for row in rows], ["Georgia Ave"])
+        self.assertTrue(seen)
+        self.assertFalse(any("api.tomtom.com" in url for url in seen))
+
+    def test_tomtom_env_overrides_file(self):
+        env_key = "SLATEKEYENV1234"
+        file_key = "SLATEKEYFILE1234"
+        os.environ["SLATE_TOMTOM_KEY"] = env_key
+        server.TOMTOM_KEY_PATH.write_text(file_key + "\n", encoding="utf-8")
+        seen = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            seen.append(url)
+            if "incidentDetails" in url or "caption.json" in url:
+                if "incidentDetails" in url:
+                    return JsonResponse(tomtom_body())
+                return JsonResponse('{"copyrightsCaption":"©TomTom"}')
+            if url in (server.CHART_EVENTS_URL, server.CHART_CLOSURES_URL):
+                return JsonResponse('{"success": true, "data": []}')
+            raise urllib.error.URLError("unexpected")
+
+        notes = io.StringIO()
+        with mock.patch.object(server.sys, "stderr", notes):
+            with mock.patch.object(server, "urlopen", fake_open):
+                payload = server.traffic_payload((DC_LAT, DC_LON))
+        incident_urls = [url for url in seen if "incidentDetails" in url]
+        self.assertEqual(len(incident_urls), 1)
+        query = parse_qs(urlsplit(incident_urls[0]).query)
+        self.assertEqual(query["key"], [env_key])
+        self.assertNotIn("t", query)
+        self.assertEqual(query["bbox"], ["-77.60,38.60,-76.70,39.35"])
+        self.assertEqual(query["language"], ["en-US"])
+        self.assertEqual(query["timeValidityFilter"], ["present"])
+        self.assertIn("roadNumbers", query["fields"][0])
+        self.assertNotIn(file_key, incident_urls[0])
+        body = json.dumps(payload)
+        logged = notes.getvalue()
+        self.assertNotIn(env_key, body)
+        self.assertNotIn(file_key, body)
+        self.assertNotIn(env_key, logged)
+        self.assertNotIn(file_key, logged)
+        self.assertEqual(payload["sources"], ["tomtom"])
+        self.assertEqual(payload["tomtomCredit"], "©TomTom")
+        for row in payload["incidents"]:
+            self.assertNotIn("id", row)
+
+    def test_tomtom_not_refetched_inside_ttl(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        calls = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            if "incidentDetails" in url:
+                calls.append("incident")
+                return JsonResponse(tomtom_body())
+            if url in (server.CHART_EVENTS_URL, server.CHART_CLOSURES_URL):
+                return JsonResponse('{"success": true, "data": []}')
+            raise urllib.error.URLError("unexpected")
+
+        with mock.patch.object(server, "urlopen", fake_open):
+            first, first_ok, _feed = server.traffic_incidents_for(DC_LAT, DC_LON)
+            second, second_ok, _feed = server.traffic_incidents_for(DC_LAT, DC_LON)
+        self.assertEqual(calls, ["incident"])
+        self.assertTrue(first_ok and second_ok)
+        self.assertEqual([row["road"] for row in first], ["US-50", "Cedar Avenue"])
+        self.assertEqual([row["road"] for row in second], [row["road"] for row in first])
+
+    def test_tomtom_daily_cap(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        calls = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            if "incidentDetails" in url:
+                calls.append("incident")
+                return JsonResponse(tomtom_body())
+            if "caption.json" in url:
+                calls.append("caption")
+                return JsonResponse('{"copyrightsCaption":"©TomTom"}')
+            if url in (server.CHART_EVENTS_URL, server.CHART_CLOSURES_URL):
+                calls.append("chart")
+                return JsonResponse('{"success": true, "data": []}')
+            raise urllib.error.URLError("unexpected")
+
+        base = 10000.0
+        step = server.TOMTOM_CACHE_TTL + 1
+        with mock.patch.object(server, "tomtom_utc_day", return_value="2026-11-05"):
+            with mock.patch.object(server, "urlopen", fake_open):
+                for index in range(server.TOMTOM_DAILY_CAP):
+                    moment = base + index * step
+                    with mock.patch.object(server.time, "monotonic", return_value=moment):
+                        server.ensure_tomtom_part(moment)
+                self.assertEqual(calls, ["incident"] * server.TOMTOM_DAILY_CAP)
+                last = base + (server.TOMTOM_DAILY_CAP - 1) * step
+                within = last + step
+                with server.TRAFFIC_LOCK:
+                    server.store_traffic_part("dmv", "chart-events", [], "md-chart", within)
+                    server.store_traffic_part("dmv", "chart-closures", [], "md-chart", within)
+                server.TOMTOM_CAPTION["at"] = within
+                server.TOMTOM_CAPTION["text"] = "©TomTom"
+                with mock.patch.object(server.time, "monotonic", return_value=within):
+                    payload = server.traffic_payload((DC_LAT, DC_LON))
+                self.assertEqual(calls, ["incident"] * server.TOMTOM_DAILY_CAP)
+                self.assertIn("tomtom", payload["sources"])
+                self.assertTrue(any(row["feed"] == "tomtom" for row in payload["incidents"]))
+                later = last + server.TOMTOM_GRACE_S + 5
+                with server.TRAFFIC_LOCK:
+                    server.store_traffic_part("dmv", "chart-events", [], "md-chart", later)
+                    server.store_traffic_part("dmv", "chart-closures", [], "md-chart", later)
+                with mock.patch.object(server.time, "monotonic", return_value=later):
+                    expired = server.traffic_payload((DC_LAT, DC_LON))
+                self.assertEqual(calls, ["incident"] * server.TOMTOM_DAILY_CAP)
+                self.assertNotIn("tomtom", expired.get("sources", []))
+                self.assertNotIn("tomtomCredit", expired)
+                self.assertFalse(any(row.get("feed") == "tomtom" for row in expired["incidents"]))
+
+    def test_tomtom_failure_keeps_part(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        stamp = 1000.0
+        now = datetime.now(timezone.utc)
+        row = incident_row("Kept", now, DC_LAT, DC_LON, "tomtom")
+        rows = [row]
+        server.TRAFFIC_CACHE = {
+            "dmv": {"parts": {"tomtom": {"at": stamp, "rows": rows, "feed": "tomtom"}}},
+        }
+
+        def fake_open(request, timeout=8):
+            raise socket.timeout("timed out")
+
+        with mock.patch.object(server.time, "monotonic", return_value=stamp + server.TOMTOM_CACHE_TTL + 5):
+            with mock.patch.object(server, "urlopen", fake_open):
+                got, available, feed = server.traffic_incidents_for(DC_LAT, DC_LON)
+        part = server.TRAFFIC_CACHE["dmv"]["parts"]["tomtom"]
+        self.assertEqual(part["at"], stamp)
+        self.assertIs(part["rows"], rows)
+        self.assertTrue(available)
+        self.assertEqual(feed, "dmv")
+        self.assertEqual([item["road"] for item in got], ["Kept"])
+        self.assertEqual(server.TOMTOM_QUOTA["count"], 1)
+
+    def test_tomtom_pause_on_429(self):
+        os.environ["SLATE_TOMTOM_KEY"] = "SLATEKEYENV1234"
+        stamp = 2000.0
+        now = datetime.now(timezone.utc)
+        row = incident_row("Kept", now, DC_LAT, DC_LON, "tomtom")
+        server.TRAFFIC_CACHE = {
+            "dmv": {"parts": {"tomtom": {"at": stamp, "rows": [row], "feed": "tomtom"}}},
+        }
+        incident_calls = []
+
+        def fake_open(request, timeout=8):
+            url = request.full_url
+            if "incidentDetails" in url:
+                incident_calls.append("incident")
+            raise urllib.error.HTTPError(url, 429, "Too Many Requests", None, None)
+
+        moment = stamp + server.TOMTOM_CACHE_TTL + 5
+        with mock.patch.object(server.time, "monotonic", return_value=moment):
+            with mock.patch.object(server, "urlopen", fake_open):
+                server.traffic_incidents_for(DC_LAT, DC_LON)
+        part = server.TRAFFIC_CACHE["dmv"]["parts"]["tomtom"]
+        self.assertEqual(part["at"], stamp)
+        self.assertEqual(incident_calls, ["incident"])
+        self.assertGreaterEqual(server.TOMTOM_PAUSE["until"], moment + server.TOMTOM_PAUSE_S)
+        later = moment + 10
+        with mock.patch.object(server.time, "monotonic", return_value=later):
+            with mock.patch.object(server, "urlopen", fake_open):
+                got, available, _feed = server.traffic_incidents_for(DC_LAT, DC_LON)
+        self.assertEqual(incident_calls, ["incident"])
+        self.assertTrue(available)
+        self.assertEqual([item["road"] for item in got], ["Kept"])
 
 
 if __name__ == "__main__":

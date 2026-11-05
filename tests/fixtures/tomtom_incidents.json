@@ -1,0 +1,35 @@
+{
+  "incidents": [
+    {
+      "type": "Feature",
+      "geometry": {"type": "Point", "coordinates": [-77.05, 38.9]},
+      "properties": {
+        "id": "point-1",
+        "iconCategory": 1,
+        "events": [{"description": "Slow traffic"}],
+        "startTime": "NOW",
+        "from": "Maple Street",
+        "to": "Oak Street",
+        "roadNumbers": ["US-50"],
+        "timeValidity": "present"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "LineString",
+        "coordinates": [[-77.2, 38.8], [-77.1, 38.9], [-77.0, 39.0]]
+      },
+      "properties": {
+        "id": "line-1",
+        "iconCategory": 6,
+        "events": [{"description": "Roadworks"}, {"description": "Lane closed"}],
+        "startTime": "NOW",
+        "from": "Cedar Avenue",
+        "to": "Pine Avenue",
+        "roadNumbers": [],
+        "timeValidity": "present"
+      }
+    }
+  ]
+}

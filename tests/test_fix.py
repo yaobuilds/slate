@@ -1534,6 +1534,10 @@ class GalleryTests(unittest.TestCase):
         text = (ROOT / ".gitignore").read_text(encoding="utf-8")
         self.assertIn("gallery.local/", text)
         self.assertIn("/gallery.local", server.BLOCKED_FILES)
+        self.assertIn("tomtom.local", text)
+        self.assertIn("/tomtom.local", server.BLOCKED_FILES)
+        status, _body, _headers = self._raw("GET", "/tomtom.local")
+        self.assertEqual(status, 404)
 
     def test_lan_gallery_flow(self):
         status, _body, _headers = self._post_photo()

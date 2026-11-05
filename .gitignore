@@ -4,6 +4,7 @@ settings.local.json
 calendar-cache.local.json
 pin.local
 carto.local
+tomtom.local
 atv.local
 gallery.local/
 __pycache__/

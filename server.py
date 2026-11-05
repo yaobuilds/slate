@@ -58,6 +58,7 @@ DEFAULT_LOCATION = {
 PIN_PATH = ROOT / "pin.local"
 PIN_RE = re.compile(r"^[0-9]{4,8}$")
 CARTO_KEY_PATH = ROOT / "carto.local"
+TOMTOM_KEY_PATH = ROOT / "tomtom.local"
 CARTO_KEY_RE = re.compile(r"^[A-Za-z0-9._~-]{8,200}$")
 CARTO_TILE_HOST = re.compile(r"^(?:[a-d]\.)?basemaps\.cartocdn\.com$")
 MAP_TILE_RE = re.compile(r"^/map/(\d{1,2})/(\d{1,7})/(\d{1,7})\.png$")
@@ -207,6 +208,14 @@ CHART_FETCH_LOCKS = {
     "chart-closures": threading.Lock(),
 }
 CHART_LOG_AT = {"chart-events": 0.0, "chart-closures": 0.0}
+# One Incident Details call at a time, so two open pages share one request.
+TOMTOM_FETCH_LOCK = threading.Lock()
+TOMTOM_CAPTION_LOCK = threading.Lock()
+# Memory only. A restart clears the counter, the pause, and the caption.
+TOMTOM_QUOTA = {"day": "", "count": 0}
+TOMTOM_PAUSE = {"until": 0.0}
+TOMTOM_LOG = {"at": 0.0}
+TOMTOM_CAPTION = {"at": 0.0, "text": ""}
 TRAFFIC_INCIDENT_MAX_AGE = timedelta(hours=36)
 TRAFFIC_INCIDENT_MAX_KM = 160.0
 TRAFFIC_EVENTS_JSON = "https://511ny.org/api/getevents?format=json"
@@ -235,6 +244,23 @@ CHART_CLOSURES_URL = (
 )
 CHART_CACHE_TTL = 240
 CHART_TIMEOUT_S = 8
+TOMTOM_INCIDENTS_URL = "https://api.tomtom.com/traffic/services/5/incidentDetails"
+TOMTOM_CAPTION_URL = "https://api.tomtom.com/map/2/copyrights/caption.json"
+TOMTOM_FIELDS = (
+    "{incidents{type,geometry{type,coordinates},properties{id,iconCategory,"
+    "events{description},startTime,from,to,roadNumbers,timeValidity}}}"
+)
+TOMTOM_CACHE_TTL = 300
+TOMTOM_TIMEOUT_S = 8
+TOMTOM_DAILY_CAP = 80
+TOMTOM_GRACE_S = 1800
+TOMTOM_PAUSE_S = 15 * 60
+TOMTOM_CAPTION_TTL = 24 * 60 * 60
+TOMTOM_NEAR_KM = 0.40
+TOMTOM_NEAR_CLOSE_KM = 0.15
+TOMTOM_NEAR_S = 30 * 60
+TOMTOM_CREDIT_FALLBACK = "© TomTom"
+TOMTOM_TOKEN_RE = re.compile(r"[A-Za-z0-9]+")
 GEORSS_NS = {"g": "http://www.georss.org/georss"}
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
@@ -314,13 +340,13 @@ GALLERY_DIR = ROOT / "gallery.local"
 
 
 def use_state_dir(folder) -> None:
-    """Keep pin, settings, schedule, gallery, and the map key in folder.
+    """Keep pin, settings, schedule, gallery, and the map and TomTom keys in folder.
 
     SLATE_STATE_DIR is how tests pass a throwaway folder. A normal start
     leaves it unset, so those files stay next to this program.
     """
     global STATE_DIR, LOCAL, PUBLIC, SETTINGS_LOCAL, CALENDAR_CACHE_LOCAL
-    global PIN_PATH, CARTO_KEY_PATH, GALLERY_DIR, APPS_PUBLIC
+    global PIN_PATH, CARTO_KEY_PATH, TOMTOM_KEY_PATH, GALLERY_DIR, APPS_PUBLIC
     folder = Path(folder).expanduser()
     # The folder itself, not gallery.local. The gallery is created when a photo is saved.
     folder.mkdir(parents=True, exist_ok=True)
@@ -331,6 +357,7 @@ def use_state_dir(folder) -> None:
     CALENDAR_CACHE_LOCAL = folder / "calendar-cache.local.json"
     PIN_PATH = folder / "pin.local"
     CARTO_KEY_PATH = folder / "carto.local"
+    TOMTOM_KEY_PATH = folder / "tomtom.local"
     GALLERY_DIR = folder / "gallery.local"
     # Saving settings also rewrites apps.json, so that copy follows the same folder.
     APPS_PUBLIC = folder / "apps.json"
@@ -1801,8 +1828,402 @@ def read_chart_part(name: str) -> tuple[list, bool]:
     return list(rows), True
 
 
+def _tomtom_key_text() -> str:
+    env = os.environ.get("SLATE_TOMTOM_KEY", "").strip()
+    if env:
+        return env
+    try:
+        text = TOMTOM_KEY_PATH.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    for line in text.splitlines():
+        line = line.strip()
+        if line:
+            return line
+    return ""
+
+
+def tomtom_key() -> str:
+    """TomTom key from SLATE_TOMTOM_KEY or tomtom.local. The page never sees it."""
+    raw = _tomtom_key_text()
+    if not CARTO_KEY_RE.fullmatch(raw):
+        return ""
+    return raw
+
+
+def tomtom_utc_day() -> str:
+    """UTC day for the in-memory call counter. The next day starts the count over."""
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def tomtom_bbox() -> str:
+    """Fixed DMV box as minLon,minLat,maxLon,maxLat. The user's place is not sent."""
+    return f"{DMV_MIN_LON:.2f},{DMV_MIN_LAT:.2f},{DMV_MAX_LON:.2f},{DMV_MAX_LAT:.2f}"
+
+
+def tomtom_incident_url(key: str) -> str:
+    """Incident Details URL. The key stays in this process and is not logged."""
+    query = urlencode(
+        {
+            "key": key,
+            "bbox": tomtom_bbox(),
+            "fields": TOMTOM_FIELDS,
+            "language": "en-US",
+            "timeValidityFilter": "present",
+        }
+    )
+    return TOMTOM_INCIDENTS_URL + "?" + query
+
+
+def tomtom_caption_url(key: str) -> str:
+    """Copyright caption URL. This is not an Incident Details call."""
+    return TOMTOM_CAPTION_URL + "?" + urlencode({"key": key})
+
+
+def _tomtom_at_cap() -> bool:
+    """True when today's attempts have reached the cap. Caller holds TOMTOM_FETCH_LOCK."""
+    day = tomtom_utc_day()
+    if TOMTOM_QUOTA["day"] != day:
+        TOMTOM_QUOTA["day"] = day
+        TOMTOM_QUOTA["count"] = 0
+    return TOMTOM_QUOTA["count"] >= TOMTOM_DAILY_CAP
+
+
+def _tomtom_count_attempt() -> None:
+    """Count a call that is about to be sent. Caller holds TOMTOM_FETCH_LOCK."""
+    day = tomtom_utc_day()
+    if TOMTOM_QUOTA["day"] != day:
+        TOMTOM_QUOTA["day"] = day
+        TOMTOM_QUOTA["count"] = 0
+    TOMTOM_QUOTA["count"] += 1
+
+
+def tomtom_over_cap() -> bool:
+    """True when no more Incident Details calls should be sent today."""
+    with TOMTOM_FETCH_LOCK:
+        return _tomtom_at_cap()
+
+
+def tomtom_part_fresh(now: float) -> bool:
+    """True when the TomTom part is still inside its five-minute window."""
+    with TRAFFIC_LOCK:
+        part = traffic_part("dmv", "tomtom")
+        if part is None:
+            return False
+        try:
+            return now - float(part.get("at")) < TOMTOM_CACHE_TTL
+        except (TypeError, ValueError):
+            return False
+
+
+def note_tomtom_failure(paused: bool) -> None:
+    """One line a minute when a failed TomTom read leaves the previous list in place."""
+    with TRAFFIC_LOCK:
+        part = traffic_part("dmv", "tomtom")
+        kept = isinstance(part, dict) and isinstance(part.get("feed"), str) and bool(part.get("feed"))
+    if not kept:
+        return
+    now = time.monotonic()
+    if now - float(TOMTOM_LOG.get("at") or 0.0) < 60:
+        return
+    TOMTOM_LOG["at"] = now
+    if paused:
+        print("TomTom traffic paused; keeping the last good list.", file=sys.stderr)
+    else:
+        print("TomTom traffic feed failed; keeping the last good list.", file=sys.stderr)
+
+
+def tomtom_coord(pair) -> tuple[float, float] | None:
+    """(lat, lon) from a [lon, lat] pair, or None when it is not two finite numbers."""
+    if not isinstance(pair, (list, tuple)) or len(pair) < 2:
+        return None
+    lon, lat = pair[0], pair[1]
+    if isinstance(lon, bool) or isinstance(lat, bool):
+        return None
+    if not isinstance(lon, (int, float)) or not isinstance(lat, (int, float)):
+        return None
+    lon_f, lat_f = float(lon), float(lat)
+    if not math.isfinite(lon_f) or not math.isfinite(lat_f):
+        return None
+    return lat_f, lon_f
+
+
+def tomtom_lat_lon(geometry) -> tuple[float, float] | None:
+    """A point inside the DMV box. A line uses its middle, then the first vertex inside."""
+    if not isinstance(geometry, dict):
+        return None
+    kind = geometry.get("type")
+    coords = geometry.get("coordinates")
+    if kind == "Point":
+        point = tomtom_coord(coords)
+        if point and in_dmv_bounds(point[0], point[1]):
+            return point
+        return None
+    if kind != "LineString" or not isinstance(coords, list):
+        return None
+    try:
+        mid = line_midpoint(coords)
+    except (TypeError, ValueError):
+        mid = None
+    if mid and in_dmv_bounds(mid[0], mid[1]):
+        return mid
+    for vertex in coords:
+        point = tomtom_coord(vertex)
+        if point and in_dmv_bounds(point[0], point[1]):
+            return point
+    return None
+
+
+def tomtom_road(props: dict) -> str:
+    """roadNumbers, then the from street, then Incident."""
+    numbers = props.get("roadNumbers")
+    parts = []
+    if isinstance(numbers, list):
+        for item in numbers:
+            if isinstance(item, str) and item.strip():
+                parts.append(collapse_ws(item))
+    if parts:
+        road = ", ".join(parts)
+    else:
+        origin = props.get("from")
+        road = collapse_ws(origin) if isinstance(origin, str) else ""
+    road = clip_text(road, 120)
+    return road or "Incident"
+
+
+def tomtom_description(props: dict) -> str:
+    """Event descriptions joined with a semicolon, or Incident when none are set."""
+    events = props.get("events")
+    parts = []
+    if isinstance(events, list):
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            text = event.get("description")
+            if isinstance(text, str) and text.strip():
+                parts.append(collapse_ws(text))
+    description = clip_text("; ".join(parts), 220)
+    return description or "Incident"
+
+
+def normalize_tomtom_incident(feature: dict) -> dict | None:
+    """One TomTom feature, or None when it has no point inside the box or no time."""
+    if not isinstance(feature, dict):
+        return None
+    point = tomtom_lat_lon(feature.get("geometry"))
+    if point is None:
+        return None
+    props = feature.get("properties")
+    if not isinstance(props, dict):
+        props = {}
+    start = props.get("startTime")
+    when = incident_datetime(start if isinstance(start, str) else "")
+    if when is None:
+        return None
+    lat, lon = point
+    return {
+        "road": tomtom_road(props),
+        "description": tomtom_description(props),
+        "time": when.isoformat(),
+        "lat": lat,
+        "lon": lon,
+        "feed": "tomtom",
+    }
+
+
+def parse_tomtom_body(body: str, content_type: str) -> list | None:
+    """Rows from one Incident Details body. None means this attempt failed."""
+    if "json" not in content_type and not body.lstrip().startswith("{"):
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("incidents"), list):
+        return None
+    seen = set()
+    rows = []
+    for feature in data["incidents"]:
+        if not isinstance(feature, dict):
+            continue
+        props = feature.get("properties") if isinstance(feature.get("properties"), dict) else {}
+        ident = props.get("id")
+        if isinstance(ident, str) and ident:
+            if ident in seen:
+                continue
+            seen.add(ident)
+        row = normalize_tomtom_incident(feature)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def load_tomtom_part(key: str) -> tuple[list | None, bool]:
+    """Fetch Incident Details. None keeps the previous list. The bool is a 429 pause."""
+    try:
+        body, content_type = fetch_http_text(
+            tomtom_incident_url(key),
+            accept="application/json",
+            timeout=TOMTOM_TIMEOUT_S,
+        )
+    except HTTPError as exc:
+        if getattr(exc, "code", None) == 429:
+            TOMTOM_PAUSE["until"] = time.monotonic() + TOMTOM_PAUSE_S
+            return None, True
+        return None, False
+    except (OSError, ValueError):
+        return None, False
+    return parse_tomtom_body(body, content_type), False
+
+
+def ensure_tomtom_part(now: float) -> None:
+    """Fill a stale TomTom part. A second caller waits and then reuses the result."""
+    if not tomtom_key():
+        return
+    if tomtom_part_fresh(now):
+        return
+    with TOMTOM_FETCH_LOCK:
+        if not tomtom_key():
+            return
+        if tomtom_part_fresh(now):
+            return
+        if now < float(TOMTOM_PAUSE.get("until") or 0.0) or _tomtom_at_cap():
+            return
+        key = tomtom_key()
+        if not key:
+            return
+        _tomtom_count_attempt()
+        rows, paused = load_tomtom_part(key)
+        if rows is None:
+            note_tomtom_failure(paused)
+            return
+        with TRAFFIC_LOCK:
+            store_traffic_part("dmv", "tomtom", rows, "tomtom", now)
+
+
+def load_tomtom_caption(key: str) -> str:
+    """The copyright caption, or an empty string when the daily call fails."""
+    try:
+        body, content_type = fetch_http_text(
+            tomtom_caption_url(key),
+            accept="application/json",
+            timeout=TOMTOM_TIMEOUT_S,
+        )
+    except (OSError, HTTPError, ValueError):
+        return ""
+    if "json" not in content_type and not body.lstrip().startswith("{"):
+        return ""
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return ""
+    if not isinstance(data, dict):
+        return ""
+    text = data.get("copyrightsCaption")
+    if isinstance(text, str) and text:
+        return text
+    return ""
+
+
+def tomtom_credit_text() -> str:
+    """Caption for a credited TomTom row. A failed or missing call uses the fallback."""
+    key = tomtom_key()
+    if not key:
+        return TOMTOM_CREDIT_FALLBACK
+    now = time.monotonic()
+    with TOMTOM_CAPTION_LOCK:
+        try:
+            age = now - float(TOMTOM_CAPTION.get("at") or 0.0)
+        except (TypeError, ValueError):
+            age = TOMTOM_CAPTION_TTL
+        if TOMTOM_CAPTION.get("at") and age < TOMTOM_CAPTION_TTL:
+            text = TOMTOM_CAPTION.get("text")
+            return text if isinstance(text, str) and text else TOMTOM_CREDIT_FALLBACK
+        TOMTOM_CAPTION["at"] = now
+        TOMTOM_CAPTION["text"] = ""
+    text = load_tomtom_caption(key)
+    with TOMTOM_CAPTION_LOCK:
+        TOMTOM_CAPTION["text"] = text
+    return text or TOMTOM_CREDIT_FALLBACK
+
+
+def tomtom_road_tokens(road: str) -> set[str]:
+    """Numbers, and words of three letters or more. Two-letter words do not match."""
+    if not isinstance(road, str):
+        return set()
+    text = road.strip()
+    if not text or text == "Incident":
+        return set()
+    tokens = set()
+    for piece in TOMTOM_TOKEN_RE.findall(text):
+        token = piece.upper()
+        if token.isdigit() or len(token) >= 3:
+            tokens.add(token)
+    return tokens
+
+
+def incidents_near_duplicate(earlier: dict, later: dict) -> bool:
+    """True when later repeats earlier: close in space and time, and very close or the same road."""
+    if not isinstance(earlier, dict) or not isinstance(later, dict):
+        return False
+    try:
+        dist = haversine_km(
+            float(earlier["lat"]),
+            float(earlier["lon"]),
+            float(later["lat"]),
+            float(later["lon"]),
+        )
+    except (TypeError, ValueError, KeyError):
+        return False
+    if dist > TOMTOM_NEAR_KM:
+        return False
+    first = incident_datetime(earlier.get("time", ""))
+    second = incident_datetime(later.get("time", ""))
+    if first is None or second is None:
+        return False
+    if abs((first - second).total_seconds()) > TOMTOM_NEAR_S:
+        return False
+    if dist <= TOMTOM_NEAR_CLOSE_KM:
+        return True
+    left = tomtom_road_tokens(earlier.get("road", ""))
+    right = tomtom_road_tokens(later.get("road", ""))
+    if not left or not right:
+        return False
+    return bool(left & right)
+
+
+def merge_dmv_incidents(events: list, closures: list, tomtom: list) -> list:
+    """CHART events, then closures, then TomTom rows that are not near-duplicates."""
+    merged = merge_chart_rows(events, closures)
+    for row in tomtom:
+        if not isinstance(row, dict):
+            continue
+        if any(incidents_near_duplicate(earlier, row) for earlier in merged):
+            continue
+        merged.append(row)
+    return merged
+
+
+def read_tomtom_rows(now: float, over_cap: bool) -> tuple[list, bool]:
+    """A copy of the TomTom part. Past the daily cap, rows older than 30 minutes are left out."""
+    part = traffic_part("dmv", "tomtom")
+    if not isinstance(part, dict) or not isinstance(part.get("feed"), str) or not part.get("feed"):
+        return [], False
+    if over_cap:
+        try:
+            age = now - float(part.get("at"))
+        except (TypeError, ValueError):
+            age = TOMTOM_GRACE_S + 1
+        if age > TOMTOM_GRACE_S:
+            return [], True
+    rows = part.get("rows")
+    if not isinstance(rows, list):
+        return [], True
+    return list(rows), True
+
+
 def traffic_dmv_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str]:
-    """Maryland CHART incidents for a place inside the DMV box. A failed feed keeps its last list."""
+    """CHART incidents, plus TomTom when a key is set. A failed feed keeps its last list."""
     now = time.monotonic()
     jobs = (
         ("chart-events", CHART_EVENTS_URL, False),
@@ -1815,12 +2236,18 @@ def traffic_dmv_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str
                 future.result()
     except Exception:
         print("CHART traffic feed failed; keeping the last good list.", file=sys.stderr)
+    try:
+        ensure_tomtom_part(now)
+    except Exception:
+        note_tomtom_failure(False)
+    over_cap = tomtom_over_cap()
     with TRAFFIC_LOCK:
         event_rows, events_ok = read_chart_part("chart-events")
         closure_rows, closures_ok = read_chart_part("chart-closures")
-    if not events_ok and not closures_ok:
+        tomtom_rows, tomtom_ok = read_tomtom_rows(now, over_cap)
+    if not events_ok and not closures_ok and not tomtom_ok:
         return [], False, ""
-    picked = pick_dmv_rows(merge_chart_rows(event_rows, closure_rows), lat, lon)
+    picked = pick_dmv_rows(merge_dmv_incidents(event_rows, closure_rows, tomtom_rows), lat, lon)
     return picked, True, "dmv"
 
 
@@ -2299,6 +2726,8 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
         ]
         if sources:
             body["sources"] = sources
+        if "tomtom" in sources:
+            body["tomtomCredit"] = tomtom_credit_text()
     return body
 
 
@@ -2863,6 +3292,7 @@ BLOCKED_FILES = {
     "/server.py",
     "/pin.local",
     "/carto.local",
+    "/tomtom.local",
     "/atv.local",
     "/gallery.local",
 }

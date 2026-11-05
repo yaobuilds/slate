@@ -1,0 +1,28 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": 201,
+      "type": 3,
+      "description": "Closure on the beltway",
+      "name": "I-495",
+      "incidentType": "Closure",
+      "lanesStatus": "ignore me",
+      "lanesClosed": "Two lanes closed",
+      "lat": 38.95,
+      "lon": -77.1,
+      "_age": "closure-old"
+    },
+    {
+      "id": 101,
+      "type": 3,
+      "description": "Incident @ DUP AT EXIT",
+      "name": "DUP",
+      "incidentType": "Closure",
+      "lanesClosed": "Duplicate",
+      "lat": 38.91,
+      "lon": -77.02,
+      "_age": "now"
+    }
+  ]
+}

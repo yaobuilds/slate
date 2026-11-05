@@ -1,0 +1,72 @@
+{
+  "success": true,
+  "data": [
+    {
+      "id": 101,
+      "type": 1,
+      "description": "Incident @ I-95 OUTER LOOP AT EXIT 22A",
+      "name": "Unused Name",
+      "incidentType": "Crash",
+      "lanesStatus": "Right lane blocked",
+      "lat": 38.9072,
+      "lon": -77.0369,
+      "_age": "now"
+    },
+    {
+      "id": 102,
+      "type": 2,
+      "description": "Incident @ Local Name Without Marker",
+      "name": "Georgia Ave",
+      "incidentType": "Disabled vehicle",
+      "lanesStatus": "Shoulder",
+      "lat": "38.9847",
+      "lon": "-77.0947",
+      "_age": "now"
+    },
+    {
+      "id": 103,
+      "type": "249",
+      "description": "Incident @ SIGNAL RD AT MAIN",
+      "name": "Signal",
+      "incidentType": "Signal",
+      "lanesStatus": "All lanes",
+      "lat": 38.91,
+      "lon": -77.03,
+      "_age": "now"
+    },
+    {
+      "id": 104,
+      "type": 1,
+      "closed": true,
+      "description": "Incident @ CLOSED RD AT MAIN",
+      "name": "Closed",
+      "incidentType": "Crash",
+      "lanesStatus": "Closed",
+      "lat": 38.91,
+      "lon": -77.04,
+      "_age": "now"
+    },
+    {
+      "id": 105,
+      "type": 1,
+      "description": "Incident @ OUTSIDE RD AT MAIN",
+      "name": "Outside",
+      "incidentType": "Crash",
+      "lanesStatus": "One lane",
+      "lat": 37.0,
+      "lon": -77.0,
+      "_age": "now"
+    },
+    {
+      "id": 106,
+      "type": 1,
+      "description": "Incident @ OLD EVENT AT MAIN",
+      "name": "Old",
+      "incidentType": "Crash",
+      "lanesStatus": "One lane",
+      "lat": 38.92,
+      "lon": -77.05,
+      "_age": "old"
+    }
+  ]
+}

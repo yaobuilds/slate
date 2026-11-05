@@ -201,6 +201,12 @@ TRAFFIC_LOCK = threading.Lock()
 # One region must never read or write another region's parts.
 TRAFFIC_CACHE: dict[str, dict] = {}
 TRAFFIC_CACHE_TTL = 180
+# One fetch at a time per CHART endpoint, so two open pages share one request.
+CHART_FETCH_LOCKS = {
+    "chart-events": threading.Lock(),
+    "chart-closures": threading.Lock(),
+}
+CHART_LOG_AT = {"chart-events": 0.0, "chart-closures": 0.0}
 TRAFFIC_INCIDENT_MAX_AGE = timedelta(hours=36)
 TRAFFIC_INCIDENT_MAX_KM = 160.0
 TRAFFIC_EVENTS_JSON = "https://511ny.org/api/getevents?format=json"
@@ -221,6 +227,14 @@ DMV_MAX_LAT = 39.35
 DMV_MIN_LON = -77.60
 DMV_MAX_LON = -76.70
 DMV_BOUNDS = (DMV_MIN_LAT, DMV_MAX_LAT, DMV_MIN_LON, DMV_MAX_LON)
+CHART_EVENTS_URL = (
+    "https://chartexp1.sha.maryland.gov/CHARTExportClientService/getEventMapDataJSON.do"
+)
+CHART_CLOSURES_URL = (
+    "https://chartexp1.sha.maryland.gov/CHARTExportClientService/getActiveClosureMapDataJSON.do"
+)
+CHART_CACHE_TTL = 240
+CHART_TIMEOUT_S = 8
 GEORSS_NS = {"g": "http://www.georss.org/georss"}
 PLACEHOLDER = {
     "updated": "2026-10-24T09:00:00-04:00",
@@ -1252,6 +1266,12 @@ def in_new_york_state(lat: float, lon: float) -> bool:
     return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
 
 
+def in_dmv_bounds(lat: float, lon: float) -> bool:
+    """True when the point is inside the DMV box, edges included."""
+    min_lat, max_lat, min_lon, max_lon = DMV_BOUNDS
+    return min_lat <= lat <= max_lat and min_lon <= lon <= max_lon
+
+
 def region_for(lat: float, lon: float) -> str:
     """Return dmv inside the DC and nearby box, otherwise ny."""
     if isinstance(lat, bool) or isinstance(lon, bool):
@@ -1260,8 +1280,7 @@ def region_for(lat: float, lon: float) -> str:
         return "ny"
     if not math.isfinite(lat) or not math.isfinite(lon):
         return "ny"
-    min_lat, max_lat, min_lon, max_lon = DMV_BOUNDS
-    if min_lat <= float(lat) <= max_lat and min_lon <= float(lon) <= max_lon:
+    if in_dmv_bounds(float(lat), float(lon)):
         return "dmv"
     return "ny"
 
@@ -1524,9 +1543,285 @@ def traffic_ny_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str]
     return picked, True, feed
 
 
+def chart_number(value) -> float | None:
+    """A finite float from a JSON number or numeric string. Booleans do not count."""
+    if isinstance(value, bool) or (isinstance(value, str) and not value.strip()):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value)
+    elif isinstance(value, str):
+        try:
+            number = float(value.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    if not math.isfinite(number):
+        return None
+    return number
+
+
+def chart_epoch_iso(value) -> str:
+    """UTC ISO time from epoch milliseconds, or epoch seconds when the number is smaller."""
+    number = chart_number(value)
+    if number is None:
+        return ""
+    if number > 1e12:
+        seconds = number / 1000.0
+    elif 1e9 < number < 1e12:
+        seconds = number
+    else:
+        return ""
+    try:
+        return datetime.fromtimestamp(seconds, timezone.utc).isoformat()
+    except (OverflowError, OSError, ValueError):
+        return ""
+
+
+def chart_road(description, name) -> str:
+    """Road text after '@ ', cut at the first place marker, or the name when that is missing."""
+    road = ""
+    if isinstance(description, str) and "@ " in description:
+        slice_ = description.split("@ ", 1)[1]
+        upper = slice_.upper()
+        cut = None
+        for token in (" AT", " PRIOR TO", " PAST"):
+            at = upper.find(token)
+            if at >= 0 and (cut is None or at < cut):
+                cut = at
+        if cut is not None:
+            road = slice_[:cut]
+    if not isinstance(road, str) or not road.strip():
+        road = name if isinstance(name, str) else ""
+    road = clip_text(road, 120)
+    return road or "Incident"
+
+
+def chart_description(raw: dict, closure: bool) -> str:
+    """incidentType plus the lane field for this endpoint, clipped to 220 characters."""
+    parts = []
+    for key in ("incidentType", "lanesClosed" if closure else "lanesStatus"):
+        value = raw.get(key)
+        if isinstance(value, str) and value.strip():
+            parts.append(value.strip())
+    return clip_text(collapse_ws(" ".join(parts)), 220)
+
+
+def chart_time(raw: dict, closure: bool) -> str:
+    """Event start, or a closure's last update unless that stamp is far in the future."""
+    start = chart_epoch_iso(raw.get("startDateTime"))
+    if not closure:
+        return start
+    updated = chart_epoch_iso(raw.get("lastCachedDataUpdateTime"))
+    if not updated:
+        return start
+    when = incident_datetime(updated)
+    if when is not None and when > datetime.now(timezone.utc) + timedelta(minutes=10):
+        return start
+    return updated
+
+
+def chart_row_id(raw: dict) -> str:
+    """String id for de-duplication. Missing ids do not collapse together."""
+    value = raw.get("id")
+    if isinstance(value, bool):
+        return ""
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    return ""
+
+
+def normalize_chart_item(raw: dict, closure: bool) -> dict | None:
+    """One CHART row in Slate's incident shape, or None when the row should be dropped."""
+    if not isinstance(raw, dict):
+        return None
+    if raw.get("type") == 249 or raw.get("type") == "249":
+        return None
+    if raw.get("closed") is True:
+        return None
+    lat = chart_number(raw.get("lat"))
+    lon = chart_number(raw.get("lon"))
+    if lat is None or lon is None or not in_dmv_bounds(lat, lon):
+        return None
+    when = chart_time(raw, closure)
+    if not when:
+        return None
+    row = {
+        "road": chart_road(raw.get("description"), raw.get("name")),
+        "description": chart_description(raw, closure),
+        "time": when,
+        "lat": lat,
+        "lon": lon,
+        "feed": "md-chart",
+    }
+    if closure:
+        row["closure"] = True
+    ident = chart_row_id(raw)
+    if ident:
+        row["_id"] = ident
+    return row
+
+
+def parse_chart_body(body: str, content_type: str, closure: bool) -> list | None:
+    """Rows from one CHART payload. None means the body was not a successful wrapper."""
+    if "json" not in content_type and not body.lstrip().startswith("{"):
+        return None
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(data, dict) or data.get("success") is False or not isinstance(data.get("data"), list):
+        return None
+    rows = []
+    for raw in data["data"]:
+        row = normalize_chart_item(raw, closure)
+        if row:
+            rows.append(row)
+    return rows
+
+
+def load_chart_part(url: str, closure: bool) -> list | None:
+    """Fetch one CHART endpoint. None means this attempt failed and the old list stays."""
+    try:
+        body, content_type = fetch_http_text(url, accept="application/json", timeout=CHART_TIMEOUT_S)
+    except (OSError, HTTPError, ValueError):
+        return None
+    return parse_chart_body(body, content_type, closure)
+
+
+def note_chart_failure(name: str) -> None:
+    """One line a minute when a failed CHART read leaves the previous list in place."""
+    with TRAFFIC_LOCK:
+        part = traffic_part("dmv", name)
+        kept = isinstance(part, dict) and isinstance(part.get("feed"), str) and bool(part.get("feed"))
+    if not kept:
+        return
+    now = time.monotonic()
+    if now - CHART_LOG_AT.get(name, 0.0) < 60:
+        return
+    CHART_LOG_AT[name] = now
+    print("CHART traffic feed failed; keeping the last good list.", file=sys.stderr)
+
+
+def ensure_chart_part(name: str, url: str, closure: bool, now: float) -> None:
+    """Fill one stale CHART part. A second caller waits and then reuses the result."""
+    with TRAFFIC_LOCK:
+        part = traffic_part("dmv", name)
+        try:
+            fresh = part is not None and now - float(part.get("at")) < CHART_CACHE_TTL
+        except (TypeError, ValueError):
+            fresh = False
+    if fresh:
+        return
+    with CHART_FETCH_LOCKS[name]:
+        with TRAFFIC_LOCK:
+            part = traffic_part("dmv", name)
+            try:
+                fresh = part is not None and now - float(part.get("at")) < CHART_CACHE_TTL
+            except (TypeError, ValueError):
+                fresh = False
+        if fresh:
+            return
+        rows = load_chart_part(url, closure)
+        if rows is None:
+            note_chart_failure(name)
+            return
+        with TRAFFIC_LOCK:
+            store_traffic_part("dmv", name, rows, "md-chart", now)
+
+
+def merge_chart_rows(events: list, closures: list) -> list:
+    """Events first, then closures, dropping a later row with the same CHART id."""
+    seen = set()
+    merged = []
+    for row in list(events) + list(closures):
+        if not isinstance(row, dict):
+            continue
+        ident = row.get("_id")
+        if isinstance(ident, str) and ident:
+            key = ("md-chart", ident)
+            if key in seen:
+                continue
+            seen.add(key)
+        merged.append(row)
+    return merged
+
+
+def pick_dmv_rows(rows: list, lat: float, lon: float) -> list[dict]:
+    """Up to four events and four closures, then fill to eight. Events use the 36-hour cutoff."""
+    cutoff = datetime.now(timezone.utc) - TRAFFIC_INCIDENT_MAX_AGE
+    events = []
+    closures = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        item = dict(row)
+        when = incident_datetime(item.get("time", ""))
+        if when is None:
+            continue
+        if not item.get("closure") and when < cutoff:
+            continue
+        if not isinstance(item.get("lat"), float) or not isinstance(item.get("lon"), float):
+            continue
+        dist = haversine_km(lat, lon, item["lat"], item["lon"])
+        if dist > TRAFFIC_INCIDENT_MAX_KM:
+            continue
+        item["distanceKm"] = round(dist, 1)
+        item["_whenTs"] = when.timestamp()
+        if item.get("closure"):
+            closures.append(item)
+        else:
+            events.append(item)
+    def sort_key(item):
+        return (-item.get("_whenTs", 0.0), item.get("distanceKm", 9999.0))
+
+    events.sort(key=sort_key)
+    closures.sort(key=sort_key)
+    chosen = events[:4] + closures[:4]
+    if len(chosen) < 8:
+        chosen.extend((events[4:] + closures[4:])[: 8 - len(chosen)])
+    chosen.sort(key=sort_key)
+    picked = []
+    hidden = {"distanceKm", "_whenTs", "closure", "_id"}
+    for item in chosen:
+        picked.append({key: value for key, value in item.items() if key not in hidden})
+    return picked
+
+
+def read_chart_part(name: str) -> tuple[list, bool]:
+    """A copy of one CHART part. The bool is false when that part has never succeeded."""
+    part = traffic_part("dmv", name)
+    if not isinstance(part, dict) or not isinstance(part.get("feed"), str) or not part.get("feed"):
+        return [], False
+    rows = part.get("rows")
+    if not isinstance(rows, list):
+        return [], True
+    return list(rows), True
+
+
 def traffic_dmv_incidents(lat: float, lon: float) -> tuple[list[dict], bool, str]:
-    """DMV incidents. Readers land later, so this stays empty and does not touch the cache."""
-    return [], False, ""
+    """Maryland CHART incidents for a place inside the DMV box. A failed feed keeps its last list."""
+    now = time.monotonic()
+    jobs = (
+        ("chart-events", CHART_EVENTS_URL, False),
+        ("chart-closures", CHART_CLOSURES_URL, True),
+    )
+    try:
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(ensure_chart_part, name, url, closure, now) for name, url, closure in jobs]
+            for future in futures:
+                future.result()
+    except Exception:
+        print("CHART traffic feed failed; keeping the last good list.", file=sys.stderr)
+    with TRAFFIC_LOCK:
+        event_rows, events_ok = read_chart_part("chart-events")
+        closure_rows, closures_ok = read_chart_part("chart-closures")
+    if not events_ok and not closures_ok:
+        return [], False, ""
+    picked = pick_dmv_rows(merge_chart_rows(event_rows, closure_rows), lat, lon)
+    return picked, True, "dmv"
 
 
 def traffic_incidents_for(lat: float, lon: float) -> tuple[list[dict], bool, str]:
@@ -1996,6 +2291,14 @@ def traffic_payload(center: tuple[float, float] | None = None) -> dict:
     }
     if feed:
         body["feed"] = feed
+    if region_for(lat, lon) == "dmv":
+        sources = [
+            name
+            for name in ("md-chart", "tomtom")
+            if any(isinstance(row, dict) and row.get("feed") == name for row in incidents)
+        ]
+        if sources:
+            body["sources"] = sources
     return body
 
 

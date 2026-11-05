@@ -2588,6 +2588,16 @@ def parse_traffic_center(params: dict) -> tuple[float, float] | None:
     return lat, lon
 
 
+def radar_place(params: dict) -> tuple[float, float]:
+    """Query lat and lon when both are valid. Otherwise the saved place."""
+    point = parse_traffic_center(params)
+    if point is not None:
+        return point
+    with PUBLISH_LOCK:
+        location = dict(SETTINGS_STATE.get("location", DEFAULT_LOCATION))
+    return float(location["lat"]), float(location["lon"])
+
+
 def _carto_key_text() -> str:
     env = os.environ.get("SLATE_CARTO_KEY", "").strip()
     if env:
@@ -3924,10 +3934,8 @@ class Handler(SimpleHTTPRequestHandler):
         payload = calendar_payload(start_dt.isoformat(), end_dt.isoformat())
         self.send_json(200, payload if full else guest_calendar(payload))
 
-    def radar_bbox(self, zoom: str) -> tuple[float, float, float, float, float, float]:
-        with PUBLISH_LOCK:
-            location = dict(SETTINGS_STATE.get("location", DEFAULT_LOCATION))
-        lat, lon = float(location["lat"]), float(location["lon"])
+    def radar_bbox(self, zoom: str, lat: float, lon: float) -> tuple[float, float, float, float, float, float, float]:
+        """Center, span, and the west, south, east, north edges for one radar frame."""
         span = 1.45 if zoom == "near" else 3.5
         return lat, lon, span, lon - span, lat - span * 0.58, lon + span, lat + span * 0.58
 
@@ -3956,7 +3964,8 @@ class Handler(SimpleHTTPRequestHandler):
         if zoom not in {"near", "wide"}:
             self.send_json(400, {"error": "bad"})
             return
-        lat, lon, span, west, south, east, north = self.radar_bbox(zoom)
+        lat, lon = radar_place(params)
+        lat, lon, span, west, south, east, north = self.radar_bbox(zoom, lat, lon)
         if layer == "basemap":
             key = ("basemap", round(lat, 2), round(lon, 2), zoom)
             with RADAR_LOCK:

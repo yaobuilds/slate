@@ -195,13 +195,15 @@ function radarSpanMiles() {
 function updateRadarImage() {
   const stamp = radarStamp(radarFrame);
   const label = savedPlace.label || "Saved location";
+  const lat = Number(savedPlace.lat).toFixed(2);
+  const lon = Number(savedPlace.lon).toFixed(2);
   if (radarCaption) {
     radarCaption.textContent = `${label} · about ${radarSpanMiles()} miles across`;
   }
   if (radarBasemap) {
-    radarBasemap.src = `radar.png?layer=basemap&zoom=${radarZoomLevel}&t=${Math.floor(Date.now() / 86400000)}`;
+    radarBasemap.src = `radar.png?layer=basemap&zoom=${radarZoomLevel}&lat=${lat}&lon=${lon}&t=${Math.floor(Date.now() / 86400000)}`;
   }
-  radarImage.src = `radar.png?zoom=${radarZoomLevel}&frame=${radarFrame}&t=${stamp}`;
+  radarImage.src = `radar.png?zoom=${radarZoomLevel}&frame=${radarFrame}&lat=${lat}&lon=${lon}&t=${stamp}`;
   radarTime.textContent = `Recent radar · ${new Date(stamp * 1000).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}`;
 }
 

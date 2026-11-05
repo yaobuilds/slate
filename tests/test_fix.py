@@ -1087,7 +1087,9 @@ class FixTests(unittest.TestCase):
             self.assertIn("key=" + key, seen[0][0])
             self.assertEqual(seen[0][1], 8)
             self.assertNotIn(key, body.decode("latin1"))
-            status, payload, _headers = self._raw("GET", "/traffic.json")
+            with mock.patch.object(server, "traffic_incidents_for", return_value=([], False, "")):
+                with mock.patch.object(server, "traffic_speed_segments_for", return_value=([], False, False)):
+                    status, payload, _headers = self._raw("GET", "/traffic.json")
             self.assertEqual(status, 200)
             self.assertNotIn(key, payload)
             self.assertTrue(json.loads(payload)["mapReady"])
@@ -1115,9 +1117,90 @@ class FixTests(unittest.TestCase):
             self.assertEqual(status, 503)
             self.assertIn("key", payload)
             self.assertFalse(seen)
-            self.assertFalse(json.loads(self._raw("GET", "/traffic.json")[1])["mapReady"])
+            with mock.patch.object(server, "traffic_incidents_for", return_value=([], False, "")):
+                with mock.patch.object(server, "traffic_speed_segments_for", return_value=([], False, False)):
+                    quiet = self._raw("GET", "/traffic.json")
+            self.assertFalse(json.loads(quiet[1])["mapReady"])
         finally:
             server.CARTO_KEY_PATH = old_path
+
+    def test_radar_bbox_follows_the_query_or_the_saved_place(self):
+        png = b"\x89PNG\r\n\x1a\n" + b"radar"
+        seen = []
+
+        class Resp:
+            headers = {}
+
+            def read(self, _limit):
+                return png
+
+            def get_content_type(self):
+                return "image/png"
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *_args):
+                return False
+
+        def fake_open(request, timeout=20):
+            seen.append(request.full_url)
+            return Resp()
+
+        def bbox_of(url):
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+            west, south, east, north = (float(part) for part in query["bbox"][0].split(","))
+            return west, south, east, north
+
+        def expect_box(url, lat, lon):
+            span = 1.45
+            west, south, east, north = bbox_of(url)
+            self.assertAlmostEqual(west, lon - span, places=4)
+            self.assertAlmostEqual(south, lat - span * 0.58, places=4)
+            self.assertAlmostEqual(east, lon + span, places=4)
+            self.assertAlmostEqual(north, lat + span * 0.58, places=4)
+            self.assertIn("arcgisonline.com", url)
+
+        old_map = dict(server.MAP_CACHE)
+        old_radar = dict(server.RADAR_CACHE)
+        old_location = dict(server.SETTINGS_STATE.get("location", {}))
+        server.MAP_CACHE.clear()
+        server.RADAR_CACHE.clear()
+        server.SETTINGS_STATE["location"] = {
+            "lat": 40.7128,
+            "lon": -74.0060,
+            "label": "New York, NY",
+            "timezone": "America/New_York",
+            "locked": False,
+        }
+        try:
+            with mock.patch.object(server, "urlopen", fake_open):
+                conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+                conn.request("GET", "/radar.png?layer=basemap&zoom=near&lat=38.91&lon=-77.04")
+                resp = conn.getresponse()
+                resp.read()
+                conn.close()
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(len(seen), 1)
+            expect_box(seen[0], 38.91, -77.04)
+
+            seen.clear()
+            server.MAP_CACHE.clear()
+            with mock.patch.object(server, "urlopen", fake_open):
+                conn = http.client.HTTPConnection("127.0.0.1", self.httpd.server_address[1], timeout=5)
+                conn.request("GET", "/radar.png?layer=basemap&zoom=near")
+                resp = conn.getresponse()
+                resp.read()
+                conn.close()
+            self.assertEqual(resp.status, 200)
+            self.assertEqual(len(seen), 1)
+            expect_box(seen[0], 40.7128, -74.0060)
+        finally:
+            server.MAP_CACHE.clear()
+            server.MAP_CACHE.update(old_map)
+            server.RADAR_CACHE.clear()
+            server.RADAR_CACHE.update(old_radar)
+            server.SETTINGS_STATE["location"] = old_location
 
 
 def wait_until(cdp, expression, timeout=8):

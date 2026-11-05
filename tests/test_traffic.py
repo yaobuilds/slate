@@ -756,5 +756,17 @@ class TrafficRegionTests(unittest.TestCase):
         self.assertEqual([item["road"] for item in got], ["Kept"])
 
 
+class TrafficDocsTests(unittest.TestCase):
+    def test_readme_links_the_city_guide(self):
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        guide_path = ROOT / "docs" / "add-your-city.md"
+        guide = guide_path.read_text(encoding="utf-8")
+        self.assertTrue(guide_path.is_file())
+        self.assertIn("docs/add-your-city.md", readme)
+        self.assertIn("`tomtom.local`", readme)
+        self.assertNotIn("Queens", readme)
+        self.assertNotIn("Queens", guide)
+
+
 if __name__ == "__main__":
     unittest.main()

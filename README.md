@@ -72,6 +72,18 @@ python3 server.py
 
 You can set `SLATE_CARTO_KEY` instead of the file. The key stays on this computer. The page asks Slate for tiles, so the key is not sent to the browser. Without a key, the page still centers on the detected place. The streets stay blank until the key is there.
 
+Use your own CARTO key. For incidents outside the built-in feeds, use your own TomTom key too. Do not share either key, and do not commit them.
+
+Set `SLATE_TOMTOM_KEY`, or save the key as the only line of `tomtom.local` and start Slate again:
+
+```bash
+umask 077
+printf '%s\n' 'paste-the-key-here' > tomtom.local
+python3 server.py
+```
+
+When both are set, `SLATE_TOMTOM_KEY` is the one Slate uses. [Add a traffic region](docs/add-your-city.md) explains how to cover another city.
+
 ## Wi-Fi remote
 
 With `python3 server.py --lan`, open **Settings → TV remote** on the host, or `http://<host>:8000/remote.html` on a phone. Do not open the remote page on the TV.
@@ -120,6 +132,7 @@ adb shell settings put secure screensaver_components dev.slate.home/.SlateDream
 | `settings.local.json` | Home apps, appearance, location, toggles |
 | `pin.local` | Wi-Fi unlock PIN (mode 600) |
 | `carto.local` | Free CARTO key for traffic street tiles |
+| `tomtom.local` | TomTom key for incidents outside the built-in feeds |
 | `data.local.json` | Schedule kept on this computer |
 | `calendar-cache.local.json` | Last good Google Calendar fetch |
 | `data.json` | Generated guest copy of the schedule |

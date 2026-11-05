@@ -54,7 +54,7 @@ The PIN over HTTP is a convenience lock, not strong security.
 - **Dashboard:** guest mode on every load. **Now / Next** and **Upcoming** come from Google Calendar when it is connected. **G** or **Show all** reveals real titles.
 - **Calendar:** Today, Week, and Month from the same calendar.
 - **Weather:** seven days, hourly detail, a today rain chart, and recent radar fetched by the server. Radar plays from oldest to newest, then repeats. Weather uses [Open-Meteo](https://open-meteo.com/) and needs no key.
-- **Traffic:** a street map centered on this device’s location, or the saved place when that location is locked or the screen is the TV. Street tiles need the free key in the next section. Nearby incidents come from the built-in feeds, or from TomTom when that key is set. That key also colors roads outside New York City.
+- **Traffic:** a pan-and-zoom street map centered on this device’s location, or the saved place when location is locked or the screen is the TV. Street tiles need the free CARTO key below, and adding a free TomTom key unlocks nationwide incidents and colored roads outside New York City.
 - **Gallery:** photos you upload. They stay in `gallery.local/`.
 - **Keel:** a small arrow-key game.
 - **Wi-Fi / LAN:** devices seen from the host, linked from the Dashboard footer.
@@ -62,27 +62,11 @@ The PIN over HTTP is a convenience lock, not strong security.
 
 ## Traffic map
 
-Street tiles come from [CARTO](https://carto.com/attributions). Request a free key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/). No account is required. Save the key as the only line of `carto.local` and start Slate again:
+For the street map, I use [CARTO](https://carto.com/attributions) tiles. Grab a free key at [carto.com/basemaps/apikey](https://carto.com/basemaps/apikey/) (no account needed), paste it as the single line in `carto.local` (or set `SLATE_CARTO_KEY`), and restart `python3 server.py`. Without a key, the map still centers on your place and lists incidents, while the street layer stays blank.
 
-```bash
-umask 077
-printf '%s\n' 'paste-the-key-here' > carto.local
-python3 server.py
-```
+Out of the box, I wired New York to the public 511 feeds and NYC DOT speed lines, and the DC area to Maryland CHART, none of which need a key. If you want incident alerts and green, yellow, and red road speeds across the rest of the country (plus DC streets and Northern Virginia), grab a free TomTom key and paste it as the single line in `tomtom.local`, or set `SLATE_TOMTOM_KEY` (which takes priority when both are set), then restart `python3 server.py`.
 
-You can set `SLATE_CARTO_KEY` instead of the file. The key stays on this computer. The page asks Slate for tiles, so the key is not sent to the browser. Without a key, the page still centers on the detected place. The streets stay blank until the key is there.
-
-Use your own CARTO key. With a TomTom key, the incident list works across the country. New York still uses the 511 feeds, and the DC area still adds Maryland CHART. Those two need no key. Do not share either key, and do not commit them.
-
-Set `SLATE_TOMTOM_KEY`, or save the key as the only line of `tomtom.local` and start Slate again:
-
-```bash
-umask 077
-printf '%s\n' 'paste-the-key-here' > tomtom.local
-python3 server.py
-```
-
-When both are set, `SLATE_TOMTOM_KEY` is the one Slate uses. With that key, roads outside New York City are colored green, yellow, and red from TomTom flow tiles. New York City keeps the speed colors it already has. While those city lines are on the screen, the flow tiles stay hidden. The page asks Slate for the tiles, so the key is not sent to the browser. [Add a traffic region](docs/add-your-city.md) is for a keyless city or state feed. The grid already covers the rest of the country.
+I keep both keys on the server and proxy the street tiles and TomTom flow tiles through Slate so your keys never reach the browser. Inside New York City I keep the free city speed lines and hide the flow tiles while those lines are in view so roads aren't painted twice. Always use your own keys, and never share or commit `*.local` files. If you want to plug in a free city or state DOT feed for your area, I wrote up how it works in [Adding your own city's traffic feed](docs/add-your-city.md).
 
 ## Wi-Fi remote
 
@@ -132,7 +116,7 @@ adb shell settings put secure screensaver_components dev.slate.home/.SlateDream
 | `settings.local.json` | Home apps, appearance, location, toggles |
 | `pin.local` | Wi-Fi unlock PIN (mode 600) |
 | `carto.local` | Free CARTO key for traffic street tiles |
-| `tomtom.local` | TomTom key for incidents outside the built-in feeds |
+| `tomtom.local` | Free TomTom key for nationwide incidents and road speeds |
 | `data.local.json` | Schedule kept on this computer |
 | `calendar-cache.local.json` | Last good Google Calendar fetch |
 | `data.json` | Generated guest copy of the schedule |

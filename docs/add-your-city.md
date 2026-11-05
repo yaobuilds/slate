@@ -1,93 +1,29 @@
-# Add a traffic region
+# Adding your own city's traffic feed
 
-Slate picks a traffic region from the saved place. A region is a box on the map and the feeds that fill it. The street map is the same everywhere. The incident list changes with the region.
+If you just want traffic in another US city, you don't need to edit any code. Once you paste a free TomTom key into `tomtom.local` (or set `SLATE_TOMTOM_KEY`), I snap your saved place to a fixed half-degree grid cell such as `grid:33.5,-84.5`, pull nearby incidents for that cell, and proxy colored TomTom flow tiles onto the map. You only need to touch `server.py` when your city or state publishes a free public DOT feed, like a 511 JSON endpoint or a WZDx work-zone feed, and you want it working without a key or layered alongside TomTom.
 
-## What a region is
+## How I split regions and caches
 
-`region_for` in `server.py` reads the place. Inside the box for DC, Maryland, and Northern Virginia it returns `dmv`. Inside the New York rectangle it returns `ny`. Everywhere else it snaps the place to a half-degree cell and returns a key such as `grid:33.5,-84.5`. Places in the same cell share one cache entry. The request sends that cell, not the exact place.
+In `server.py`, `region_for(lat, lon)` picks which traffic region owns a coordinate. Inside `DMV_BOUNDS` (latitude `38.60` to `39.35`, longitude `-77.60` to `-76.70`, edges included) it returns `dmv` for DC, Maryland, and Northern Virginia. Inside `NY_STATE_BOUNDS` (`40.49` to `45.12`, `-79.76` to `-71.85`, a touch wider than the state line so nearby NJ and CT towns stay on the regional feeds) it returns `ny`. Everywhere else it rounds down to a half-degree cell and returns a key like `grid:33.5,-84.5`, so nearby points share one cache entry and your exact coordinates never leave the server.
 
-The `dmv` box runs from latitude 38.60 to 39.35 and from longitude -77.60 to -76.70. A point on the edge is inside.
+Each region writes to its own slot in `TRAFFIC_CACHE`. Switching your saved place in Settings never mixes one region's incidents into another's.
 
-The New York rectangle runs from latitude 40.49 to 45.12 and from longitude -79.76 to -71.85. It is a little wider than the state line, so a few places just outside New York stay on the New York feeds. A place outside both boxes uses the grid.
+## Wiring a public DOT feed
 
-## How to add one
+Everything lives in `server.py` using Python's standard library, so there are no packages to install. To add a keyless regional feed, define your bounding-box constants next to `DMV_BOUNDS` and have `region_for` return a short region name before the `grid:` fallback. Next, write a parser that fetches your feed with a short timeout and turns each item into a dictionary with `road` (up to 120 characters), `description` (up to 220 characters), `time` (an ISO-8601 or RFC-2822 timestamp), `lat` and `lon` as floats, and a short `feed` slug such as `md-chart`.
 
-There is no settings file for a region. Another city in the US does not need a new box. With a TomTom key, the grid already asks for that cell. Edit `server.py` only to add a keyless feed, the way Maryland CHART is added for the DMV.
+Skip any item missing a valid coordinate or timestamp. On display, Slate keeps up to eight incidents within 160 km and drops ordinary events older than 36 hours, though you can exempt long-running road closures the way I do in `pick_dmv_rows`. Cache good reads in `TRAFFIC_CACHE` for three to five minutes, and when a fetch fails, keep serving the last good list rather than wiping the screen.
 
-1. Pick a short name and a latitude and longitude box. Check that box in `region_for` before the grid.
-2. Store that region's rows in their own cache entry. Leave the other entries alone.
-3. Write a reader that returns the row shape below.
-4. Call the reader from `traffic_incidents_for` when the place is in the new box.
-5. On a failed read, keep the last good list.
+## How New York and the DMV work
 
-## Write a reader
+New York (`ny`) was the first region I built. It tries the 511NY JSON feed first and falls back to the 511NJ TRANSCOM RSS feed on a 3-minute cache, while a separate 4-minute poll reads NYC DOT traffic speeds to color roads inside the five boroughs without needing a key.
 
-Each row the page can show has these fields:
+For the DMV (`dmv`), I combine two sources. Every 4 minutes I fetch Maryland CHART's keyless incident and active-closure JSON feeds (`md-chart`), which cover Maryland highways and the Maryland side of the Beltway. When a TomTom key is present, I also query TomTom Incident Details for the fixed `DMV_BOUNDS` box every 5 minutes (`tomtom`) to fill in DC streets and Northern Virginia. When CHART and TomTom report the same incident, I keep the CHART entry so highway naming stays consistent.
 
-| Field | Meaning |
-| --- | --- |
-| `road` | A short road name |
-| `description` | One line about the incident |
-| `time` | When it started, as a date string |
-| `lat`, `lon` | A point |
-| `feed` | A short id for the source, such as `md-chart` |
+Outside New York and the DMV, any `grid:` region uses that same 5-minute TomTom incident request for its half-degree cell, or returns an empty list quietly if you haven't set a TomTom key. To keep a dashboard running all day well inside TomTom's free tier (about 2,500 incident calls and 200,000 tile requests a month), I cap incident calls at 80 per UTC day across the DMV and grid combined, cache flow tiles for 4 minutes with a 4,000-tile daily cap, and pause for 15 minutes on a `429` rate limit while holding onto the last good data. Whenever NYC DOT speed lines are visible on the map, I keep the flow tiles hidden so roads aren't colored twice, and turn them on automatically when you pan outside the city.
 
-Skip a row with no point or no time. The page keeps up to eight rows within about 160 km. Ordinary events older than 36 hours are dropped.
+## Keys and map credits
 
-## New York
+Both keys stay strictly on the machine running Slate. Paste your CARTO basemap key as the single line in `carto.local` (or set `SLATE_CARTO_KEY`) and your TomTom key as the single line in `tomtom.local` (or set `SLATE_TOMTOM_KEY`), then restart `python3 server.py`. Never share or commit `*.local` files.
 
-The New York reader tries the 511NY JSON feed, then the 511NJ RSS feed. A good read is stored on the `ny` cache part for 3 minutes. The feed id, `511ny-json` or `511nj-transcom-rss`, is stored on that part. The rows themselves have road, description, time, latitude, and longitude.
-
-Live speeds are a separate 4-minute clock. They color roads in New York City only.
-
-## The DMV
-
-The DMV reader uses two feeds.
-
-Maryland CHART needs no key. Slate reads the events JSON and the closures JSON together, every 4 minutes, and tags those rows `md-chart`.
-
-TomTom Incident Details covers DC and Northern Virginia when a key is set. The request sends the fixed DMV box. It does not send the saved place or the current map view. Those rows are tagged `tomtom` and kept for 5 minutes. Slate makes at most 80 TomTom calls per UTC day, and the grid uses that same stop. After that stop, the last list is used for 30 minutes, and then TomTom is left out until the next day. A rate-limit response pauses the feed for 15 minutes and keeps the last list. When CHART and TomTom both report the same incident, the CHART row is the one that stays.
-
-Outside New York and the DMV, the same TomTom request covers one half-degree cell. The cell is fixed. The saved place and the map view stay out of the URL. With no key, that list stays empty and Slate does not call TomTom.
-
-The free Incident Details allowance is about 2,500 calls a month. The five-minute cache and the daily stop keep a home screen inside that allowance.
-
-## Where keys go
-
-The CARTO key for street tiles is `carto.local` or `SLATE_CARTO_KEY`. The README Traffic map section shows how to save it.
-
-The TomTom key is `SLATE_TOMTOM_KEY`, or the first non-empty line of `tomtom.local`. The environment variable wins. Save the file the same way as the map key:
-
-```bash
-umask 077
-printf '%s\n' 'paste-the-key-here' > tomtom.local
-```
-
-Start Slate again after saving it. The server calls TomTom. The page never receives the key. Do not share the key, and do not commit the file.
-
-## Colored roads
-
-New York City speed lines need no key. They color roads in the city on their own clock.
-
-With a TomTom key, Slate also fetches flow tiles for the map on screen. Those tiles color roads outside New York City. While a city speed line is on screen, the flow tiles stay off, so a road is not colored twice. Panning until the city lines leave the map shows the tiles for the area around the city. The footer names TomTom when a flow tile is on screen, even if the incident list is empty. The tiles use their own counter: about 4 minutes, and at most 4,000 tiles per UTC day.
-
-## Clocks
-
-Each feed has its own timer, kept in memory. A fresh read waits until the timer ends. A failed read keeps the previous list.
-
-| Feed | Fresh read |
-| --- | --- |
-| New York incidents | Every 3 minutes |
-| Maryland CHART | Every 4 minutes |
-| TomTom incidents | Every 5 minutes, and at most 80 calls per UTC day, shared by the DMV and the grid |
-| TomTom flow tiles | Every 4 minutes, and at most 4,000 tiles per UTC day |
-| TomTom caption | Once a day, and only when a TomTom row or a flow tile is shown |
-| New York speeds | Every 4 minutes |
-
-## When the footer names a feed
-
-The footer always credits OpenStreetMap and CARTO for the tiles.
-
-It adds Maryland CHART when a shown row has feed `md-chart`, with a link to [chart.maryland.gov](https://chart.maryland.gov/). It adds the TomTom line when a shown row has feed `tomtom`. Those words come from TomTom's caption, or `© TomTom` when the caption is missing. The link is TomTom's [third-party product terms](https://www.tomtom.com/en_gb/thirdpartyproductterms/).
-
-A New York response has no `sources` list, so the footer stays OpenStreetMap and CARTO until a flow tile is on screen. A grid response adds the TomTom line only when a shown row has feed `tomtom`. A flow tile on screen adds that same line even when no incident row was shown. A feed that is configured but did not contribute a shown row, and is not on screen as a flow tile, is left off the line.
+At the bottom of the Traffic page, `renderCredits` in `traffic.js` updates the credit line to match what's actually on screen. OpenStreetMap and CARTO are always credited for the street tiles. When a shown incident comes from `md-chart`, I add a link to [Maryland CHART](https://chart.maryland.gov/). When a TomTom incident or flow tile is on screen, I add TomTom's copyright caption (fetched once a day, falling back to `© TomTom`) linked to TomTom's [third-party product terms](https://www.tomtom.com/en_gb/thirdpartyproductterms/). If you add a new public feed, return its slug in `sources` and add its credit link in `renderCredits` so the data source gets proper attribution.

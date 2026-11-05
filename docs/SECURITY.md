@@ -24,7 +24,7 @@ The PIN travels over plain HTTP on your own network, so treat it as a convenienc
 
 - Calendar OAuth values live in the macOS Keychain.
 - The optional map key lives in `carto.local` or an environment variable, and the server fetches tiles on the page's behalf.
-- The TomTom key lives in `tomtom.local` or `SLATE_TOMTOM_KEY`, and the server calls TomTom itself.
+- The optional TomTom key lives in `tomtom.local` or `SLATE_TOMTOM_KEY`, and the server fetches incidents and flow tiles on the page's behalf.
 - Nothing secret is committed. If you find something that looks like it, please open an issue.
 
 ## Reporting a problem

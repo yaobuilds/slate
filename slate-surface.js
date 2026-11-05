@@ -261,6 +261,10 @@
 
   document.addEventListener("keydown", (event) => {
     if (event.key !== "Home" || event.metaKey || event.ctrlKey || event.altKey) return;
+    // The traffic map resets a moved view instead of leaving. No other page sets this.
+    if (window.SlatePage && typeof window.SlatePage.consumeHome === "function" && window.SlatePage.consumeHome(event)) {
+      return;
+    }
     const tag = document.activeElement && document.activeElement.tagName;
     if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
     const path = location.pathname;

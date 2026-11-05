@@ -26,12 +26,18 @@
     <p class="traffic-quiet" id="traffic-quiet" hidden></p>
 
     <div class="traffic-body" id="traffic-body">
-      <section class="traffic-map-panel" aria-label="Map centered on saved location">
-        <div class="traffic-map" id="traffic-map">
-          <div class="traffic-tiles" id="traffic-tiles"></div>
-          <span class="traffic-center" id="traffic-center" aria-hidden="true"></span>
-          <div class="traffic-markers" id="traffic-markers"></div>
-          <div class="traffic-speeds" id="traffic-speeds"></div>
+      <section class="traffic-map-panel" aria-label="Map">
+        <div class="traffic-map-frame">
+          <div class="traffic-zoom">
+            <button type="button" class="traffic-zoom-btn" id="traffic-zoom-in" data-tr-focus aria-label="Zoom in">+</button>
+            <button type="button" class="traffic-zoom-btn" id="traffic-zoom-out" data-tr-focus aria-label="Zoom out">−</button>
+          </div>
+          <div class="traffic-map" id="traffic-map" tabindex="0" data-tr-focus aria-label="Map. Arrows pan, Enter zooms in, and Back resets the view.">
+            <div class="traffic-tiles" id="traffic-tiles"></div>
+            <span class="traffic-center" id="traffic-center" aria-hidden="true"></span>
+            <div class="traffic-markers" id="traffic-markers"></div>
+            <div class="traffic-speeds" id="traffic-speeds"></div>
+          </div>
         </div>
         <p class="traffic-map-note" id="traffic-map-note" hidden></p>
         <p class="traffic-map-note" id="traffic-incidents-note" hidden></p>
@@ -44,7 +50,7 @@
     </div>
 
     <footer class="traffic-foot">
-      <p class="traffic-attribution">
+      <p class="traffic-attribution" id="traffic-attribution">
         Map tiles © <a href="https://www.openstreetmap.org/copyright" rel="noopener noreferrer">OpenStreetMap</a> contributors, © <a href="https://carto.com/attributions" rel="noopener noreferrer">CARTO</a>
       </p>
     </footer>
